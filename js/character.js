@@ -2,7 +2,8 @@ import * as THREE from 'three';
 
 // Corpo do personagem (visto na câmera em terceira pessoa).
 // Esqueleto simples de grupos articulados com animação procedural:
-// parado (respiração), andando, correndo, agachado, pulando/caindo e ataque.
+// parado (respiração), andando, correndo, agachado, pulando/caindo, escalando,
+// inclinando (Q/E), atacando e morte.
 
 function damp(a, b, lambda, dt) {
   return a + (b - a) * (1 - Math.exp(-lambda * dt));
@@ -10,7 +11,10 @@ function damp(a, b, lambda, dt) {
 
 function limb(w, h, d, mat, offsetY) {
   const pivot = new THREE.Group();
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+  // membros arredondados (cápsula achatada no eixo z quando d < w)
+  const r = w / 2;
+  const mesh = new THREE.Mesh(new THREE.CapsuleGeometry(r, Math.max(0.01, h - w), 4, 8), mat);
+  mesh.scale.z = d / w;
   mesh.position.y = offsetY;
   mesh.castShadow = true;
   pivot.add(mesh);
@@ -27,6 +31,7 @@ export class Character {
     const hair = new THREE.MeshStandardMaterial({ color: 0x2a2018, roughness: 1 });
 
     this.root = new THREE.Group();
+    this.root.rotation.order = 'YXZ'; // gira (yaw) primeiro, depois tomba no eixo do corpo
     this.hips = new THREE.Group();
     this.hips.position.y = 0.95;
     this.root.add(this.hips);
@@ -88,6 +93,9 @@ export class Character {
     this.blendMove = 0;
     this.blendCrouch = 0;
     this.blendAir = 0;
+    this.blendClimb = 0;
+    this.blendDeath = 0;
+    this.lean = 0;
     this.t = 0;
     this.yaw = 0;
   }
@@ -107,7 +115,10 @@ export class Character {
     this.blendMove = damp(this.blendMove, player.onFloor ? Math.min(speed / 4.2, 1) : 0, 10, dt);
     this.blendRun = damp(this.blendRun, player.sprinting && speed > 1 ? 1 : 0, 8, dt);
     this.blendCrouch = damp(this.blendCrouch, player.crouched ? 1 : 0, 10, dt);
-    this.blendAir = damp(this.blendAir, player.onFloor ? 0 : 1, 10, dt);
+    this.blendAir = damp(this.blendAir, player.onFloor || player.isClimbing ? 0 : 1, 10, dt);
+    this.blendClimb = damp(this.blendClimb, player.isClimbing ? 1 : 0, 14, dt);
+    this.blendDeath = damp(this.blendDeath, player.dead ? 1 : 0, player.dead ? 3 : 30, dt);
+    this.lean = player.lean;
 
     // direção do movimento relativa ao corpo (andar de costas inverte o passo)
     const back = player.moveInput.y < -0.1 ? -1 : 1;
@@ -145,6 +156,31 @@ export class Character {
     if (attacking) {
       this.armR.rotation.x = 1.6;
       this.armR.rotation.z = 0.4;
+    }
+
+    // escalada: braços para cima/frente apoiando, uma perna sobe primeiro
+    const c = this.blendClimb;
+    if (c > 0.001) {
+      const pr = player.climbProgress;
+      const armX = 2.6 - pr * 1.6; // mãos no topo e depois empurrando para baixo
+      this.armL.rotation.x = THREE.MathUtils.lerp(this.armL.rotation.x, armX, c);
+      this.armR.rotation.x = THREE.MathUtils.lerp(this.armR.rotation.x, armX, c);
+      this.legR.rotation.x = THREE.MathUtils.lerp(this.legR.rotation.x, 1.3 * Math.sin(pr * Math.PI), c);
+      this.legR.userData.knee.rotation.x = THREE.MathUtils.lerp(this.legR.userData.knee.rotation.x, -1.6 * Math.sin(pr * Math.PI), c);
+      this.torso.rotation.x = THREE.MathUtils.lerp(this.torso.rotation.x, -0.45, c);
+    }
+
+    // inclinar (espiar)
+    this.torso.rotation.z = -this.lean * 0.35;
+    this.hips.position.x = this.lean * 0.05;
+
+    // morte: cai de costas
+    const d = this.blendDeath;
+    this.root.rotation.x = d * 1.45;
+    this.root.position.y += d * 0.12;
+    if (d > 0.01) {
+      this.armL.rotation.z -= d * 0.6;
+      this.armR.rotation.z += d * 0.6;
     }
   }
 }

@@ -78,25 +78,38 @@ export class World {
       concrete: new THREE.MeshStandardMaterial({ map: TEX.concreteTexture(), roughness: 0.95 }),
       brick: new THREE.MeshStandardMaterial({ map: TEX.brickTexture(), roughness: 0.9 }),
       wood: new THREE.MeshStandardMaterial({ map: TEX.woodTexture(), roughness: 0.85 }),
-      rust: new THREE.MeshStandardMaterial({ map: TEX.rustTexture(), roughness: 0.8, metalness: 0.2 }),
+      rust: new THREE.MeshStandardMaterial({ map: TEX.rustTexture(), roughness: 0.8, metalness: 0.05 }),
       bark: new THREE.MeshStandardMaterial({ map: TEX.barkTexture(), roughness: 1 }),
       leaves: new THREE.MeshStandardMaterial({ color: 0x36472b, roughness: 1, flatShading: true }),
       deadLeaves: new THREE.MeshStandardMaterial({ color: 0x4a4430, roughness: 1, flatShading: true }),
       rock: new THREE.MeshStandardMaterial({ color: 0x5f5d58, roughness: 1, flatShading: true }),
-      carBody: new THREE.MeshStandardMaterial({ color: 0x5d6e76, roughness: 0.6, metalness: 0.25 }),
+      carBody: new THREE.MeshStandardMaterial({ color: 0x5d6e76, roughness: 0.6, metalness: 0.05 }),
       glass: new THREE.MeshStandardMaterial({ color: 0x1b2328, roughness: 0.2, metalness: 0.6 }),
       tire: new THREE.MeshStandardMaterial({ color: 0x151515, roughness: 0.9 }),
-      barrel: new THREE.MeshStandardMaterial({ color: 0x40562e, roughness: 0.7, metalness: 0.3 }),
+      barrel: new THREE.MeshStandardMaterial({ color: 0x4f6a38, roughness: 0.7, metalness: 0.05 }),
       metal: new THREE.MeshStandardMaterial({ color: 0x3a3a3a, roughness: 0.6, metalness: 0.6 }),
       roof: new THREE.MeshStandardMaterial({ color: 0x3b3430, roughness: 0.95 }),
     };
     this.colliderMat = new THREE.MeshBasicMaterial();
+
+    // tipo de piso de cada material (define o som dos passos)
+    const M = this.mat;
+    this.surfaceOf = new Map([
+      [M.concrete, 'concrete'], [M.brick, 'concrete'], [M.roof, 'concrete'], [M.rock, 'concrete'],
+      [M.wood, 'wood'],
+      [M.rust, 'metal'], [M.metal, 'metal'], [M.carBody, 'metal'], [M.barrel, 'metal'], [M.glass, 'metal'],
+    ]);
+    this.surfaceMeshes = [];
+    this._raycaster = new THREE.Raycaster();
+    this._down = new THREE.Vector3(0, -1, 0);
+    this._rayFrom = new THREE.Vector3();
 
     this._buildSky();
     this._buildLights();
     this._buildTerrain();
     this._buildTown();
     this._buildForest();
+    this._buildGrass();
     this._buildBounds();
 
     this.octree = new Octree();
@@ -109,6 +122,7 @@ export class World {
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     this.scene.add(mesh);
+    this._registerSurface(mesh);
     if (collide) {
       mesh.updateMatrixWorld(true);
       const c = new THREE.Mesh(mesh.geometry, this.colliderMat);
@@ -117,6 +131,24 @@ export class World {
       this.colliders.add(c);
     }
     return mesh;
+  }
+
+  _registerSurface(mesh) {
+    const surface = this.surfaceOf.get(mesh.material);
+    if (!surface) return;
+    mesh.userData.surface = surface;
+    this.surfaceMeshes.push(mesh);
+  }
+
+  /** Tipo de piso sob os pés: 'grass' | 'concrete' | 'wood' | 'metal'. */
+  surfaceAt(feet) {
+    this._rayFrom.set(feet.x, feet.y + 0.3, feet.z);
+    this._raycaster.set(this._rayFrom, this._down);
+    this._raycaster.far = 0.7;
+    const hit = this._raycaster.intersectObjects(this.surfaceMeshes, false)[0];
+    if (hit) return hit.object.userData.surface;
+    if (feet.y < 0.3 && Math.abs(feet.x + 4) < 4 && Math.abs(feet.z) < 45) return 'concrete'; // estrada
+    return 'grass';
   }
 
   /** Colisor invisível (ex.: rampa por baixo de uma escada, troncos instanciados). */
@@ -203,13 +235,21 @@ export class World {
   }
 
   /** Mantém a área de sombra centrada no jogador. */
-  update(playerPos) {
+  update(playerPos, time = 0) {
+    if (this.windUniform) this.windUniform.value = time;
     const snap = 4; // reduz "tremido" da sombra
     const x = Math.round(playerPos.x / snap) * snap;
     const z = Math.round(playerPos.z / snap) * snap;
     this.sun.target.position.set(x, 0, z);
     this.sun.position.set(x + this.sunOffset.x, this.sunOffset.y, z + this.sunOffset.z);
     this.sky.position.set(playerPos.x, 0, playerPos.z);
+  }
+
+  setShadowMapSize(size) {
+    if (this.sun.shadow.mapSize.x === size) return;
+    this.sun.shadow.mapSize.set(size, size);
+    this.sun.shadow.map?.dispose();
+    this.sun.shadow.map = null;
   }
 
   // ---------- terreno ----------
@@ -382,7 +422,7 @@ export class World {
     g.rotation.y = rotY;
     g.rotation.z = 0.03; // carro levemente torto (pneu murcho)
     g.updateMatrixWorld(true);
-    g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; this._registerSurface(o); } });
     this.scene.add(g);
     for (const m of [body, cabin]) {
       const c = new THREE.Mesh(m.geometry, this.colliderMat);
@@ -473,6 +513,72 @@ export class World {
       r.position.set(x, terrainHeight(x, z) + sc * 0.2, z);
       this.solid(r);
     }
+  }
+
+  // ---------- grama (instanciada, balança com o vento) ----------
+  _buildGrass() {
+    const count = this.quality === 'low' ? 7000 : 16000;
+    // um tufo = 5 folhas finas; cada folha tem os dois lados com normal para cima
+    // (iluminada como o chão, sem lado escuro)
+    const pos = [];
+    for (let i = 0; i < 5; i++) {
+      const a = (i / 5) * Math.PI * 2 + i;
+      const r = 0.05 + (i % 2) * 0.03;
+      const bx = Math.cos(a) * r, bz = Math.sin(a) * r;  // base da folha
+      const w = 0.018;
+      const px = -Math.sin(a) * w, pz = Math.cos(a) * w; // largura perpendicular
+      const tipX = bx * 2.2, tipZ = bz * 2.2, tipY = 0.26 + (i % 3) * 0.06;
+      const A = [bx - px, 0, bz - pz], B = [bx + px, 0, bz + pz], C = [tipX, tipY, tipZ];
+      pos.push(...A, ...B, ...C, ...B, ...A, ...C);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('normal', new THREE.Float32BufferAttribute(new Array(pos.length / 3).fill([0, 1, 0]).flat(), 3));
+
+    const mat = new THREE.MeshLambertMaterial();
+    this.windUniform = { value: 0 };
+    mat.onBeforeCompile = (shader) => {
+      shader.uniforms.uTime = this.windUniform;
+      shader.vertexShader = 'uniform float uTime;\n' + shader.vertexShader.replace(
+        '#include <begin_vertex>',
+        `#include <begin_vertex>
+        #ifdef USE_INSTANCING
+          float ph = instanceMatrix[3][0] * 0.35 + instanceMatrix[3][2] * 0.25;
+          float sway = sin(uTime * 1.6 + ph) * 0.6 + sin(uTime * 3.7 + ph * 2.0) * 0.25;
+          transformed.x += sway * 0.09 * position.y;
+          transformed.z += cos(uTime * 1.3 + ph) * 0.05 * position.y;
+        #endif`
+      );
+    };
+
+    const grass = new THREE.InstancedMesh(geo, mat, count);
+    const rand = (() => { let s = 99; return () => ((s = (s * 16807) % 2147483647) / 2147483647); })();
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), p = new THREE.Vector3();
+    const color = new THREE.Color();
+    const up = new THREE.Vector3(0, 1, 0);
+    const blocked = (x, z) =>
+      (Math.abs(x + 4) < 4.4 && Math.abs(z) < 46) ||          // estrada
+      (x > 8.4 && x < 21.4 && z > -12.8 && z < -3.2);          // casa + escada
+    let n = 0;
+    while (n < count) {
+      // mais densa perto do vilarejo
+      const r = rand() < 0.65 ? Math.sqrt(rand()) * 60 : Math.sqrt(rand()) * WORLD_HALF;
+      const a = rand() * Math.PI * 2;
+      const x = Math.cos(a) * r, z = Math.sin(a) * r;
+      if (blocked(x, z) || Math.abs(x) > WORLD_HALF || Math.abs(z) > WORLD_HALF) continue;
+      const s = 0.7 + rand() * 0.7;
+      q.setFromAxisAngle(up, rand() * Math.PI * 2);
+      sc.set(s, s * (0.6 + rand() * 0.8), s);
+      m.compose(p.set(x, terrainHeight(x, z) - 0.02, z), q, sc);
+      grass.setMatrixAt(n, m);
+      color.setHSL(0.17 + rand() * 0.08, 0.28 + rand() * 0.18, 0.13 + rand() * 0.08);
+      grass.setColorAt(n, color);
+      n++;
+    }
+    grass.receiveShadow = true;
+    grass.frustumCulled = false;
+    this.scene.add(grass);
+    this.grass = grass;
   }
 
   // ---------- limites do mapa ----------

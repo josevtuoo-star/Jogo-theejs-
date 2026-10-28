@@ -7,6 +7,16 @@ export const isTouchDevice =
   (navigator.maxTouchPoints > 0 && !matchMedia('(pointer: fine)').matches);
 
 const JOY_RADIUS = 55;
+const PAD_DEAD = 0.18;
+const PAD_LOOK_SPEED = 3.0; // rad/s com o analógico no máximo
+
+// mapeamento "standard" da Gamepad API (Xbox / PlayStation / genéricos no Android)
+const PAD = { A: 0, B: 1, X: 2, Y: 3, LB: 4, RB: 5, LT: 6, RT: 7, START: 9, L3: 10, LEFT: 14, RIGHT: 15 };
+
+function deadzone(v) {
+  const a = Math.abs(v);
+  return a < PAD_DEAD ? 0 : Math.sign(v) * (a - PAD_DEAD) / (1 - PAD_DEAD);
+}
 
 export class Input {
   constructor(canvas) {
@@ -33,6 +43,10 @@ export class Input {
     this.touchHeld = new Set();      // botões segurados (pular)
     this.touchSprint = false;        // botão correr (alternar)
     this.touchCrouch = false;        // botão agachar (alternar)
+
+    // controle (gamepad)
+    this.pad = { connected: false, move: { x: 0, y: 0 }, sprintToggle: false, prev: [] };
+    this.onGamepadStart = null;
 
     this.onPauseRequest = null;
 
@@ -195,6 +209,11 @@ export class Input {
     if (k.has('KeyD') || k.has('ArrowRight')) x += 1;
     if (k.has('KeyA') || k.has('ArrowLeft')) x -= 1;
 
+    if (this.pad.connected) {
+      x += this.pad.move.x;
+      y += this.pad.move.y;
+    }
+
     if (this.joy.id !== null) {
       const dead = 0.12;
       const jx = Math.abs(this.joy.x) > dead ? this.joy.x : 0;
@@ -209,7 +228,16 @@ export class Input {
 
   get sprint() {
     const joyFull = this.joy.id !== null && Math.hypot(this.joy.x, this.joy.y) > 0.95 && this.joy.y < -0.5;
-    return this.keys.has('ShiftLeft') || this.keys.has('ShiftRight') || this.touchSprint || joyFull;
+    return this.keys.has('ShiftLeft') || this.keys.has('ShiftRight') || this.touchSprint || joyFull ||
+      this.pad.sprintToggle || this._padHeld(PAD.LT);
+  }
+
+  /** -1 inclina para a esquerda, 1 para a direita (Q/E, LB/RB). */
+  get lean() {
+    let l = 0;
+    if (this.keys.has('KeyQ') || this._padHeld(PAD.LB)) l -= 1;
+    if (this.keys.has('KeyE') || this._padHeld(PAD.RB)) l += 1;
+    return l;
   }
 
   get crouchHeld() {
@@ -230,6 +258,49 @@ export class Input {
   }
 
   endFrame() { this.pressed.clear(); }
+
+  // ---------------- controle (gamepad) ----------------
+  _padHeld(i) {
+    return !!this.pad.prev[i];
+  }
+
+  /** Lê o controle uma vez por quadro (a Gamepad API não usa eventos para botões). */
+  pollGamepad(dt) {
+    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    let gp = null;
+    for (const p of pads) if (p && p.connected) { gp = p; break; }
+    this.pad.connected = !!gp;
+    if (!gp) { this.pad.move.x = this.pad.move.y = 0; this.pad.prev.length = 0; return; }
+
+    const held = gp.buttons.map((b) => b.pressed || b.value > 0.5);
+    const down = (i) => held[i] && !this.pad.prev[i];
+
+    if (!this.enabled) {
+      if (down(PAD.A) || down(PAD.START)) this.onGamepadStart?.();
+      this.pad.prev = held;
+      return;
+    }
+
+    const lx = deadzone(gp.axes[0] || 0), ly = deadzone(gp.axes[1] || 0);
+    const rx = deadzone(gp.axes[2] || 0), ry = deadzone(gp.axes[3] || 0);
+    this.pad.move.x = lx;
+    this.pad.move.y = -ly;
+    // curva quadrática: precisão perto do centro, rapidez no limite
+    this.lookDX += Math.sign(rx) * rx * rx * PAD_LOOK_SPEED * this.sensitivity * dt;
+    this.lookDY += Math.sign(ry) * ry * ry * PAD_LOOK_SPEED * this.sensitivity * dt * (this.invertY ? -1 : 1);
+
+    if (down(PAD.L3)) this.pad.sprintToggle = !this.pad.sprintToggle;
+    if (Math.hypot(lx, ly) < 0.2) this.pad.sprintToggle = false;
+
+    if (down(PAD.A)) this.pressed.add('jump');
+    if (down(PAD.B)) this.pressed.add('crouchToggle');
+    if (down(PAD.X)) this.pressed.add('light');
+    if (down(PAD.Y)) this.pressed.add('view');
+    if (down(PAD.RT)) this.pressed.add('attack');
+    if (down(PAD.START)) this.onPauseRequest?.();
+
+    this.pad.prev = held;
+  }
 
   reset() {
     this.keys.clear();

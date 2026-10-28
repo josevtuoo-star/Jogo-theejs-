@@ -23,25 +23,40 @@
 
   <!-- HUD -->
   <div id="hud" class="hidden">
+    <div id="vignette-exhaust" class="vignette"></div>
+    <div id="vignette-hurt" class="vignette"></div>
+    <div id="damage-flash" class="vignette"></div>
+
+    <div id="compass"><div id="compass-strip"></div><div id="compass-needle"></div></div>
     <div id="crosshair"></div>
+    <div id="hint" class="hidden"></div>
+
     <div id="bars">
       <div class="bar"><span class="bar-label">VIDA</span><div class="bar-track"><div id="health-fill" class="bar-fill health"></div></div></div>
       <div class="bar"><span class="bar-label">FÔLEGO</span><div class="bar-track"><div id="stamina-fill" class="bar-fill stamina"></div></div></div>
     </div>
     <div id="state-label">PARADO</div>
     <div id="fps"></div>
-    <div id="damage-flash"></div>
+  </div>
+
+  <!-- Tela de morte -->
+  <div id="death" class="hidden">
+    <div class="death-card">
+      <h2>VOCÊ MORREU</h2>
+      <p id="death-reason">A queda foi alta demais.</p>
+      <button id="respawn-btn">RENASCER</button>
+    </div>
   </div>
 
   <!-- Controles touch (Android) -->
   <div id="touch-ui" class="hidden">
     <div id="joy-base"><div id="joy-knob"></div></div>
-    <button class="tbtn" id="btn-pause" data-action="pause">❚❚</button>
-    <button class="tbtn" id="btn-view" data-action="view">👁</button>
-    <button class="tbtn" id="btn-light" data-action="light">🔦</button>
+    <button class="tbtn" id="btn-pause" data-action="pause" aria-label="Pausar">❚❚</button>
+    <button class="tbtn" id="btn-view" data-action="view" aria-label="Trocar câmera">👁</button>
+    <button class="tbtn" id="btn-light" data-action="light" aria-label="Lanterna">🔦</button>
     <button class="tbtn" id="btn-sprint" data-action="sprint">CORRER</button>
     <button class="tbtn" id="btn-crouch" data-action="crouch">AGACHAR</button>
-    <button class="tbtn" id="btn-attack" data-action="attack">🔪</button>
+    <button class="tbtn" id="btn-attack" data-action="attack" aria-label="Atacar">🔪</button>
     <button class="tbtn big" id="btn-jump" data-action="jump">PULAR</button>
   </div>
 
@@ -54,19 +69,31 @@
       <button id="play-btn" class="hidden">JOGAR</button>
 
       <div class="settings">
-        <label>Sensibilidade <input type="range" id="sens" min="0.2" max="3" step="0.1" value="1" /> <span id="sens-val">1.0</span></label>
+        <label>Sensibilidade <input type="range" id="sens" min="0.2" max="3" step="0.1" value="1" /> <span id="sens-val" class="val">1.0</span></label>
+        <label>Campo de visão <input type="range" id="fov" min="60" max="100" step="1" value="75" /> <span id="fov-val" class="val">75</span></label>
+        <label>Volume <input type="range" id="volume" min="0" max="1" step="0.05" value="0.7" /> <span id="volume-val" class="val">70</span></label>
+        <label>Qualidade
+          <select id="quality">
+            <option value="auto">Automática</option>
+            <option value="low">Baixa</option>
+            <option value="medium">Média</option>
+            <option value="high">Alta</option>
+          </select>
+        </label>
         <label><input type="checkbox" id="invert-y" /> Inverter eixo Y</label>
+        <label><input type="checkbox" id="headbob" checked /> Balanço da câmera</label>
+        <label><input type="checkbox" id="show-fps" /> Mostrar FPS</label>
       </div>
 
       <div class="controls-help">
         <div class="col pc-only">
           <h3>PC</h3>
           <ul>
-            <li><b>W A S D</b> mover</li>
-            <li><b>Mouse</b> olhar</li>
-            <li><b>Shift</b> correr</li>
-            <li><b>Espaço</b> pular</li>
+            <li><b>W A S D</b> mover · <b>Mouse</b> olhar</li>
+            <li><b>Shift</b> correr · <b>Espaço</b> pular</li>
+            <li><b>Espaço</b> perto de obstáculo: escalar</li>
             <li><b>C</b> / <b>Ctrl</b> agachar</li>
+            <li><b>Q</b> / <b>E</b> inclinar (espiar)</li>
             <li><b>Clique</b> atacar</li>
             <li><b>F</b> lanterna · <b>V</b> câmera</li>
             <li><b>Esc</b> pausar</li>
@@ -78,7 +105,17 @@
             <li><b>Lado esquerdo</b> joystick</li>
             <li><b>Lado direito</b> arrastar para olhar</li>
             <li>Joystick no limite = correr</li>
-            <li>Botões: pular, agachar, correr, atacar</li>
+            <li><b>PULAR</b> perto de obstáculo: escalar</li>
+          </ul>
+        </div>
+        <div class="col">
+          <h3>Controle</h3>
+          <ul>
+            <li><b>Analógicos</b> mover / olhar</li>
+            <li><b>A</b> pular/escalar · <b>B</b> agachar</li>
+            <li><b>L3</b> ou <b>LT</b> correr · <b>RT</b> atacar</li>
+            <li><b>LB</b> / <b>RB</b> inclinar</li>
+            <li><b>X</b> lanterna · <b>Y</b> câmera</li>
           </ul>
         </div>
       </div>

@@ -5,30 +5,35 @@ Jogo de sobrevivência em primeira pessoa (estilo DayZ / Minecraft / The Walking
 ## Etapa 1 — Personagem jogável ✅
 
 - **Movimento** com aceleração/desaceleração suave, andar de costas mais lento
-- **Câmera em primeira pessoa** (mouse com pointer lock / arrastar no celular) e **terceira pessoa** (tecla `V`) com colisão contra paredes
-- **Corrida** com barra de **fôlego** (esgota e precisa recuperar)
-- **Pulo** com *coyote time* e *buffer* de pulo; **pulo agachado** alcança mais alto
-- **Agachar** (não deixa levantar se tiver teto em cima)
-- **Colisões** com chão, paredes, rampas, escadas, teto, carros, contêineres, árvores, cerca e limites do mapa (cápsula + Octree)
-- **Dano de queda** e renascimento ao morrer/cair do mapa
-- **Animações procedurais**: balanço da cabeça, inclinação lateral, tranco ao pousar, FOV maior correndo, braços em 1ª pessoa (respiração, passo, corrida, balanço ao olhar, golpe de faca) e corpo completo em 3ª pessoa (parado, andar, correr, agachar, pular, atacar)
-- **Sons procedurais** (passos, pulo, pouso, golpe, vento) — sem arquivos de áudio
+- **Câmera em primeira pessoa** (mouse com pointer lock, ou clicar e arrastar se o navegador bloquear; arrastar no celular) e **terceira pessoa** (`V`) com colisão contra paredes
+- **Corrida** com barra de **fôlego**: ofegante e com a visão escurecendo quando cansa
+- **Pulo** com *coyote time* e *buffer*; **pulo agachado** alcança mais alto
+- **Escalar e pular obstáculos** (estilo DayZ): perto de caixotes, barris, muros e janelas o pulo vira escalada; cercas baixas são puladas por cima
+- **Agachar** (não deixa levantar se tiver teto em cima) e **inclinar/espiar** com `Q`/`E` sem atravessar paredes
+- **Colisões** com chão, paredes, rampas, escadas, teto, carros, contêineres, árvores, cerca e limites do mapa (cápsula + Octree, resolvida triângulo a triângulo)
+- **Dano de queda**, tela de **morte** e renascimento
+- **Animações procedurais**: balanço da cabeça, inclinação lateral, tranco ao pousar, FOV maior correndo; braços em 1ª pessoa (respiração, passo, corrida, escalada, golpes alternados de faca) e corpo em 3ª pessoa (parado, andar, correr, agachar, pular, escalar, inclinar, atacar, morrer)
+- **Sons procedurais**: passos diferentes em grama, concreto, madeira e metal; pulo, pouso, escalada, respiração, dor e vento
+- **HUD**: vida, fôlego, bússola, dica de escalada, vinhetas de cansaço/ferimento
 - **Lanterna** (`F`)
-- Mapa: vilarejo abandonado com casa de tijolos (porta, janelas, terraço com escada), contêineres com rampa, carros, caixotes, barris, cerca e floresta com relevo
+- **Controle (gamepad)** no PC e no Android
+- **Configurações**: sensibilidade, campo de visão, volume, qualidade (automática ajusta a resolução pelo FPS), inverter Y, balanço da câmera, mostrar FPS
+- Mapa: vilarejo abandonado com casa de tijolos (porta, janelas, terraço com escada), contêineres com rampa, carros, caixotes, barris, cerca, grama balançando com o vento e floresta com relevo
 
 ## Controles
 
-| Ação | PC | Android |
-|---|---|---|
-| Mover | `W A S D` / setas | Joystick (lado esquerdo da tela) |
-| Olhar | Mouse | Arrastar no lado direito da tela |
-| Correr | `Shift` | Botão **CORRER** ou joystick empurrado até o limite |
-| Pular | `Espaço` | Botão **PULAR** |
-| Agachar | `C` (alterna) / `Ctrl` (segurar) | Botão **AGACHAR** |
-| Atacar | Clique esquerdo | Botão 🔪 |
-| Lanterna | `F` | Botão 🔦 |
-| 1ª / 3ª pessoa | `V` | Botão 👁 |
-| Pausar | `Esc` | Botão ❚❚ |
+| Ação | PC | Android | Controle |
+|---|---|---|---|
+| Mover | `W A S D` / setas | Joystick (lado esquerdo) | Analógico esquerdo |
+| Olhar | Mouse | Arrastar no lado direito | Analógico direito |
+| Correr | `Shift` | **CORRER** ou joystick no limite | `L3` (alterna) / `LT` |
+| Pular / escalar | `Espaço` | **PULAR** | `A` |
+| Agachar | `C` (alterna) / `Ctrl` (segurar) | **AGACHAR** | `B` |
+| Inclinar (espiar) | `Q` / `E` | — | `LB` / `RB` |
+| Atacar | Clique esquerdo | 🔪 | `RT` |
+| Lanterna | `F` | 🔦 | `X` |
+| 1ª / 3ª pessoa | `V` | 👁 | `Y` |
+| Pausar | `Esc` | ❚❚ | `Start` |
 
 No Android o jogo entra em tela cheia e tenta travar na horizontal.
 

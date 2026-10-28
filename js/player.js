@@ -32,6 +32,14 @@ const EXHAUST_RECOVER = 30;  // precisa recuperar até aqui depois de esgotar
 
 const FALL_DAMAGE_SPEED = 13; // m/s de impacto a partir do qual causa dano
 
+// escalar / pular obstáculos (estilo DayZ)
+const LEDGE_MIN = 0.45;       // abaixo disso é só pular
+const LEDGE_MAX = 2.3;        // altura máxima que dá para escalar
+const VAULT_OVER_MAX = 1.45;  // obstáculos finos até essa altura são pulados por cima
+const CLIMB_COST = 10;
+
+const LEAN_DISTANCE = 0.45;
+
 const _v = new THREE.Vector3();
 const _forward = new THREE.Vector3();
 const _right = new THREE.Vector3();
@@ -40,6 +48,12 @@ const _push = new THREE.Vector3();
 const _saveStart = new THREE.Vector3();
 const _saveEnd = new THREE.Vector3();
 const _tris = [];
+const _ray = new THREE.Ray();
+const _lf = new THREE.Vector3();
+const _n = new THREE.Vector3();
+const _p = new THREE.Vector3();
+
+function smooth(t) { return t * t * (3 - 2 * t); }
 
 function damp(a, b, lambda, dt) {
   return a + (b - a) * (1 - Math.exp(-lambda * dt));
@@ -71,6 +85,13 @@ export class Player {
     this.exhausted = false;
 
     this.health = 100;
+    this.dead = false;
+
+    this.climb = null;        // animação de escalada em andamento
+    this.ledgeAhead = null;   // obstáculo escalável à frente (para a dica na tela)
+    this._ledgeTimer = 0;
+
+    this.lean = 0;            // -1 esquerda … 1 direita (Q/E)
 
     this.horizontalSpeed = 0;
     this.stepPhase = 0;
@@ -91,7 +112,18 @@ export class Player {
     this.yaw = 0;
     this.pitch = 0;
     this.health = 100;
+    this.dead = false;
+    this.climb = null;
+    this.lean = 0;
     this.stamina = STAMINA_MAX;
+  }
+
+  get isClimbing() { return this.climb !== null; }
+
+  /** 0..1 durante a escalada (usado pelas animações). */
+  get climbProgress() {
+    if (!this.climb) return 0;
+    return Math.min(1, this.climb.elapsed / this.climb.total);
   }
 
   get feetPosition() {
@@ -120,6 +152,7 @@ export class Player {
 
   update(dt, input) {
     this.events.length = 0;
+    if (this.dead) { input.consumeLook(); this.horizontalSpeed = 0; return; }
 
     // ---------- olhar ----------
     const look = input.consumeLook();
@@ -132,6 +165,8 @@ export class Player {
     const move = input.getMove();
     this.moveInput = move;
     const moving = Math.hypot(move.x, move.y) > 0.05;
+
+    if (this.climb) { this._updateClimb(dt); this._updateLean(dt, 0); return; }
 
     // ---------- agachar ----------
     if (input.wasPressed('crouchToggle')) this.crouchToggle = !this.crouchToggle;
@@ -197,6 +232,15 @@ export class Player {
     if (input.wasPressed('jump')) this.jumpBuffer = JUMP_BUFFER;
     else this.jumpBuffer -= dt;
 
+    // escalar tem prioridade sobre o pulo quando há um obstáculo na frente
+    if (this.jumpBuffer > 0 && this.timeSinceGround < 0.6 && this.stamina >= CLIMB_COST * 0.5) {
+      const ledge = this.findLedge(this.onFloor ? LEDGE_MIN : 0.1);
+      if (ledge) {
+        this._startClimb(ledge, input);
+        return;
+      }
+    }
+
     if (this.jumpBuffer > 0 && this.timeSinceGround < COYOTE_TIME && this.stamina >= JUMP_COST * 0.5) {
       if (this.crouched) {
         // pular estando agachado: levanta primeiro, se houver espaço
@@ -256,10 +300,187 @@ export class Player {
       }
     }
 
-    // caiu do mapa ou morreu → renasce
-    if (this.collider.start.y < -40 || this.health <= 0) {
+    // inclinar (espiar) só parado/andando no chão
+    const leanInput = (this.onFloor && !this.sprinting) ? input.lean : 0;
+    this._updateLean(dt, leanInput);
+
+    // dica de escalada (não precisa ser testada todo quadro)
+    this._ledgeTimer -= dt;
+    if (this._ledgeTimer <= 0) {
+      this._ledgeTimer = 0.12;
+      this.ledgeAhead = this.onFloor && move.y > -0.1 ? this.findLedge(LEDGE_MIN) : null;
+    }
+
+    if (this.health <= 0) {
+      this.dead = true;
+      this.lean = 0;
+      this.events.push({ type: 'death' });
+    } else if (this.collider.start.y < -40) {
+      // caiu para fora do mapa
       this.events.push({ type: 'respawn' });
       this.respawn();
+    }
+  }
+
+  // ---------- inclinar (Q/E) ----------
+  _updateLean(dt, target) {
+    if (target !== 0) {
+      // não deixa a cabeça atravessar paredes
+      this.getEyePosition(_ray.origin);
+      this.forwardVector(_lf);
+      _ray.direction.set(-_lf.z * Math.sign(target), 0, _lf.x * Math.sign(target));
+      const hit = this.octree.rayIntersect(_ray);
+      if (hit) {
+        const room = Math.max(0, Math.min(1, (hit.distance - 0.25) / LEAN_DISTANCE));
+        target *= room;
+      }
+    }
+    this.lean = damp(this.lean, target, 10, dt);
+    if (Math.abs(this.lean) < 0.001) this.lean = 0;
+  }
+
+  /** Deslocamento lateral dos olhos causado pela inclinação (em metros). */
+  get leanOffset() { return this.lean * LEAN_DISTANCE; }
+
+  // ---------- escalar / pular obstáculos ----------
+  _rayHit(ox, oy, oz, dx, dy, dz) {
+    _ray.origin.set(ox, oy, oz);
+    _ray.direction.set(dx, dy, dz);
+    return this.octree.rayIntersect(_ray) || null;
+  }
+
+  /** Cápsula de pé (ou agachada) cabe com os pés em (x, y, z)? */
+  _fits(x, y, z, height) {
+    const p = this._probe;
+    p.radius = RADIUS * 0.95;
+    p.start.set(x, y + RADIUS + 0.04, z);
+    p.end.set(x, y + height - RADIUS, z);
+    return !this.octree.capsuleIntersect(p);
+  }
+
+  /**
+   * Procura um obstáculo escalável logo à frente.
+   * Retorna { kind: 'climb' | 'vault', height, path: [pontos dos pés] } ou null.
+   */
+  findLedge(minHeight) {
+    const feet = this.collider.start.y - RADIUS;
+    const x = this.collider.start.x, z = this.collider.start.z;
+    const f = this.forwardVector(_lf);
+
+    // 1) tem parede na frente? (joelho, cintura, peito)
+    let wall = Infinity;
+    for (const h of [0.35, 0.9, 1.5]) {
+      const hit = this._rayHit(x, feet + h, z, f.x, 0, f.z);
+      if (hit && hit.distance < wall) wall = hit.distance;
+    }
+    if (wall > RADIUS + 0.55) return null;
+
+    // 2) topo do obstáculo: raio de cima para baixo, logo depois da face da parede
+    // (bem perto da face, para acertar também cercas e muretas finas)
+    const reach = wall + 0.08;
+    const top = this._rayHit(x + f.x * reach, feet + LEDGE_MAX + 0.3, z + f.z * reach, 0, -1, 0);
+    if (!top) return null;
+    const topY = top.position.y;
+    const height = topY - feet;
+    if (height < minHeight || height > LEDGE_MAX) return null;
+    top.triangle.getNormal(_n);
+    if (_n.y < 0.7) return null;
+
+    // espaço livre acima da cabeça durante o movimento
+    const headY = this.collider.end.y + RADIUS;
+    const ceil = this._rayHit(x, headY, z, 0, 1, 0);
+    if (ceil && ceil.distance < Math.max(0, topY + 0.2 + CROUCH_HEIGHT - headY) + 0.05) return null;
+
+    const start = new THREE.Vector3(x, feet, z);
+
+    // 3) obstáculo fino (cerca, mureta, caixote)? pula por cima
+    const far = reach + 0.75;
+    const beyond = this._rayHit(x + f.x * far, topY + 0.3, z + f.z * far, 0, -1, 0);
+    const thin = !beyond || beyond.position.y < topY - 0.4;
+    // (não salta por cima se do outro lado houver uma queda alta, ex.: mureta do terraço)
+    const safeDrop = !beyond || beyond.position.y > feet - 0.6;
+    if (thin && height <= VAULT_OVER_MAX && safeDrop) {
+      const lx = x + f.x * (far + 0.15), lz = z + f.z * (far + 0.15);
+      const groundY = beyond ? beyond.position.y : topY - 1;
+      if (this._fits(lx, Math.max(groundY, topY - 1.2), lz, STAND_HEIGHT) &&
+          this._fits(x + f.x * reach, topY + 0.15, z + f.z * reach, CROUCH_HEIGHT)) {
+        return {
+          kind: 'vault', height, crouch: false,
+          path: [
+            start,
+            new THREE.Vector3(x + f.x * Math.max(0, wall - RADIUS - 0.05), topY + 0.15, z + f.z * Math.max(0, wall - RADIUS - 0.05)),
+            new THREE.Vector3(x + f.x * reach, topY + 0.18, z + f.z * reach),
+            new THREE.Vector3(lx, Math.max(groundY, topY - 1.2) + 0.02, lz),
+          ],
+          durations: [0.16 + height * 0.06, 0.16, 0.18],
+        };
+      }
+    }
+
+    // 4) subir em cima (de pé, ou agachado se o teto for baixo)
+    // em cima de algo largo, o corpo inteiro vai para cima; em algo fino (muro), fica no meio dele
+    let ahead = wall + RADIUS + 0.1;
+    const ground = this._rayHit(x + f.x * ahead, topY + 0.3, z + f.z * ahead, 0, -1, 0);
+    if (!ground || Math.abs(ground.position.y - topY) > 0.15) ahead = reach + 0.05;
+    const dx = x + f.x * ahead, dz = z + f.z * ahead;
+    let crouch = false;
+    if (!this._fits(dx, topY, dz, STAND_HEIGHT)) {
+      if (!this._fits(dx, topY, dz, CROUCH_HEIGHT)) return null;
+      crouch = true;
+    }
+    return {
+      kind: 'climb', height, crouch,
+      path: [
+        start,
+        new THREE.Vector3(x, topY + 0.08, z),
+        new THREE.Vector3(dx, topY + 0.02, dz),
+      ],
+      durations: [0.22 + height * 0.2, 0.2],
+    };
+  }
+
+  _startClimb(ledge, input) {
+    this.climb = { ...ledge, seg: 0, t: 0, elapsed: 0, total: ledge.durations.reduce((a, b) => a + b, 0) };
+    if (ledge.crouch) { this.crouched = true; this.crouchToggle = true; }
+    this.jumpBuffer = 0;
+    this.stamina = Math.max(0, this.stamina - CLIMB_COST * (ledge.kind === 'vault' ? 0.6 : 1));
+    this.velocity.set(0, 0, 0);
+    this.sprinting = false;
+    this.events.push({ type: ledge.kind, height: ledge.height });
+    if (!ledge.crouch) input.clearTouchCrouch?.();
+  }
+
+  _updateClimb(dt) {
+    const c = this.climb;
+    c.t += dt;
+    c.elapsed += dt;
+    while (c.seg < c.durations.length && c.t >= c.durations[c.seg]) {
+      c.t -= c.durations[c.seg];
+      c.seg++;
+    }
+    let feet;
+    if (c.seg >= c.durations.length) {
+      feet = c.path[c.path.length - 1];
+    } else {
+      const k = smooth(c.t / c.durations[c.seg]);
+      feet = _p.copy(c.path[c.seg]).lerp(c.path[c.seg + 1], k);
+    }
+    const h = this.height;
+    this.collider.start.set(feet.x, feet.y + RADIUS, feet.z);
+    this.collider.end.set(feet.x, feet.y + h - RADIUS, feet.z);
+    this.height = damp(this.height, this.crouched ? CROUCH_HEIGHT : STAND_HEIGHT, 14, dt);
+    this.horizontalSpeed = 0;
+    this.onFloor = false;
+
+    if (c.seg >= c.durations.length) {
+      // terminou: mantém um pouco de impulso para frente
+      this.forwardVector(_lf);
+      const keep = c.kind === 'vault' ? 3.5 : 1;
+      this.velocity.set(_lf.x * keep, 0, _lf.z * keep);
+      this.climb = null;
+      this.onFloor = true;
+      this._collide();
+      this.events.push({ type: 'land', speed: c.kind === 'vault' ? 4 : 2 });
     }
   }
 
@@ -304,6 +525,8 @@ export class Player {
   }
 
   get state() {
+    if (this.dead) return 'MORTO';
+    if (this.climb) return this.climb.kind === 'vault' ? 'PULANDO OBSTÁCULO' : 'ESCALANDO';
     if (!this.onFloor) return this.velocity.y > 0 ? 'PULANDO' : 'CAINDO';
     if (this.crouched) return this.horizontalSpeed > 0.4 ? 'AGACHADO • ANDANDO' : 'AGACHADO';
     if (this.horizontalSpeed < 0.4) return 'PARADO';
