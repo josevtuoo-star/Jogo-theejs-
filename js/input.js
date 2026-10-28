@@ -1,0 +1,229 @@
+// Entrada unificada: teclado + mouse (PC) e joystick virtual + toque (Android).
+// O jogador lê apenas estados abstratos (mover, olhar, pular, correr...).
+
+// Notebooks com tela touch continuam no modo PC (ponteiro principal "fino").
+export const isTouchDevice =
+  matchMedia('(pointer: coarse)').matches ||
+  (navigator.maxTouchPoints > 0 && !matchMedia('(pointer: fine)').matches);
+
+const JOY_RADIUS = 55;
+
+export class Input {
+  constructor(canvas) {
+    this.canvas = canvas;
+    this.enabled = false;
+
+    this.keys = new Set();
+    this.pressed = new Set();   // ações acionadas neste quadro (borda de subida)
+
+    this.lookDX = 0;
+    this.lookDY = 0;
+    this.mouseSensitivity = 0.0022;
+    this.touchSensitivity = 0.0055;
+    this.sensitivity = 1;
+    this.invertY = false;
+
+    this.mouseDown = false;
+
+    // estado touch
+    this.joy = { id: null, ox: 0, oy: 0, x: 0, y: 0 };
+    this.look = { id: null, x: 0, y: 0 };
+    this.touchHeld = new Set();      // botões segurados (pular)
+    this.touchSprint = false;        // botão correr (alternar)
+    this.touchCrouch = false;        // botão agachar (alternar)
+
+    this.onPauseRequest = null;
+
+    this._bindKeyboardMouse();
+    if (isTouchDevice) this._bindTouch();
+  }
+
+  // ---------------- PC ----------------
+  _bindKeyboardMouse() {
+    const actionForKey = {
+      Space: 'jump',
+      KeyC: 'crouchToggle',
+      KeyV: 'view',
+      KeyF: 'light',
+    };
+
+    window.addEventListener('keydown', (e) => {
+      if (!this.enabled) return;
+      if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
+      if (!e.repeat && actionForKey[e.code]) this.pressed.add(actionForKey[e.code]);
+      this.keys.add(e.code);
+    });
+    window.addEventListener('keyup', (e) => this.keys.delete(e.code));
+    window.addEventListener('blur', () => { this.keys.clear(); this.mouseDown = false; });
+
+    document.addEventListener('mousemove', (e) => {
+      if (!this.enabled || document.pointerLockElement !== this.canvas) return;
+      // ignora picos absurdos que alguns navegadores geram ao capturar o ponteiro
+      if (Math.abs(e.movementX) > 300 || Math.abs(e.movementY) > 300) return;
+      this.lookDX += e.movementX * this.mouseSensitivity * this.sensitivity;
+      this.lookDY += e.movementY * this.mouseSensitivity * this.sensitivity * (this.invertY ? -1 : 1);
+    });
+
+    this.canvas.addEventListener('mousedown', (e) => {
+      if (!this.enabled || isTouchDevice) return;
+      if (document.pointerLockElement !== this.canvas) { this.canvas.requestPointerLock(); return; }
+      if (e.button === 0) { this.mouseDown = true; this.pressed.add('attack'); }
+    });
+    window.addEventListener('mouseup', (e) => { if (e.button === 0) this.mouseDown = false; });
+  }
+
+  // ---------------- Android / touch ----------------
+  _bindTouch() {
+    document.body.classList.add('touch');
+    this.joyBase = document.getElementById('joy-base');
+    this.joyKnob = document.getElementById('joy-knob');
+
+    // botões
+    document.querySelectorAll('#touch-ui .tbtn').forEach((btn) => {
+      const action = btn.dataset.action;
+      btn.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!this.enabled && action !== 'pause') return;
+        btn.setPointerCapture?.(e.pointerId);
+        switch (action) {
+          case 'sprint':
+            this.touchSprint = !this.touchSprint;
+            if (this.touchSprint) this.touchCrouch = false;
+            break;
+          case 'crouch':
+            this.touchCrouch = !this.touchCrouch;
+            if (this.touchCrouch) this.touchSprint = false;
+            break;
+          case 'pause':
+            this.onPauseRequest?.();
+            break;
+          default:
+            this.pressed.add(action);
+            this.touchHeld.add(action);
+        }
+        this._refreshButtons();
+      });
+      const release = () => { this.touchHeld.delete(action); };
+      btn.addEventListener('pointerup', release);
+      btn.addEventListener('pointercancel', release);
+    });
+
+    const ui = document.getElementById('touch-ui');
+    const isOnButton = (e) => e.target instanceof Element && e.target.closest('.tbtn');
+
+    window.addEventListener('pointerdown', (e) => {
+      if (!this.enabled || e.pointerType === 'mouse' || isOnButton(e)) return;
+      if (!ui || ui.classList.contains('hidden')) return;
+      if (e.clientX < window.innerWidth * 0.45) {
+        if (this.joy.id === null) {
+          this.joy.id = e.pointerId;
+          this.joy.ox = e.clientX; this.joy.oy = e.clientY;
+          this.joy.x = 0; this.joy.y = 0;
+          this.joyBase.style.left = e.clientX + 'px';
+          this.joyBase.style.top = e.clientY + 'px';
+          this.joyBase.classList.add('active');
+          this._updateKnob();
+        }
+      } else if (this.look.id === null) {
+        this.look.id = e.pointerId;
+        this.look.x = e.clientX; this.look.y = e.clientY;
+      }
+    }, { passive: false });
+
+    window.addEventListener('pointermove', (e) => {
+      if (e.pointerId === this.joy.id) {
+        let dx = e.clientX - this.joy.ox;
+        let dy = e.clientY - this.joy.oy;
+        const len = Math.hypot(dx, dy);
+        if (len > JOY_RADIUS) { dx *= JOY_RADIUS / len; dy *= JOY_RADIUS / len; }
+        this.joy.x = dx / JOY_RADIUS;
+        this.joy.y = dy / JOY_RADIUS;
+        this._updateKnob();
+      } else if (e.pointerId === this.look.id) {
+        const dx = e.clientX - this.look.x;
+        const dy = e.clientY - this.look.y;
+        this.look.x = e.clientX; this.look.y = e.clientY;
+        this.lookDX += dx * this.touchSensitivity * this.sensitivity;
+        this.lookDY += dy * this.touchSensitivity * this.sensitivity * (this.invertY ? -1 : 1);
+      }
+    }, { passive: false });
+
+    const end = (e) => {
+      if (e.pointerId === this.joy.id) {
+        this.joy.id = null; this.joy.x = 0; this.joy.y = 0;
+        this.joyBase.classList.remove('active');
+        this.joyBase.style.left = '';
+        this.joyBase.style.top = '';
+        this._updateKnob();
+      } else if (e.pointerId === this.look.id) {
+        this.look.id = null;
+      }
+    };
+    window.addEventListener('pointerup', end);
+    window.addEventListener('pointercancel', end);
+  }
+
+  _updateKnob() {
+    this.joyKnob.style.transform = `translate(${this.joy.x * JOY_RADIUS}px, ${this.joy.y * JOY_RADIUS}px)`;
+  }
+
+  _refreshButtons() {
+    document.getElementById('btn-sprint')?.classList.toggle('on', this.touchSprint);
+    document.getElementById('btn-crouch')?.classList.toggle('on', this.touchCrouch);
+  }
+
+  // ---------------- API usada pelo jogo ----------------
+
+  /** Vetor de movimento: x = lateral (+direita), y = frente (+frente). */
+  getMove() {
+    let x = 0, y = 0;
+    const k = this.keys;
+    if (k.has('KeyW') || k.has('ArrowUp')) y += 1;
+    if (k.has('KeyS') || k.has('ArrowDown')) y -= 1;
+    if (k.has('KeyD') || k.has('ArrowRight')) x += 1;
+    if (k.has('KeyA') || k.has('ArrowLeft')) x -= 1;
+
+    if (this.joy.id !== null) {
+      const dead = 0.12;
+      const jx = Math.abs(this.joy.x) > dead ? this.joy.x : 0;
+      const jy = Math.abs(this.joy.y) > dead ? this.joy.y : 0;
+      x += jx;
+      y -= jy;
+    }
+    const len = Math.hypot(x, y);
+    if (len > 1) { x /= len; y /= len; }
+    return { x, y };
+  }
+
+  get sprint() {
+    const joyFull = this.joy.id !== null && Math.hypot(this.joy.x, this.joy.y) > 0.95 && this.joy.y < -0.5;
+    return this.keys.has('ShiftLeft') || this.keys.has('ShiftRight') || this.touchSprint || joyFull;
+  }
+
+  get crouchHeld() {
+    return this.keys.has('ControlLeft') || this.keys.has('ControlRight') || this.touchCrouch;
+  }
+
+  /** Chamado pelo jogador quando ele mesmo cancela o agachar (ex.: ao pular/correr). */
+  clearTouchCrouch() {
+    if (this.touchCrouch) { this.touchCrouch = false; this._refreshButtons(); }
+  }
+
+  wasPressed(action) { return this.pressed.has(action); }
+
+  consumeLook() {
+    const d = { x: this.lookDX, y: this.lookDY };
+    this.lookDX = 0; this.lookDY = 0;
+    return d;
+  }
+
+  endFrame() { this.pressed.clear(); }
+
+  reset() {
+    this.keys.clear();
+    this.pressed.clear();
+    this.lookDX = this.lookDY = 0;
+    this.mouseDown = false;
+  }
+}
