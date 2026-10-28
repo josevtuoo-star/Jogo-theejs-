@@ -1,11 +1,15 @@
 // Sons procedurais com Web Audio (sem arquivos): passos por tipo de piso, pulo, pouso,
-// escalada, golpe, respiração ofegante e vento.
+// escalada, escada de mão, deslize, rolamento, golpe, dor, vento (abafado em ambientes
+// fechados), pássaros e corvos ao longe e o crepitar da fogueira.
 
 export class GameAudio {
   constructor() {
     this.ctx = null;
     this.master = null;
     this.volume = 0.7;
+    this.birdTimer = 3;
+    this.crackleTimer = 0;
+    this.indoor = 0;
   }
 
   /** Precisa ser chamado a partir de um gesto do usuário (clique/toque). */
@@ -52,7 +56,7 @@ export class GameAudio {
     src.stop(t + duration + 0.05);
   }
 
-  _tone(freq, duration, gain, type = 'sine', delay = 0, slide = 1) {
+  _tone(freq, duration, gain, type = 'sine', delay = 0, slide = 1, pan = 0, filterFreq = 0) {
     if (!this.ctx) return;
     const t = this.ctx.currentTime + delay;
     const o = this.ctx.createOscillator();
@@ -60,9 +64,23 @@ export class GameAudio {
     o.frequency.setValueAtTime(freq, t);
     if (slide !== 1) o.frequency.exponentialRampToValueAtTime(freq * slide, t + duration);
     const g = this.ctx.createGain();
-    g.gain.setValueAtTime(gain, t);
+    g.gain.setValueAtTime(0.0008, t);
+    g.gain.exponentialRampToValueAtTime(gain, t + Math.min(0.01, duration * 0.2));
     g.gain.exponentialRampToValueAtTime(0.0008, t + duration);
-    o.connect(g).connect(this.master);
+    let node = o.connect(g);
+    if (filterFreq) {
+      const f = this.ctx.createBiquadFilter();
+      f.type = 'bandpass';
+      f.frequency.value = filterFreq;
+      f.Q.value = 1.5;
+      node = node.connect(f);
+    }
+    if (pan && this.ctx.createStereoPanner) {
+      const p = this.ctx.createStereoPanner();
+      p.pan.value = pan;
+      node = node.connect(p);
+    }
+    node.connect(this.master);
     o.start(t);
     o.stop(t + duration + 0.02);
   }
@@ -106,6 +124,66 @@ export class GameAudio {
     this.breath(0.6);
   }
 
+  ladderStep() {
+    this._tone(620 + Math.random() * 80, 0.14, 0.05, 'triangle');
+    this._burst({ duration: 0.05, freq: 2200, q: 2, gain: 0.12, type: 'bandpass' });
+  }
+
+  slide() {
+    this._burst({ duration: 0.7, freq: 900, q: 0.6, gain: 0.3, attack: 0.04, rate: 0.7 });
+    this._burst({ duration: 0.5, freq: 3000, q: 1, gain: 0.06, type: 'bandpass', attack: 0.05 });
+  }
+
+  roll() {
+    this._burst({ duration: 0.4, freq: 600, q: 0.7, gain: 0.3, attack: 0.03 });
+    this._burst({ duration: 0.12, freq: 180, gain: 0.35, delay: 0.25 });
+  }
+
+  /** Pássaro cantando ao longe (posição estéreo aleatória). */
+  _bird() {
+    const pan = Math.random() * 1.6 - 0.8;
+    const base = 2300 + Math.random() * 1500;
+    const notes = 2 + Math.floor(Math.random() * 4);
+    for (let i = 0; i < notes; i++) {
+      this._tone(base * (0.9 + Math.random() * 0.25), 0.09, 0.02, 'sine', i * 0.13, 1.25, pan);
+    }
+  }
+
+  /** Corvo grasnando ao longe. */
+  _crow() {
+    const pan = Math.random() * 1.6 - 0.8;
+    const n = 1 + Math.floor(Math.random() * 3);
+    for (let i = 0; i < n; i++) {
+      this._tone(430 + Math.random() * 40, 0.32, 0.035, 'sawtooth', i * 0.45, 0.82, pan, 1100);
+    }
+  }
+
+  /**
+   * Sons de ambiente, chamado todo quadro.
+   * indoor: 0..1 (abafa o vento); fire: 0..1 (proximidade da fogueira).
+   */
+  update(dt, { indoor = 0, fire = 0 } = {}) {
+    if (!this.ctx || this.ctx.state !== 'running') return;
+    this.indoor += (indoor - this.indoor) * Math.min(1, dt * 3);
+    if (this.windGain) {
+      this.windGain.gain.value = 0.05 * (1 - this.indoor * 0.75);
+      this.windFilter.Q.value = 0.6 + this.indoor * 1.5;
+    }
+    this.birdTimer -= dt;
+    if (this.birdTimer <= 0) {
+      if (Math.random() < 0.25) this._crow(); else this._bird();
+      this.birdTimer = 3 + Math.random() * 8;
+    }
+    if (fire > 0.01) {
+      this.crackleTimer -= dt;
+      if (this.crackleTimer <= 0) {
+        this.crackleTimer = 0.03 + Math.random() * 0.18;
+        this._burst({ duration: 0.03 + Math.random() * 0.04, freq: 1500 + Math.random() * 3000, q: 1.5, gain: 0.12 * fire, type: 'bandpass' });
+        if (Math.random() < 0.2) this._burst({ duration: 0.3, freq: 300, gain: 0.08 * fire, attack: 0.1 });
+      }
+    }
+  }
+
   swing() {
     this._burst({ duration: 0.18, freq: 1800, q: 2.5, gain: 0.12, type: 'bandpass', attack: 0.06 });
   }
@@ -138,6 +216,8 @@ export class GameAudio {
     f.Q.value = 0.6;
     const g = this.ctx.createGain();
     g.gain.value = 0.05;
+    this.windGain = g;
+    this.windFilter = f;
     // variação lenta da intensidade e do tom do vento
     const lfo = this.ctx.createOscillator();
     lfo.frequency.value = 0.07;
@@ -147,11 +227,13 @@ export class GameAudio {
     const lfo2 = this.ctx.createOscillator();
     lfo2.frequency.value = 0.11;
     const lfo2Gain = this.ctx.createGain();
-    lfo2Gain.gain.value = 0.025;
-    lfo2.connect(lfo2Gain).connect(g.gain);
+    lfo2Gain.gain.value = 0.45;
+    const swell = this.ctx.createGain(); // rajadas de vento
+    lfo2.connect(lfo2Gain).connect(swell.gain);
+    swell.gain.value = 1;
     lfo.start();
     lfo2.start();
-    src.connect(f).connect(g).connect(this.master);
+    src.connect(f).connect(g).connect(swell).connect(this.master);
     src.start();
   }
 }

@@ -35,6 +35,8 @@ export class CameraRig {
     this.fov = this.baseFov;
     this.deathBlend = 0;
     this.climbPitch = 0;
+    this.slideBlend = 0;
+    this.ladderBlend = 0;
   }
 
   toggleView() {
@@ -46,6 +48,7 @@ export class CameraRig {
       if (e.type === 'land') this.landVel -= Math.min(e.speed, 22) * 0.045;
       if (e.type === 'damage') this.shake = 0.35;
       if (e.type === 'climb' || e.type === 'vault') this.landVel -= 0.6;
+      if (e.type === 'slide') this.shake = Math.max(this.shake, 0.12);
     }
     // mola amortecida para o pouso
     this.landVel += (-this.landOffset * 160 - this.landVel * 16) * dt;
@@ -71,9 +74,23 @@ export class CameraRig {
     const climbing = player.isClimbing ? Math.sin(player.climbProgress * Math.PI) : 0;
     this.climbPitch = damp(this.climbPitch, climbing * -0.25, 10, dt);
 
+    // deslize: câmera baixa e inclinada; escada: balança no ritmo das mãos
+    this.slideBlend = damp(this.slideBlend, player.sliding ? 1 : 0, 10, dt);
+    this.ladderBlend = damp(this.ladderBlend, player.onLadder ? 1 : 0, 8, dt);
+    const ladderSway = Math.sin(player.ladderPhase) * 0.03 * this.ladderBlend;
+    const extraRoll = (this.slideBlend * 0.09 + ladderSway * 0.5) * (this.bobEnabled ? 1 : 0.4);
+
+    // rolamento: a visão gira para frente e volta
+    let rollPitch = 0, rollDrop = 0;
+    if (player.rolling) {
+      const k = Math.min(1, player.rollTime / 0.65);
+      rollPitch = -Math.sin(k * Math.PI) * 1.4;
+      rollDrop = Math.sin(k * Math.PI) * 0.55;
+    }
+
     // FOV
-    const sprintActive = player.sprinting && player.horizontalSpeed > 1;
-    this.fov = damp(this.fov, this.baseFov + (sprintActive ? SPRINT_FOV_BONUS : 0), 6, dt);
+    const sprintActive = (player.sprinting && player.horizontalSpeed > 1) || player.sliding;
+    this.fov = damp(this.fov, this.baseFov + (sprintActive ? SPRINT_FOV_BONUS : 0) + this.slideBlend * 4, 6, dt);
     if (Math.abs(this.camera.fov - this.fov) > 0.01) {
       this.camera.fov = this.fov;
       this.camera.updateProjectionMatrix();
@@ -82,20 +99,20 @@ export class CameraRig {
     const shakeX = this.shake > 0 ? (Math.random() - 0.5) * this.shake * 0.08 : 0;
     const shakeY = this.shake > 0 ? (Math.random() - 0.5) * this.shake * 0.08 : 0;
 
-    const pitch = player.pitch + shakeY + this.climbPitch;
+    const pitch = player.pitch + shakeY + this.climbPitch + rollPitch;
     const yaw = player.yaw + shakeX;
 
     if (!this.thirdPerson) {
       const sin = Math.sin(yaw), cos = Math.cos(yaw);
-      const side = bobX + player.leanOffset;
+      const side = bobX + player.leanOffset + ladderSway;
       const d = this.deathBlend;
       this.camera.position.set(
         _eye.x + cos * side,
-        _eye.y + bobY + this.landOffset - Math.abs(player.lean) * 0.08 - d * (_eye.y - player.feetPosition.y - 0.25),
+        _eye.y + bobY + this.landOffset - Math.abs(player.lean) * 0.08 - rollDrop - d * (_eye.y - player.feetPosition.y - 0.25),
         _eye.z - sin * side
       );
       // morto: cabeça cai de lado
-      _euler.set(pitch * (1 - d) + d * 0.2, yaw, this.roll + bobX * 0.4 + d * 1.3);
+      _euler.set(pitch * (1 - d) + d * 0.2, yaw, this.roll + extraRoll + bobX * 0.4 + d * 1.3);
       this.camera.quaternion.setFromEuler(_euler);
     } else {
       // câmera atrás do ombro, aproximando se bater em parede

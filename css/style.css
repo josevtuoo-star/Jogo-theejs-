@@ -15,10 +15,24 @@ html, body {
 /* ---------- HUD ---------- */
 #hud { position: fixed; inset: 0; pointer-events: none; z-index: 5; }
 
-#crosshair {
-  position: absolute; left: 50%; top: 50%; width: 6px; height: 6px;
-  margin: -3px 0 0 -3px; border-radius: 50%;
-  background: rgba(255,255,255,0.85); box-shadow: 0 0 3px #000;
+#crosshair { position: absolute; left: 50%; top: 50%; width: 0; height: 0; --gap: 4px; opacity: 0.85; transition: opacity 0.2s; }
+#crosshair::after {
+  content: ""; position: absolute; left: -1.5px; top: -1.5px; width: 3px; height: 3px; border-radius: 50%;
+  background: #fff; box-shadow: 0 0 2px #000;
+}
+#crosshair i { position: absolute; background: #fff; box-shadow: 0 0 2px rgba(0,0,0,0.9); }
+#crosshair i:nth-child(1), #crosshair i:nth-child(2) { width: 2px; height: 6px; left: -1px; }
+#crosshair i:nth-child(3), #crosshair i:nth-child(4) { width: 6px; height: 2px; top: -1px; }
+#crosshair i:nth-child(1) { bottom: var(--gap); }
+#crosshair i:nth-child(2) { top: var(--gap); }
+#crosshair i:nth-child(3) { right: var(--gap); }
+#crosshair i:nth-child(4) { left: var(--gap); }
+#crosshair.hide { opacity: 0; }
+
+/* leve vinheta e granulado de filme por cima do jogo */
+#hud::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(ellipse at center, transparent 55%, rgba(10,8,5,0.45) 100%);
 }
 
 #bars {
@@ -30,8 +44,6 @@ html, body {
 .bar-track { flex: 1; height: 8px; background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.15); border-radius: 4px; overflow: hidden; }
 .bar-fill { height: 100%; width: 100%; transition: width 0.1s linear; }
 .bar-fill.health { background: linear-gradient(90deg, #8e1f1f, #d24545); }
-.bar-fill.stamina { background: linear-gradient(90deg, #8a7a2a, #e0c95a); }
-.bar-fill.stamina.exhausted { background: #6b5a3a; }
 
 #state-label {
   position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%);
@@ -44,7 +56,6 @@ html, body {
   transition: opacity 0.4s;
   background: radial-gradient(ellipse at center, transparent 40%, rgba(160,0,0,0.6) 100%);
 }
-#vignette-exhaust { background: radial-gradient(ellipse at center, transparent 45%, rgba(0,0,0,0.75) 100%); }
 #vignette-hurt { background: radial-gradient(ellipse at center, transparent 50%, rgba(110,0,0,0.55) 100%); }
 
 /* bússola */
@@ -94,7 +105,8 @@ html, body {
 }
 .menu-card { max-width: 720px; width: 100%; text-align: center; }
 h1 { font-size: clamp(28px, 7vw, 52px); letter-spacing: 8px; color: #c8b98f; text-shadow: 0 2px 12px #000; }
-.subtitle { opacity: 0.7; margin: 6px 0 18px; letter-spacing: 2px; font-size: 14px; }
+.subtitle { opacity: 0.7; margin: 6px 0 6px; letter-spacing: 2px; font-size: 14px; }
+.tagline { opacity: 0.55; font-style: italic; font-size: 13px; margin-bottom: 16px; }
 #loading { opacity: 0.7; margin: 14px 0; }
 
 #play-btn {
@@ -139,6 +151,7 @@ body:not(.touch) .touch-only { display: none; }
 
 .tbtn {
   position: absolute; pointer-events: auto; touch-action: none;
+  transform: scale(var(--btn-scale, 1)); transform-origin: bottom right;
   width: 64px; height: 64px; border-radius: 50%;
   background: rgba(20,20,20,0.45); color: #fff; border: 2px solid rgba(255,255,255,0.35);
   font-size: 11px; font-weight: bold; letter-spacing: 0.5px;
@@ -167,6 +180,7 @@ body:not(.touch) .touch-only { display: none; }
   .settings { font-size: 12px; gap: 6px 16px; }
   .controls-help ul { font-size: 12px; line-height: 1.5; }
   h1 { font-size: 26px; }
-  .subtitle { margin: 2px 0 8px; }
+  .subtitle { margin: 2px 0 4px; }
+  .tagline { display: none; }
   #play-btn { padding: 10px 40px; margin: 2px 0 10px; }
 }

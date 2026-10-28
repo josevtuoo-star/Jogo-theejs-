@@ -4,8 +4,9 @@ import { Player, STAND_HEIGHT } from './player.js';
 import { Input, isTouchDevice } from './input.js';
 import { CameraRig } from './cameraRig.js';
 import { ViewModel } from './viewmodel.js';
-import { Character } from './character.js';
+import { Character, FP_HIDDEN_LAYER } from './character.js';
 import { GameAudio } from './audio.js';
+import { Effects } from './effects.js';
 
 // ---------- renderizador ----------
 const container = document.getElementById('game');
@@ -13,7 +14,7 @@ const renderer = new THREE.WebGLRenderer({ antialias: !isTouchDevice, powerPrefe
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.0;
+renderer.toneMappingExposure = 0.95;
 renderer.autoClear = false;
 container.appendChild(renderer.domElement);
 
@@ -29,9 +30,14 @@ flashlight.target.position.set(0, 0, -1);
 camera.add(flashlight, flashlight.target);
 
 // ---------- módulos ----------
-const world = new World(scene, { quality: isTouchDevice ? 'low' : 'high' });
+const quality = isTouchDevice ? 'low' : 'high';
+const world = new World(scene, renderer, { quality });
+// a sombra do sol também enxerga as partes do corpo escondidas da câmera em 1ª pessoa
+world.sun.shadow.camera.layers.enable(FP_HIDDEN_LAYER);
+const effects = new Effects(scene, quality);
+world.firePositions.forEach((p) => effects.addFire(p));
 const input = new Input(renderer.domElement);
-const player = new Player(world.octree, world.spawn);
+const player = new Player(world.octree, world.spawn, world.ladders);
 const rig = new CameraRig(camera, world.octree);
 const viewModel = new ViewModel();
 const character = new Character(scene);
@@ -43,9 +49,10 @@ viewModel.setAspect(camera.aspect);
 const $ = (id) => document.getElementById(id);
 const ui = {
   menu: $('menu'), play: $('play-btn'), loading: $('loading'), hud: $('hud'), touch: $('touch-ui'),
-  health: $('health-fill'), stamina: $('stamina-fill'), state: $('state-label'), fps: $('fps'),
-  flash: $('damage-flash'), exhaust: $('vignette-exhaust'), hurt: $('vignette-hurt'),
+  health: $('health-fill'), state: $('state-label'), fps: $('fps'),
+  flash: $('damage-flash'), hurt: $('vignette-hurt'), crosshair: $('crosshair'),
   hint: $('hint'), compass: $('compass-strip'),
+  btnSize: $('btn-size'), btnSizeVal: $('btn-size-val'), haptics: $('haptics'),
   death: $('death'), deathReason: $('death-reason'), respawn: $('respawn-btn'),
   sens: $('sens'), sensVal: $('sens-val'), fov: $('fov'), fovVal: $('fov-val'),
   volume: $('volume'), volumeVal: $('volume-val'), quality: $('quality'),
@@ -73,7 +80,7 @@ function applyQuality(level) {
   renderer.shadowMap.enabled = q.shadows;
   renderer.shadowMap.type = q.shadowType;
   world.setShadowMapSize(q.shadowSize);
-  world.grass.count = Math.floor(world.grass.instanceMatrix.count * q.grass);
+  world.setGrassDensity(q.grass);
   if (shadowChanged) {
     // materiais precisam recompilar quando as sombras ligam/desligam
     scene.traverse((o) => {
@@ -121,6 +128,8 @@ function loadSettings() {
     ui.invert.checked = !!s.invert;
     ui.headbob.checked = s.headbob !== false;
     ui.showFps.checked = !!s.showFps;
+    if (s.btnSize) ui.btnSize.value = s.btnSize;
+    ui.haptics.checked = s.haptics !== false;
   } catch { /* sem armazenamento disponível */ }
   applySettings();
 }
@@ -135,6 +144,8 @@ function applySettings() {
   ui.fovVal.textContent = ui.fov.value;
   ui.volumeVal.textContent = Math.round(parseFloat(ui.volume.value) * 100);
   ui.fps.classList.toggle('hidden-fps', !ui.showFps.checked);
+  document.documentElement.style.setProperty('--btn-scale', ui.btnSize.value);
+  ui.btnSizeVal.textContent = Math.round(parseFloat(ui.btnSize.value) * 100);
 
   if (ui.quality.value !== qualityMode || activeQuality === null) {
     qualityMode = ui.quality.value;
@@ -145,11 +156,17 @@ function applySettings() {
     localStorage.setItem('survival-settings', JSON.stringify({
       sens: ui.sens.value, fov: ui.fov.value, volume: ui.volume.value, quality: ui.quality.value,
       invert: ui.invert.checked, headbob: ui.headbob.checked, showFps: ui.showFps.checked,
+      btnSize: ui.btnSize.value, haptics: ui.haptics.checked,
     }));
   } catch { /* ignore */ }
 }
-for (const el of [ui.sens, ui.fov, ui.volume]) el.addEventListener('input', applySettings);
-for (const el of [ui.quality, ui.invert, ui.headbob, ui.showFps]) el.addEventListener('change', applySettings);
+for (const el of [ui.sens, ui.fov, ui.volume, ui.btnSize]) el.addEventListener('input', applySettings);
+for (const el of [ui.quality, ui.invert, ui.headbob, ui.showFps, ui.haptics]) el.addEventListener('change', applySettings);
+
+/** Vibração curta no celular (pouso, dano, escalada). */
+function haptic(ms) {
+  if (isTouchDevice && ui.haptics.checked) navigator.vibrate?.(ms);
+}
 
 // ---------- menu / pausa ----------
 let playing = false;
@@ -283,11 +300,15 @@ let elapsed = 0;
 let fpsTimer = 0, fpsFrames = 0;
 let flashOn = false;
 let lastHealth = player.health;
-let breathTimer = 0;
+let ambientTimer = 0;
+let indoor = 0;
+const _eye = new THREE.Vector3();
+const _up = new THREE.Ray(new THREE.Vector3(), new THREE.Vector3(0, 1, 0));
 
 function handleActions() {
   if (input.wasPressed('view')) {
     rig.toggleView();
+    character.setFirstPerson(!rig.thirdPerson);
     audio.click();
   }
   if (input.wasPressed('light')) {
@@ -297,35 +318,63 @@ function handleActions() {
     $('btn-light')?.classList.toggle('on', flashOn);
     audio.click();
   }
-  if (input.wasPressed('attack') && !player.sprinting && !player.isClimbing) {
+  if (input.wasPressed('attack') && !player.sprinting && !player.isClimbing && !player.onLadder) {
     viewModel.attack();
     audio.swing();
   }
 }
 
-function handleEvents(dt) {
+const DUST = { grass: [0.45, 0.42, 0.3], concrete: [0.55, 0.53, 0.5], wood: [0.5, 0.42, 0.32], metal: [0.5, 0.48, 0.45] };
+
+function handleEvents() {
+  const feet = player.feetPosition;
   for (const e of player.events) {
     switch (e.type) {
-      case 'step': audio.step(world.surfaceAt(player.feetPosition), e.run, e.crouch); break;
+      case 'step': {
+        const surface = world.surfaceAt(feet);
+        audio.step(surface, e.run, e.crouch);
+        if (e.run) effects.puff(feet, 2, 0.5, DUST[surface]);
+        break;
+      }
       case 'jump': audio.jump(); break;
-      case 'land': if (e.speed > 3) audio.land(e.speed, world.surfaceAt(player.feetPosition)); break;
-      case 'climb': case 'vault': audio.climb(); break;
-      case 'damage': audio.hurt(); deathReason = 'A queda foi alta demais.'; break;
-      case 'death': showDeath(); break;
+      case 'land': {
+        const surface = world.surfaceAt(feet);
+        if (e.speed > 3) audio.land(e.speed, surface);
+        if (e.speed > 6) { effects.puff(feet, Math.min(16, Math.round(e.speed)), Math.min(2, e.speed / 8), DUST[surface]); haptic(25); }
+        break;
+      }
+      case 'climb': case 'vault': audio.climb(); effects.puff(feet, 5, 0.6); haptic(12); break;
+      case 'slide': audio.slide(); effects.puff(feet, 10, 1.2, DUST[world.surfaceAt(feet)]); haptic(20); break;
+      case 'roll': audio.roll(); effects.puff(feet, 8, 1); break;
+      case 'ladder': audio.ladderStep(); break;
+      case 'ladderStep': audio.ladderStep(); break;
+      case 'damage': audio.hurt(); haptic(80); deathReason = 'A queda foi alta demais.'; break;
+      case 'death': showDeath(); haptic(250); break;
     }
   }
-  // respiração ofegante quando o fôlego está baixo
-  breathTimer -= dt;
-  if (player.stamina < 35 && breathTimer <= 0) {
-    audio.breath(player.exhausted ? 1 : 0.5);
-    breathTimer = player.exhausted ? 0.55 : 0.8;
-  }
+  // poeira contínua enquanto desliza
+  if (player.sliding && Math.random() < 0.5) effects.puff(feet, 1, 0.6, DUST[world.surfaceAt(feet)]);
 }
 
-function updateHud(dt) {
+/** Ambiente sonoro: dentro de casa (vento abafado) e perto da fogueira (crepitar). */
+function updateAmbience(dt) {
+  ambientTimer -= dt;
+  if (ambientTimer <= 0) {
+    ambientTimer = 0.3;
+    player.getEyePosition(_eye);
+    _up.origin.copy(_eye);
+    const roof = world.octree.rayIntersect(_up);
+    indoor = roof && roof.distance < 5 ? 1 : 0;
+  }
+  let fire = 0;
+  for (const f of world.firePositions) {
+    fire = Math.max(fire, 1 - player.feetPosition.distanceTo(f) / 14);
+  }
+  audio.update(dt, { indoor, fire });
+}
+
+function updateHud() {
   ui.health.style.width = player.health + '%';
-  ui.stamina.style.width = player.stamina + '%';
-  ui.stamina.classList.toggle('exhausted', player.exhausted);
   ui.state.textContent = player.state;
   if (player.health < lastHealth) {
     ui.flash.style.transition = 'none';
@@ -334,18 +383,27 @@ function updateHud(dt) {
   }
   lastHealth = player.health;
 
-  ui.exhaust.style.opacity = Math.max(0, (35 - player.stamina) / 35).toFixed(2);
   const hurt = player.health < 40 ? (1 - player.health / 40) * (0.75 + Math.sin(elapsed * 4) * 0.25) : 0;
   ui.hurt.style.opacity = hurt.toFixed(2);
 
-  const ledge = player.ledgeAhead;
-  if (ledge && !player.isClimbing) {
+  const ledge = player.ledgeAhead, ladder = player.ladderAhead;
+  let hint = '';
+  if (player.onLadder) {
+    hint = `${input.pad.connected ? 'ANALÓGICO' : isTouchDevice ? 'JOYSTICK' : 'W / S'} — SUBIR/DESCER · ${input.pad.connected ? 'A' : isTouchDevice ? 'PULAR' : 'ESPAÇO'} — SOLTAR`;
+  } else if (ladder && !player.isClimbing) {
+    const key = input.pad.connected ? 'ANALÓGICO ↑' : isTouchDevice ? 'JOYSTICK ↑' : 'W';
+    hint = `${key} — ${ladder.fromTop ? 'DESCER A ESCADA' : 'SUBIR A ESCADA'}`;
+  } else if (ledge && !player.isClimbing) {
     const key = input.pad.connected ? 'A' : isTouchDevice ? 'PULAR' : 'ESPAÇO';
-    ui.hint.textContent = `${key} — ${ledge.kind === 'vault' ? 'PULAR OBSTÁCULO' : 'ESCALAR'}`;
-    ui.hint.classList.remove('hidden');
-  } else {
-    ui.hint.classList.add('hidden');
+    hint = `${key} — ${ledge.kind === 'vault' ? 'PULAR OBSTÁCULO' : 'ESCALAR'}`;
   }
+  ui.hint.textContent = hint;
+  ui.hint.classList.toggle('hidden', !hint);
+
+  // mira se abre com o movimento e no ar
+  const spread = 4 + Math.min(player.horizontalSpeed, 8) * 1.3 + (player.onFloor ? 0 : 8);
+  ui.crosshair.style.setProperty('--gap', spread.toFixed(1) + 'px');
+  ui.crosshair.classList.toggle('hide', player.onLadder || player.isClimbing || player.rolling || player.dead);
   updateCompass();
 }
 
@@ -358,9 +416,10 @@ function frame() {
   if (playing) {
     handleActions();
     player.update(dt, input);
-    handleEvents(dt);
+    handleEvents();
     input.endFrame();
-    updateHud(dt);
+    updateHud();
+    updateAmbience(dt);
   } else if (!started) {
     // tela inicial: câmera girando lentamente
     player.yaw += dt * 0.1;
@@ -373,8 +432,8 @@ function frame() {
   viewModel.update(dt, player);
   character.update(dt, player, viewModel.isAttacking);
   world.update(player.feetPosition, elapsed);
+  effects.update(dt, player.feetPosition, (x, z) => world.groundHeight(x, z), renderer.domElement.height);
 
-  character.root.visible = rig.thirdPerson;
   viewModel.visible = !rig.thirdPerson;
 
   renderer.clear();
@@ -398,4 +457,4 @@ ui.play.classList.remove('hidden');
 frame();
 
 // para depuração no console
-window.game = { player, world, rig, input, STAND_HEIGHT };
+window.game = { player, world, rig, input, character, effects, renderer, scene, STAND_HEIGHT };

@@ -3,6 +3,8 @@ import { Capsule } from 'three/addons/math/Capsule.js';
 
 // Controlador do personagem em primeira pessoa.
 // Física: cápsula colidindo com o Octree do mundo (chão, paredes, rampas, teto).
+// Movimentos: andar, correr, pular, agachar, deslizar, escalar obstáculos, subir escadas
+// de mão, inclinar (espiar) e rolamento ao cair.
 
 const GRAVITY = 26;
 const RADIUS = 0.35;
@@ -24,19 +26,23 @@ const COYOTE_TIME = 0.12;
 const JUMP_BUFFER = 0.15;
 const SNAP_DISTANCE = 0.35;
 
-const STAMINA_MAX = 100;
-const SPRINT_COST = 16;      // por segundo
-const JUMP_COST = 9;
-const STAMINA_REGEN = 14;
-const EXHAUST_RECOVER = 30;  // precisa recuperar até aqui depois de esgotar
-
 const FALL_DAMAGE_SPEED = 13; // m/s de impacto a partir do qual causa dano
+const ROLL_WINDOW = 0.35;     // agachar até esse tempo antes do impacto = rolamento
+const ROLL_MIN_SPEED = 9;
+
+// deslizar (agachar correndo)
+const SLIDE_SPEED = 9.5;
+const SLIDE_FRICTION = 1.7;
+const SLIDE_MAX_TIME = 1.1;
+
+// escadas de mão
+const LADDER_SPEED = 2.6;
+const LADDER_STEP = 0.45;
 
 // escalar / pular obstáculos (estilo DayZ)
 const LEDGE_MIN = 0.45;       // abaixo disso é só pular
 const LEDGE_MAX = 2.3;        // altura máxima que dá para escalar
 const VAULT_OVER_MAX = 1.45;  // obstáculos finos até essa altura são pulados por cima
-const CLIMB_COST = 10;
 
 const LEAN_DISTANCE = 0.45;
 
@@ -60,8 +66,9 @@ function damp(a, b, lambda, dt) {
 }
 
 export class Player {
-  constructor(octree, spawn) {
+  constructor(octree, spawn, ladders = []) {
     this.octree = octree;
+    this.ladders = ladders;
     this.spawn = spawn.clone();
 
     this.collider = new Capsule(new THREE.Vector3(), new THREE.Vector3(), RADIUS);
@@ -80,9 +87,14 @@ export class Player {
     this.crouchToggle = false;
 
     this.sprinting = false;
-    this.stamina = STAMINA_MAX;
-    this.staminaDelay = 0;
-    this.exhausted = false;
+    this.slide = null;        // deslize em andamento
+    this.ladder = null;       // escada de mão em uso
+    this.ladderAhead = null;  // escada perto (para a dica na tela)
+    this.ladderPhase = 0;
+    this.rollTime = -1;       // >= 0 durante o rolamento
+    this._crouchPressedAt = -10;
+    this._prevCrouchHeld = false;
+    this._clock = 0;
 
     this.health = 100;
     this.dead = false;
@@ -114,9 +126,15 @@ export class Player {
     this.health = 100;
     this.dead = false;
     this.climb = null;
+    this.slide = null;
+    this.ladder = null;
+    this.rollTime = -1;
     this.lean = 0;
-    this.stamina = STAMINA_MAX;
   }
+
+  get sliding() { return this.slide !== null; }
+  get onLadder() { return this.ladder !== null; }
+  get rolling() { return this.rollTime >= 0; }
 
   get isClimbing() { return this.climb !== null; }
 
@@ -164,23 +182,42 @@ export class Player {
 
     const move = input.getMove();
     this.moveInput = move;
-    const moving = Math.hypot(move.x, move.y) > 0.05;
+
+    this._clock += dt;
+    if (this.rollTime >= 0) { this.rollTime += dt; if (this.rollTime > 0.65) this.rollTime = -1; }
 
     if (this.climb) { this._updateClimb(dt); this._updateLean(dt, 0); return; }
+    if (this.ladder) { this._updateLadder(dt, input, move); this._updateLean(dt, 0); return; }
 
-    // ---------- agachar ----------
-    if (input.wasPressed('crouchToggle')) this.crouchToggle = !this.crouchToggle;
+    // entrar numa escada de mão
+    const ladder = this._findLadder(move, false);
+    if (ladder) { this._enterLadder(ladder); return; }
+
+    // ---------- agachar / deslizar ----------
+    const crouchPressed = input.wasPressed('crouchToggle') || (input.crouchHeld && !this._prevCrouchHeld);
+    this._prevCrouchHeld = input.crouchHeld;
+    if (crouchPressed) this._crouchPressedAt = this._clock;
+
+    if (crouchPressed && !this.slide && this.sprinting && this.onFloor && this.horizontalSpeed > 5) {
+      this._startSlide(input);
+    } else if (input.wasPressed('crouchToggle')) {
+      this.crouchToggle = !this.crouchToggle;
+    }
     const wantSprint = input.sprint && move.y > 0.3;
-    if (wantSprint && this.crouchToggle) { this.crouchToggle = false; }
-    if (wantSprint) input.clearTouchCrouch();
 
-    const wantCrouch = (input.crouchHeld || this.crouchToggle) && !wantSprint;
-    if (wantCrouch) {
-      if (!this.crouched) this.events.push({ type: 'crouch' });
+    if (this.slide) {
       this.crouched = true;
-    } else if (this.crouched && this.canStand()) {
-      this.crouched = false;
-      this.events.push({ type: 'stand' });
+    } else {
+      if (wantSprint && this.crouchToggle) { this.crouchToggle = false; }
+      if (wantSprint && !input.crouchHeld) input.clearTouchCrouch();
+      const wantCrouch = (input.crouchHeld || this.crouchToggle) && !wantSprint;
+      if (wantCrouch) {
+        if (!this.crouched) this.events.push({ type: 'crouch' });
+        this.crouched = true;
+      } else if (this.crouched && this.canStand()) {
+        this.crouched = false;
+        this.events.push({ type: 'stand' });
+      }
     }
 
     const targetHeight = this.crouched ? CROUCH_HEIGHT : STAND_HEIGHT;
@@ -196,23 +233,9 @@ export class Player {
     }
     this.height = newHeight;
 
-    // ---------- fôlego / corrida ----------
-    if (this.stamina <= 0) this.exhausted = true;
-    if (this.exhausted && this.stamina >= EXHAUST_RECOVER) this.exhausted = false;
-    const canSprint = wantSprint && !this.crouched && !this.exhausted;
+    // ---------- corrida (sem limite de fôlego) ----------
+    const canSprint = wantSprint && !this.crouched;
     this.sprinting = canSprint && (this.onFloor || this.sprinting);
-
-    if (this.sprinting && this.horizontalSpeed > 1) {
-      this.stamina -= SPRINT_COST * dt;
-      this.staminaDelay = 1.0;
-    } else {
-      this.staminaDelay -= dt;
-      if (this.staminaDelay <= 0) {
-        const mult = moving ? 1 : 1.6;
-        this.stamina += STAMINA_REGEN * mult * dt;
-      }
-    }
-    this.stamina = Math.max(0, Math.min(STAMINA_MAX, this.stamina));
 
     // ---------- velocidade horizontal desejada ----------
     let speed = this.crouched ? CROUCH_SPEED : this.sprinting ? RUN_SPEED : WALK_SPEED;
@@ -223,9 +246,19 @@ export class Player {
     if (_wish.lengthSq() > 1) _wish.normalize();
     _wish.multiplyScalar(speed);
 
-    const accel = this.onFloor ? GROUND_ACCEL : AIR_ACCEL;
-    this.velocity.x = damp(this.velocity.x, _wish.x, accel, dt);
-    this.velocity.z = damp(this.velocity.z, _wish.z, accel, dt);
+    if (this.slide) {
+      // deslizando: perde velocidade aos poucos, dá para mirar um pouco com o movimento lateral
+      this.slide.t += dt;
+      const k = Math.exp(-SLIDE_FRICTION * dt);
+      this.velocity.x = this.velocity.x * k + _right.x * move.x * 3 * dt;
+      this.velocity.z = this.velocity.z * k + _right.z * move.x * 3 * dt;
+      const hs = Math.hypot(this.velocity.x, this.velocity.z);
+      if (hs < 2.6 || this.slide.t > SLIDE_MAX_TIME) this.slide = null;
+    } else {
+      const accel = this.onFloor ? GROUND_ACCEL : AIR_ACCEL;
+      this.velocity.x = damp(this.velocity.x, _wish.x, accel, dt);
+      this.velocity.z = damp(this.velocity.z, _wish.z, accel, dt);
+    }
 
     // ---------- pulo (com coyote time e buffer) ----------
     this.timeSinceGround = this.onFloor ? 0 : this.timeSinceGround + dt;
@@ -233,7 +266,7 @@ export class Player {
     else this.jumpBuffer -= dt;
 
     // escalar tem prioridade sobre o pulo quando há um obstáculo na frente
-    if (this.jumpBuffer > 0 && this.timeSinceGround < 0.6 && this.stamina >= CLIMB_COST * 0.5) {
+    if (this.jumpBuffer > 0 && this.timeSinceGround < 0.6 && !this.slide) {
       const ledge = this.findLedge(this.onFloor ? LEDGE_MIN : 0.1);
       if (ledge) {
         this._startClimb(ledge, input);
@@ -241,7 +274,8 @@ export class Player {
       }
     }
 
-    if (this.jumpBuffer > 0 && this.timeSinceGround < COYOTE_TIME && this.stamina >= JUMP_COST * 0.5) {
+    if (this.jumpBuffer > 0 && this.timeSinceGround < COYOTE_TIME) {
+      if (this.slide) this.slide = null; // pulo no fim do deslize mantém o embalo
       if (this.crouched) {
         // pular estando agachado: levanta primeiro, se houver espaço
         if (this.canStand()) {
@@ -251,7 +285,6 @@ export class Player {
       }
       if (!this.crouched) {
         this.velocity.y = JUMP_VELOCITY;
-        this.stamina = Math.max(0, this.stamina - JUMP_COST);
         this.onFloor = false;
         this.timeSinceGround = COYOTE_TIME;
         this.jumpBuffer = 0;
@@ -280,9 +313,20 @@ export class Player {
 
     // ---------- pouso ----------
     if (!wasOnFloor && this.onFloor) {
-      this.events.push({ type: 'land', speed: fallSpeed });
+      // rolamento: agachar logo antes de tocar o chão reduz o dano da queda
+      const roll = fallSpeed > ROLL_MIN_SPEED && (this._clock - this._crouchPressedAt < ROLL_WINDOW) && this.horizontalSpeed > 0.5;
+      this.events.push({ type: 'land', speed: fallSpeed, roll });
+      if (roll) {
+        this.rollTime = 0;
+        this.forwardVector(_lf);
+        this.velocity.x = _lf.x * 5.5;
+        this.velocity.z = _lf.z * 5.5;
+        this.crouched = true;
+        this.crouchToggle = false;
+        this.events.push({ type: 'roll' });
+      }
       if (fallSpeed > FALL_DAMAGE_SPEED) {
-        const dmg = (fallSpeed - FALL_DAMAGE_SPEED) * 7;
+        const dmg = (fallSpeed - FALL_DAMAGE_SPEED) * 7 * (roll ? 0.3 : 1);
         this.health = Math.max(0, this.health - dmg);
         this.events.push({ type: 'damage', amount: dmg });
       }
@@ -304,11 +348,12 @@ export class Player {
     const leanInput = (this.onFloor && !this.sprinting) ? input.lean : 0;
     this._updateLean(dt, leanInput);
 
-    // dica de escalada (não precisa ser testada todo quadro)
+    // dica de escalada / escada (não precisa ser testada todo quadro)
     this._ledgeTimer -= dt;
     if (this._ledgeTimer <= 0) {
       this._ledgeTimer = 0.12;
-      this.ledgeAhead = this.onFloor && move.y > -0.1 ? this.findLedge(LEDGE_MIN) : null;
+      this.ladderAhead = this._findLadder(move, true);
+      this.ledgeAhead = !this.ladderAhead && this.onFloor && !this.slide && move.y > -0.1 ? this.findLedge(LEDGE_MIN) : null;
     }
 
     if (this.health <= 0) {
@@ -443,7 +488,7 @@ export class Player {
     this.climb = { ...ledge, seg: 0, t: 0, elapsed: 0, total: ledge.durations.reduce((a, b) => a + b, 0) };
     if (ledge.crouch) { this.crouched = true; this.crouchToggle = true; }
     this.jumpBuffer = 0;
-    this.stamina = Math.max(0, this.stamina - CLIMB_COST * (ledge.kind === 'vault' ? 0.6 : 1));
+    this.slide = null;
     this.velocity.set(0, 0, 0);
     this.sprinting = false;
     this.events.push({ type: ledge.kind, height: ledge.height });
@@ -472,7 +517,11 @@ export class Player {
     this.horizontalSpeed = 0;
     this.onFloor = false;
 
-    if (c.seg >= c.durations.length) {
+    if (c.seg >= c.durations.length && c.toLadder) {
+      // terminou de passar da plataforma para a escada
+      this.climb = null;
+      this.velocity.set(0, 0, 0);
+    } else if (c.seg >= c.durations.length) {
       // terminou: mantém um pouco de impulso para frente
       this.forwardVector(_lf);
       const keep = c.kind === 'vault' ? 3.5 : 1;
@@ -524,8 +573,130 @@ export class Player {
     }
   }
 
+  // ---------- deslizar ----------
+  _startSlide(input) {
+    this.forwardVector(_lf);
+    const hs = Math.max(Math.hypot(this.velocity.x, this.velocity.z), SLIDE_SPEED);
+    this.velocity.x = _lf.x * hs;
+    this.velocity.z = _lf.z * hs;
+    this.slide = { t: 0 };
+    this.crouched = true;
+    this.crouchToggle = false;
+    input.clearTouchCrouch();
+    this.events.push({ type: 'slide' });
+  }
+
+  // ---------- escadas de mão ----------
+  /**
+   * Procura uma escada para entrar. Com `hintOnly`, ignora o movimento (só para a dica).
+   * Retorna { ladder, fromTop } ou null.
+   */
+  _findLadder(move, hintOnly) {
+    if (!this.ladders.length || this.climb) return null;
+    const feet = this.collider.start.y - RADIUS;
+    const px = this.collider.start.x, pz = this.collider.start.z;
+    const f = this.forwardVector(_lf);
+    for (const l of this.ladders) {
+      const rx = px - l.x, rz = pz - l.z;
+      const out = rx * l.nx + rz * l.nz;        // distância para fora da escada
+      const side = rx * l.tx + rz * l.tz;       // deslocamento lateral
+      if (Math.abs(side) > l.width / 2 + 0.25) continue;
+      const facing = -(f.x * l.nx + f.z * l.nz); // > 0 olhando para a escada
+      const pushing = hintOnly || move.y > 0.3;
+      if (feet > l.bottom - 0.4 && feet < l.top - 0.6 && out > 0 && out < RADIUS + 0.5 && facing > 0.35 && pushing) {
+        return { ladder: l, fromTop: false };
+      }
+      if (Math.abs(feet - l.top) < 0.4 && out < 0.3 && out > -1.1 && facing < -0.35 && pushing && this.onFloor) {
+        return { ladder: l, fromTop: true };
+      }
+    }
+    return null;
+  }
+
+  _enterLadder({ ladder: l, fromTop }) {
+    const px = this.collider.start.x, pz = this.collider.start.z;
+    const side = Math.max(-0.15, Math.min(0.15, (px - l.x) * l.tx + (pz - l.z) * l.tz));
+    const feet = fromTop ? l.top - 1.2 : Math.max(this.collider.start.y - RADIUS, l.bottom);
+    const off = RADIUS + 0.08;
+    const x = l.x + l.nx * off + l.tx * side, z = l.z + l.nz * off + l.tz * side;
+    this.ladder = { l, x, z };
+    this.slide = null;
+    this.crouched = false;
+    this.crouchToggle = false;
+    this.velocity.set(0, 0, 0);
+    this.lean = 0;
+    if (fromTop) {
+      // desce pela borda: pequena animação até a posição na escada
+      this.climb = {
+        kind: 'climb', crouch: false, seg: 0, t: 0, elapsed: 0, total: 0.45, toLadder: true,
+        path: [this.feetPosition.clone(), new THREE.Vector3(x, l.top - 0.4, z), new THREE.Vector3(x, feet, z)],
+        durations: [0.25, 0.2],
+      };
+    } else {
+      this.collider.start.set(this.collider.start.x, feet + RADIUS, this.collider.start.z);
+      this.collider.end.set(this.collider.start.x, feet + this.height - RADIUS, this.collider.start.z);
+    }
+    this.events.push({ type: 'ladder' });
+  }
+
+  _updateLadder(dt, input, move) {
+    const { l } = this.ladder;
+    this.forwardVector(_lf);
+    // olhando para a escada, "frente" sobe; de costas para ela, "frente" desce
+    const facing = -(_lf.x * l.nx + _lf.z * l.nz) >= -0.2 ? 1 : -1;
+    const vy = move.y * facing * LADDER_SPEED;
+    const feet = this.collider.start.y - RADIUS;
+    this.height = damp(this.height, STAND_HEIGHT, 14, dt);
+
+    // gruda na escada
+    const nx = damp(this.collider.start.x, this.ladder.x, 12, dt);
+    const nz = damp(this.collider.start.z, this.ladder.z, 12, dt);
+    const ny = feet + vy * dt;
+    this.collider.start.set(nx, ny + RADIUS, nz);
+    this.collider.end.set(nx, ny + this.height - RADIUS, nz);
+    this.velocity.set(0, 0, 0);
+    this.horizontalSpeed = 0;
+    this.onFloor = false;
+
+    const before = Math.floor(this.ladderPhase / Math.PI);
+    this.ladderPhase += Math.abs(vy) * dt / LADDER_STEP * Math.PI;
+    if (Math.floor(this.ladderPhase / Math.PI) !== before) this.events.push({ type: 'ladderStep' });
+
+    if (input.wasPressed('jump')) {
+      // solta da escada, pulando para trás
+      this.ladder = null;
+      this.velocity.set(l.nx * 3.5, 3, l.nz * 3.5);
+      this.events.push({ type: 'jump' });
+      return;
+    }
+    if (ny >= l.top - 0.02 && vy > 0) {
+      // chegou no topo: sobe para a plataforma
+      this.ladder = null;
+      const x = this.collider.start.x, z = this.collider.start.z;
+      this._startClimb({
+        kind: 'climb', crouch: false, height: 1,
+        path: [new THREE.Vector3(x, ny, z), new THREE.Vector3(x, l.top + 0.1, z),
+          new THREE.Vector3(l.x - l.nx * 0.75, l.top + 0.03, l.z - l.nz * 0.75)],
+        durations: [0.25, 0.3],
+      }, input);
+      return;
+    }
+    if (vy < 0) {
+      // desceu até o chão
+      this._collide();
+      if (this.onFloor || ny <= l.bottom) {
+        this.ladder = null;
+        this.onFloor = true;
+        this.events.push({ type: 'land', speed: 1 });
+      }
+    }
+  }
+
   get state() {
     if (this.dead) return 'MORTO';
+    if (this.ladder || this.climb?.toLadder) return 'NA ESCADA';
+    if (this.slide) return 'DESLIZANDO';
+    if (this.rollTime >= 0) return 'ROLANDO';
     if (this.climb) return this.climb.kind === 'vault' ? 'PULANDO OBSTÁCULO' : 'ESCALANDO';
     if (!this.onFloor) return this.velocity.y > 0 ? 'PULANDO' : 'CAINDO';
     if (this.crouched) return this.horizontalSpeed > 0.4 ? 'AGACHADO • ANDANDO' : 'AGACHADO';

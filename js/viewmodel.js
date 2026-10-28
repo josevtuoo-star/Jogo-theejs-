@@ -115,6 +115,8 @@ export class ViewModel {
     this.sprintBlend = 0;
     this.crouchBlend = 0;
     this.climbBlend = 0;
+    this.ladderBlend = 0;
+    this.slideBlend = 0;
     this.airOffset = 0;
     this.landKick = 0;
     this.landVel = 0;
@@ -150,7 +152,9 @@ export class ViewModel {
     this.sprintBlend = damp(this.sprintBlend, player.sprinting && speed > 1 ? 1 : 0, 8, dt);
     this.crouchBlend = damp(this.crouchBlend, player.crouched ? 1 : 0, 8, dt);
     this.climbBlend = damp(this.climbBlend, player.isClimbing ? 1 : 0, player.isClimbing ? 18 : 6, dt);
-    this.hidden = damp(this.hidden, player.dead ? 1 : 0, 5, dt);
+    this.hidden = damp(this.hidden, player.dead ? 1 : player.rolling ? 0.7 : 0, player.rolling ? 14 : 5, dt);
+    this.ladderBlend = damp(this.ladderBlend, player.onLadder ? 1 : 0, 10, dt);
+    this.slideBlend = damp(this.slideBlend, player.sliding ? 1 : 0, 10, dt);
 
     // balanço ao olhar (os braços "atrasam" em relação à câmera)
     const ld = player.lookDelta || { x: 0, y: 0 };
@@ -171,9 +175,7 @@ export class ViewModel {
     const ph = player.stepPhase;
     const bobX = Math.cos(ph) * 0.012 * moveAmt;
     const bobY = -Math.abs(Math.sin(ph)) * 0.014 * moveAmt;
-    const breathRate = player.exhausted ? 4.2 : 1.7;
-    const breathAmp = player.exhausted ? 0.01 : 0.004;
-    const breath = Math.sin(this.t * breathRate) * breathAmp * (1 - Math.min(moveAmt, 1) * 0.7);
+    const breath = Math.sin(this.t * 1.7) * 0.004 * (1 - Math.min(moveAmt, 1) * 0.7);
 
     this.root.position.set(
       bobX - this.sway.x * 0.3 + player.lean * 0.02,
@@ -205,6 +207,31 @@ export class ViewModel {
         arm.rotation.x = THREE.MathUtils.lerp(arm.rotation.x, -0.15 - reach * 0.25, c);
         arm.rotation.y = THREE.MathUtils.lerp(arm.rotation.y, side * -0.2, c);
         arm.rotation.z = THREE.MathUtils.lerp(arm.rotation.z, 0, c);
+      }
+    }
+
+    // escada de mão: as mãos sobem alternadas, agarrando os degraus
+    const L = this.ladderBlend;
+    if (L > 0.001) {
+      for (const [arm, side] of [[this.right, 1], [this.left, -1]]) {
+        const alt = Math.sin(player.ladderPhase + (side > 0 ? 0 : Math.PI));
+        arm.position.x = THREE.MathUtils.lerp(arm.position.x, side * 0.19, L);
+        arm.position.y = THREE.MathUtils.lerp(arm.position.y, -0.12 + alt * 0.09, L);
+        arm.position.z = THREE.MathUtils.lerp(arm.position.z, -0.12 - Math.max(0, alt) * 0.04, L);
+        arm.rotation.x = THREE.MathUtils.lerp(arm.rotation.x, 0.55 + alt * 0.15, L);
+        arm.rotation.y = THREE.MathUtils.lerp(arm.rotation.y, side * -0.1, L);
+        arm.rotation.z = THREE.MathUtils.lerp(arm.rotation.z, 0, L);
+      }
+    }
+
+    // deslize: braços abertos para equilibrar
+    const S = this.slideBlend;
+    if (S > 0.001) {
+      for (const [arm, side] of [[this.right, 1], [this.left, -1]]) {
+        arm.position.x += side * 0.08 * S;
+        arm.position.y -= 0.05 * S;
+        arm.rotation.z += -side * 0.5 * S;
+        arm.rotation.y += side * 0.3 * S;
       }
     }
 
