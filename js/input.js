@@ -24,6 +24,8 @@ export class Input {
     this.invertY = false;
 
     this.mouseDown = false;
+    this.pointerLockFailed = false;
+    this.dragLook = false;
 
     // estado touch
     this.joy = { id: null, ox: 0, oy: 0, x: 0, y: 0 };
@@ -51,13 +53,16 @@ export class Input {
       if (!this.enabled) return;
       if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
       if (!e.repeat && actionForKey[e.code]) this.pressed.add(actionForKey[e.code]);
+      if (e.code === 'Escape' && this.pointerLockFailed) this.onPauseRequest?.();
       this.keys.add(e.code);
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));
     window.addEventListener('blur', () => { this.keys.clear(); this.mouseDown = false; });
 
     document.addEventListener('mousemove', (e) => {
-      if (!this.enabled || document.pointerLockElement !== this.canvas) return;
+      if (!this.enabled || isTouchDevice) return;
+      // sem pointer lock (bloqueado pelo navegador): olhar segurando o botão e arrastando
+      if (document.pointerLockElement !== this.canvas && !this.dragLook) return;
       // ignora picos absurdos que alguns navegadores geram ao capturar o ponteiro
       if (Math.abs(e.movementX) > 300 || Math.abs(e.movementY) > 300) return;
       this.lookDX += e.movementX * this.mouseSensitivity * this.sensitivity;
@@ -66,10 +71,16 @@ export class Input {
 
     this.canvas.addEventListener('mousedown', (e) => {
       if (!this.enabled || isTouchDevice) return;
-      if (document.pointerLockElement !== this.canvas) { this.canvas.requestPointerLock(); return; }
+      if (document.pointerLockElement !== this.canvas) {
+        if (!this.pointerLockFailed) { this.canvas.requestPointerLock?.(); return; }
+        this.dragLook = true;
+      }
       if (e.button === 0) { this.mouseDown = true; this.pressed.add('attack'); }
     });
-    window.addEventListener('mouseup', (e) => { if (e.button === 0) this.mouseDown = false; });
+    window.addEventListener('mouseup', (e) => {
+      if (e.button === 0) this.mouseDown = false;
+      this.dragLook = false;
+    });
   }
 
   // ---------------- Android / touch ----------------

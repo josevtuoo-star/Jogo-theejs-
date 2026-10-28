@@ -91,8 +91,12 @@ function startGame() {
       .then(() => screen.orientation?.lock?.('landscape'))
       .catch(() => { /* navegador não permite: tudo bem */ });
     resume();
+  } else if (input.pointerLockFailed || !renderer.domElement.requestPointerLock) {
+    input.pointerLockFailed = true;
+    resume();
   } else {
-    renderer.domElement.requestPointerLock();
+    const req = renderer.domElement.requestPointerLock();
+    req?.catch?.(() => document.dispatchEvent(new Event('pointerlockerror')));
   }
 }
 
@@ -126,10 +130,11 @@ input.onPauseRequest = pause;
 
 document.addEventListener('pointerlockchange', () => {
   if (document.pointerLockElement === renderer.domElement) resume();
-  else if (!isTouchDevice) pause();
+  else if (!isTouchDevice && !input.pointerLockFailed) pause();
 });
 document.addEventListener('pointerlockerror', () => {
-  // alguns navegadores bloqueiam o pointer lock; joga mesmo assim (arrastar para olhar fica indisponível)
+  // alguns navegadores bloqueiam o pointer lock: joga mesmo assim, olhando com clique e arrastar
+  input.pointerLockFailed = true;
   resume();
 });
 document.addEventListener('visibilitychange', () => { if (document.hidden) pause(); });
