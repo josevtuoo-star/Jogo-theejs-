@@ -34,13 +34,46 @@ function flashTexture() {
   return t;
 }
 
+/** Textura da empunhadura: madeira de nogueira com quadriculado. */
+function woodGripTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d');
+  g.fillStyle = '#5a341b';
+  g.fillRect(0, 0, 128, 128);
+  for (let i = 0; i < 40; i++) {
+    g.strokeStyle = `rgba(${30 + Math.random() * 30},${15 + Math.random() * 15},5,0.35)`;
+    g.lineWidth = 1 + Math.random() * 2;
+    g.beginPath();
+    const y = Math.random() * 128;
+    g.moveTo(0, y);
+    g.bezierCurveTo(40, y + Math.random() * 10 - 5, 80, y + Math.random() * 10 - 5, 128, y + Math.random() * 6 - 3);
+    g.stroke();
+  }
+  // quadriculado de pegada no meio
+  g.strokeStyle = 'rgba(20,10,4,0.35)';
+  g.lineWidth = 1;
+  for (let i = -128; i < 256; i += 5) {
+    g.beginPath(); g.moveTo(i, 30); g.lineTo(i + 70, 100); g.stroke();
+    g.beginPath(); g.moveTo(i + 70, 30); g.lineTo(i, 100); g.stroke();
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(18, 18); // UV do ExtrudeGeometry está em metros
+  return t;
+}
+
+/** Ponto da empunhadura onde a palma da mão direita encosta (espaço da arma). */
+export const GRIP = new THREE.Vector3(0, -0.012, 0.016);
+
 export class Revolver {
   constructor(scene) {
     this.scene = scene;
-    const steel = new THREE.MeshStandardMaterial({ color: 0x2a2d33, metalness: 0.85, roughness: 0.32 });
-    const steelDark = new THREE.MeshStandardMaterial({ color: 0x17191c, metalness: 0.8, roughness: 0.45 });
-    const wood = new THREE.MeshStandardMaterial({ color: 0x4e2f1a, roughness: 0.62, metalness: 0.05 });
-    const brass = new THREE.MeshStandardMaterial({ color: 0xb08a3c, metalness: 0.9, roughness: 0.3 });
+    const steel = new THREE.MeshStandardMaterial({ color: 0x3b4048, metalness: 0.92, roughness: 0.26 });
+    const steelDark = new THREE.MeshStandardMaterial({ color: 0x1c1f23, metalness: 0.85, roughness: 0.4 });
+    const wood = new THREE.MeshStandardMaterial({ map: woodGripTexture(), roughness: 0.55, metalness: 0.05 });
+    const brass = new THREE.MeshStandardMaterial({ color: 0xc09643, metalness: 0.9, roughness: 0.28 });
     this.brassMat = brass;
     const g = new THREE.Group();
     const add = (geo, mat, x, y, z, parent = g) => {
@@ -50,58 +83,75 @@ export class Revolver {
       parent.add(m);
       return m;
     };
-    // empunhadura de madeira (inclinada para trás) com medalhão
-    const grip = add(new THREE.BoxGeometry(0.027, 0.1, 0.036), wood, 0, -0.005, 0.012);
-    grip.rotation.x = -0.28;
-    add(new THREE.CylinderGeometry(0.006, 0.006, 0.029, 10), brass, 0, 0.01, 0.008).rotation.z = Math.PI / 2;
-    add(new THREE.BoxGeometry(0.029, 0.012, 0.03), steel, 0, -0.056, 0.026).rotation.x = -0.28; // base
-    // armação
-    add(new THREE.BoxGeometry(0.024, 0.04, 0.06), steel, 0, 0.05, -0.025);
-    add(new THREE.BoxGeometry(0.024, 0.016, 0.03), steel, 0, 0.068, 0.0); // topo traseiro
-    // cano com nervura ventilada e "underlug" cheio até a boca
-    const barrel = add(new THREE.CylinderGeometry(0.0085, 0.0085, 0.112, 14), steel, 0, BORE_Y, -0.122);
+    // perfil lateral (u = para frente, v = para cima) extrudado com borda arredondada; vira -Z
+    const profile = (pts, depth, bevel, mat) => {
+      const sh = new THREE.Shape();
+      sh.moveTo(pts[0][0], pts[0][1]);
+      for (let i = 1; i < pts.length; i++) {
+        const p = pts[i];
+        if (p.length === 4) sh.quadraticCurveTo(p[0], p[1], p[2], p[3]); else sh.lineTo(p[0], p[1]);
+      }
+      const geo = new THREE.ExtrudeGeometry(sh, { depth: depth - bevel * 2, bevelEnabled: true, bevelThickness: bevel, bevelSize: bevel, bevelSegments: 2, curveSegments: 6 });
+      geo.translate(0, 0, -(depth - bevel * 2) / 2);
+      geo.rotateY(Math.PI / 2); // u → -Z, espessura → X
+      return add(geo, mat, 0, 0, 0);
+    };
+    // armação: recoil shield, top strap sobre o tambor e a parte de baixo até o guarda-mato
+    profile([[-0.02, 0.064], [-0.008, 0.075, 0.004, 0.077], [0.074, 0.077], [0.074, 0.044], [0.064, 0.039], [0.03, 0.034],
+      [0.016, 0.027], [0.0, 0.026], [-0.012, 0.031], [-0.024, 0.045, -0.022, 0.056]], 0.023, 0.0025, steel);
+    // empunhadura de madeira (curva, com o "dedo" de baixo arredondado)
+    profile([[-0.002, 0.03], [0.004, 0.0, 0.0, -0.02], [-0.004, -0.05, -0.012, -0.062], [-0.03, -0.066, -0.038, -0.058],
+      [-0.036, -0.02], [-0.028, 0.03, -0.022, 0.05], [-0.01, 0.04]], 0.031, 0.005, wood);
+    add(new THREE.CylinderGeometry(0.006, 0.006, 0.033, 12), brass, 0, -0.012, 0.018).rotation.z = Math.PI / 2; // medalhão
+    // cano: tubo + "underlug" cheio + nervura ventilada (perfil do Python)
+    const barrel = add(new THREE.CylinderGeometry(0.0088, 0.0088, 0.105, 18), steel, 0, BORE_Y, -0.1255);
     barrel.rotation.x = Math.PI / 2;
-    add(new THREE.BoxGeometry(0.015, 0.017, 0.106), steel, 0, 0.049, -0.124);
-    add(new THREE.BoxGeometry(0.009, 0.007, 0.108), steel, 0, 0.073, -0.122);
-    for (let i = 0; i < 5; i++) add(new THREE.BoxGeometry(0.0095, 0.003, 0.008), steelDark, 0, 0.0745, -0.08 - i * 0.02);
-    const bore = add(new THREE.CircleGeometry(0.0045, 10), new THREE.MeshBasicMaterial({ color: 0x050505 }), 0, BORE_Y, MUZZLE_Z - 0.001);
+    profile([[0.074, 0.043], [0.178, 0.043], [0.178, 0.058], [0.074, 0.058]], 0.016, 0.003, steel);   // underlug
+    profile([[0.07, 0.066], [0.176, 0.066], [0.176, 0.075], [0.07, 0.077]], 0.0095, 0.0015, steel);  // nervura
+    for (let i = 0; i < 6; i++) add(new THREE.BoxGeometry(0.0105, 0.0035, 0.007), steelDark, 0, 0.0745, -0.083 - i * 0.016);
+    const bore = add(new THREE.CircleGeometry(0.0046, 12), new THREE.MeshBasicMaterial({ color: 0x030303 }), 0, BORE_Y, MUZZLE_Z - 0.0005);
     bore.rotation.y = Math.PI;
-    // miras: alça (atrás) e massa (na frente), topo na linha de mira
-    add(new THREE.BoxGeometry(0.004, 0.013, 0.014), steel, 0, SIGHT_Y - 0.0065, -0.166);
-    add(new THREE.BoxGeometry(0.0035, 0.004, 0.004), new THREE.MeshStandardMaterial({ color: 0xc23a1e, roughness: 0.5 }), 0, SIGHT_Y - 0.003, -0.162);
-    for (const s of [-1, 1]) add(new THREE.BoxGeometry(0.004, 0.009, 0.008), steel, s * 0.0045, SIGHT_Y - 0.0045, -0.004);
+    // miras: massa em rampa com ponto vermelho e alça com entalhe
+    profile([[0.15, 0.076], [0.17, 0.076], [0.17, SIGHT_Y], [0.162, SIGHT_Y]], 0.0035, 0.0006, steel);
+    add(new THREE.BoxGeometry(0.0038, 0.0035, 0.004), new THREE.MeshStandardMaterial({ color: 0xd8341a, roughness: 0.4, emissive: 0x3a0800 }), 0, SIGHT_Y - 0.0028, -0.165);
+    for (const sx of [-1, 1]) add(new THREE.BoxGeometry(0.0045, 0.008, 0.007), steel, sx * 0.0048, SIGHT_Y - 0.004, -0.002);
     // guarda-mato e gatilho
-    const guard = add(new THREE.TorusGeometry(0.015, 0.0025, 6, 14, Math.PI * 1.15), steel, 0, 0.03, -0.028);
-    guard.rotation.set(0, Math.PI / 2, Math.PI * 0.93);
-    this.trigger = add(new THREE.BoxGeometry(0.004, 0.017, 0.005), steelDark, 0, 0.026, -0.024);
+    const guard = add(new THREE.TorusGeometry(0.0145, 0.0022, 6, 16, Math.PI * 1.1), steel, 0, 0.028, -0.026);
+    guard.rotation.set(0, Math.PI / 2, Math.PI * 0.95);
+    this.trigger = add(new THREE.BoxGeometry(0.004, 0.017, 0.005), steelDark, 0, 0.026, -0.022);
     this.trigger.geometry.translate(0, -0.006, 0);
     // cão (gira para trás ao armar)
     this.hammer = new THREE.Group();
-    this.hammer.position.set(0, 0.066, 0.012);
+    this.hammer.position.set(0, 0.066, 0.014);
     g.add(this.hammer);
-    add(new THREE.BoxGeometry(0.006, 0.022, 0.01), steelDark, 0, 0.008, 0.002, this.hammer);
-    add(new THREE.BoxGeometry(0.008, 0.005, 0.012), steelDark, 0, 0.018, 0.008, this.hammer);
+    add(new THREE.BoxGeometry(0.006, 0.022, 0.009), steelDark, 0, 0.008, 0.002, this.hammer);
+    add(new THREE.BoxGeometry(0.009, 0.004, 0.012), steelDark, 0, 0.018, 0.009, this.hammer);
     // tambor: pivô na haste (crane) à esquerda/embaixo, abre girando para a esquerda
     this.crane = new THREE.Group();
     this.crane.position.set(-0.004, 0.036, -0.045);
     g.add(this.crane);
     this.cyl = new THREE.Group();
-    this.cyl.position.set(0.004, 0.013, 0); // eixo do tambor (o furo de cima alinha com o cano)
+    this.cyl.position.set(0.004, 0.013, 0);
     this.crane.add(this.cyl);
-    const cylGeo = new THREE.CylinderGeometry(0.0195, 0.0195, 0.042, 18);
+    const cylGeo = new THREE.CylinderGeometry(0.0198, 0.0198, 0.04, 24);
     cylGeo.rotateX(Math.PI / 2);
     add(cylGeo, steel, 0, 0, 0, this.cyl);
+    const front = new THREE.CylinderGeometry(0.0172, 0.0198, 0.003, 24);
+    front.rotateX(Math.PI / 2);
+    add(front, steel, 0, 0, -0.0215, this.cyl);
     // caneluras e as 6 câmaras com cartuchos
     this.rounds = [];
     for (let i = 0; i < 6; i++) {
       const a = (i / 6) * Math.PI * 2;
-      const fl = add(new THREE.BoxGeometry(0.005, 0.003, 0.03), steelDark, Math.sin(a + Math.PI / 6) * 0.019, Math.cos(a + Math.PI / 6) * 0.019, -0.004, this.cyl);
-      fl.rotation.z = -(a + Math.PI / 6);
-      const r = add(new THREE.CylinderGeometry(0.0048, 0.0048, 0.004, 8), brass, Math.sin(a) * 0.0125, Math.cos(a) * 0.0125, 0.0215, this.cyl);
+      const fl = add(new THREE.CylinderGeometry(0.0042, 0.0042, 0.026, 8), steelDark, Math.sin(a + Math.PI / 6) * 0.0185, Math.cos(a + Math.PI / 6) * 0.0185, -0.004, this.cyl);
+      fl.rotation.x = Math.PI / 2;
+      const r = add(new THREE.CylinderGeometry(0.0048, 0.0048, 0.003, 10), brass, Math.sin(a) * 0.0122, Math.cos(a) * 0.0122, 0.0205, this.cyl);
       r.rotation.x = Math.PI / 2;
       this.rounds.push(r);
+      const pr = add(new THREE.CircleGeometry(0.0016, 8), steelDark, Math.sin(a) * 0.0122, Math.cos(a) * 0.0122, 0.0222, this.cyl); // espoleta
+      pr.userData.primer = true;
     }
-    const rod = add(new THREE.CylinderGeometry(0.0025, 0.0025, 0.06, 6), steel, 0, -0.004, -0.045, this.crane);
+    const rod = add(new THREE.CylinderGeometry(0.0026, 0.0026, 0.058, 8), steel, 0, -0.004, -0.05, this.crane);
     rod.rotation.x = Math.PI / 2;
     this.model = g;
     this.muzzleLocal = new THREE.Vector3(0, BORE_Y, MUZZLE_Z - 0.005);

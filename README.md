@@ -31,6 +31,10 @@ Jogo de sobrevivência em primeira pessoa (estilo DayZ / Minecraft / The Walking
 - Guarda alta com os punhos durante a briga, punho fechado segurando a faca
 - Impacto com peso: congelamento rápido no acerto, tranco da câmera, vibração, partículas e som por material
 - **Revólver .357** (`3`), guardado no coldre da coxa: sacar/guardar animado, arma baixa e pronta, **mirar pela alça e massa** (`botão direito` / **MIRAR** / `LT`) com zoom, recuo com o cano subindo, tambor que gira a cada tiro, cão que arma, clarão e fumaça
+- **Sacar e guardar animados** (revólver e faca): a mão vai até o coldre/bainha, segura, puxa para cima, gira e traz para frente; guardar faz o caminho inverso
+- Mãos de verdade na arma: a direita envolve a empunhadura com o polegar por cima, a esquerda apoia por baixo
+- **Lanterna com o revólver**: uma mão na arma e a outra segurando a lanterna ao lado, iluminando para onde se mira — atirando com uma mão só a arma balança mais, o recuo é maior e a precisão cai bastante
+- Som do tiro sintetizado amostra a amostra (estalo, explosão, pancada grave, cauda) com eco do vale; compressor no áudio para não estourar
 - **Recarga animada** (`R` / 🔄 / `↓`): abre o tambor, ejeta as cápsulas (que caem e tilintam no chão), pega o speedloader no cinto, carrega e fecha
 - Munição limitada (6 no tambor + reserva); **caixas de munição .357** espalhadas pelo mapa (`F` para pegar)
 - Bala com dispersão (precisa mirar para acertar longe), furos nas superfícies, faíscas no metal, ricochete, acerto nos bonecos e nos objetos (latas voam); marcador de acerto na mira

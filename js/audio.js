@@ -30,9 +30,17 @@ export class GameAudio {
     this.under.type = 'lowpass';
     this.under.frequency.value = 20000;
     this.under.connect(ctx.destination);
+    // compressor: tiros e quedas altos não estouram, sons baixos continuam audíveis
+    this.comp = ctx.createDynamicsCompressor();
+    this.comp.threshold.value = -14;
+    this.comp.knee.value = 10;
+    this.comp.ratio.value = 6;
+    this.comp.attack.value = 0.002;
+    this.comp.release.value = 0.25;
+    this.comp.connect(this.under);
     this.master = ctx.createGain();
     this.master.gain.value = this.volume;
-    this.master.connect(this.under);
+    this.master.connect(this.comp);
 
     this.sfx = ctx.createGain();
     this.sfx.connect(this.master);
@@ -48,6 +56,7 @@ export class GameAudio {
     for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
 
     this.firePanners = new Map();
+    this._shotBuffers(); // prepara o som do tiro já (evita travadinha no primeiro disparo)
     this._startWind();
   }
 
@@ -295,21 +304,70 @@ export class GameAudio {
   }
 
   // ---------- revólver ----------
-  /** Tiro de .357: estalo seco, estrondo grave e o eco voltando do vale. */
+  /**
+   * Amostra de um tiro de .357 sintetizada amostra a amostra: estalo supersônico (ms), explosão
+   * de gás (ruído encorpado), pancada grave que cai de tom, cauda de ar rolando e saturação.
+   * Três variações para não soar sempre igual.
+   */
+  _shotBuffers() {
+    if (this._shots) return this._shots;
+    const sr = this.ctx.sampleRate, n = Math.floor(sr * 1.6);
+    this._shots = [];
+    for (let v = 0; v < 3; v++) {
+      const buf = this.ctx.createBuffer(2, n, sr);
+      for (let c = 0; c < 2; c++) {
+        const d = buf.getChannelData(c);
+        let lpA = 0, lpB = 0, lpC = 0, ph = 0;
+        const aA = 1 - Math.exp(-2 * Math.PI * (2600 + v * 300) / sr);
+        const aB = 1 - Math.exp(-2 * Math.PI * 520 / sr);
+        const aC = 1 - Math.exp(-2 * Math.PI * 180 / sr);
+        for (let i = 0; i < n; i++) {
+          const t = i / sr;
+          const w = Math.random() * 2 - 1;
+          lpA += (w - lpA) * aA; lpB += (w - lpB) * aB; lpC += (w - lpC) * aC;
+          const crack = w * Math.exp(-t / 0.0018) * 1.4;
+          const blast = lpA * Math.exp(-t / (0.05 + v * 0.008)) * 3.2;
+          const f = 42 + 110 * Math.exp(-t / 0.025);
+          ph += (2 * Math.PI * f) / sr;
+          const thump = Math.sin(ph) * Math.exp(-t / 0.085) * 0.95;
+          const roll = (lpB * 2.2 * Math.exp(-t / 0.35) + lpC * 3.5 * Math.exp(-t / 0.7)) * (1 + 0.35 * Math.sin(2 * Math.PI * (5 + v) * t + c));
+          const x = crack + blast + thump + roll * 0.6;
+          d[i] = Math.tanh(x * 1.8) * 0.9;
+        }
+      }
+      this._shots.push(buf);
+    }
+    return this._shots;
+  }
+
+  /** Tiro: amostra sintetizada + eco do vale ao ar livre (dentro de casa o reverb faz o papel). */
   gunshot(indoor = 0) {
     if (!this.ctx) return;
-    this._burst({ duration: 0.035, freq: 3200, q: 0.7, gain: 1.1, type: 'bandpass', attack: 0.001 }); // estalo
-    this._burst({ duration: 0.09, freq: 1200, q: 0.6, gain: 0.9, attack: 0.001 });
-    this._burst({ duration: 0.45, freq: 260, q: 0.5, gain: 1.2, attack: 0.002 });                    // estrondo
-    this._tone(70, 0.35, 0.6, 'sine', 0, 0.5);                                                       // pancada no peito
-    this._tone(5200 + Math.random() * 600, 0.06, 0.05, 'triangle', 0.02);                            // mecanismo
-    // eco ao ar livre (some dentro de casa, onde o reverb faz o papel)
+    const ctx = this.ctx, t = ctx.currentTime;
+    const bufs = this._shotBuffers();
+    const src = ctx.createBufferSource();
+    src.buffer = bufs[Math.floor(Math.random() * bufs.length)];
+    src.playbackRate.value = 0.95 + Math.random() * 0.1;
+    const g = ctx.createGain();
+    g.gain.value = 1.0;
+    src.connect(g).connect(this.sfx);
+    // eco: cópia abafada e atrasada, duas vezes (morro e floresta)
     const k = 1 - indoor;
     if (k > 0.05) {
-      this._burst({ duration: 0.6, freq: 420, q: 0.6, gain: 0.32 * k, delay: 0.22, attack: 0.02 });
-      this._burst({ duration: 0.9, freq: 300, q: 0.6, gain: 0.18 * k, delay: 0.62, attack: 0.05 });
-      this._burst({ duration: 1.2, freq: 220, q: 0.6, gain: 0.1 * k, delay: 1.3, attack: 0.1 });
+      for (const [delay, gain, freq] of [[0.28, 0.32, 900], [0.75, 0.18, 600], [1.4, 0.1, 400]]) {
+        const dl = ctx.createDelay(2);
+        dl.delayTime.value = delay + Math.random() * 0.05;
+        const lp = ctx.createBiquadFilter();
+        lp.type = 'lowpass'; lp.frequency.value = freq;
+        const eg = ctx.createGain();
+        eg.gain.value = gain * k;
+        g.connect(dl).connect(lp).connect(eg).connect(this.master);
+        setTimeout(() => { dl.disconnect(); eg.disconnect(); }, 4000);
+      }
     }
+    src.start(t);
+    // mecanismo (cão batendo)
+    this._tone(5200 + Math.random() * 600, 0.04, 0.04, 'triangle', 0.005);
   }
 
   dryFire() {

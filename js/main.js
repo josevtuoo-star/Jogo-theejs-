@@ -407,7 +407,9 @@ function shoot() {
   audio.gunshot(indoor);
   haptic(45);
   const aim = character.b.aim;
-  rig.kick(0.05 + Math.random() * 0.02 - aim * 0.015, (Math.random() - 0.5) * 0.02);
+  // lanterna na outra mão: atira com uma mão só, recuo maior e bem menos precisão
+  const oneHand = character._heldFlash ? 1 : 0;
+  rig.kick((0.05 + Math.random() * 0.02 - aim * 0.015) * (1 + oneHand * 0.5), (Math.random() - 0.5) * 0.02 * (1 + oneHand));
   rig.shake = Math.max(rig.shake, 0.12);
   player.pitch = Math.min(1.45, player.pitch + 0.012 + Math.random() * 0.008); // o cano sobe um pouco
   // fumaça na boca do cano
@@ -417,7 +419,8 @@ function shoot() {
       { life: 1.2, size: 0.05, grow: 0.35, color: [0.75, 0.74, 0.72], alpha: 0.25, drag: 2.5, gravity: -0.3 });
   }
   // dispersão: precisa mirar para acertar longe
-  const spread = lerp(0.045, 0.0035, aim) + Math.min(player.horizontalSpeed, 6) * 0.006 * (1 - aim * 0.6) + (player.onFloor ? 0 : 0.05);
+  const spread = lerp(0.045, 0.0035, aim) * (1 + oneHand * 2.2) + oneHand * 0.012 +
+    Math.min(player.horizontalSpeed, 6) * 0.006 * (1 - aim * 0.6) + (player.onFloor ? 0 : 0.05);
   camera.getWorldDirection(_shotDir);
   const u = Math.random() * Math.PI * 2, rr = Math.sqrt(Math.random()) * spread;
   _tmp.set(Math.cos(u) * rr, Math.sin(u) * rr, 0).applyQuaternion(camera.quaternion);
@@ -844,7 +847,7 @@ function updateHud() {
   // mira se abre com o movimento e no ar (e fecha quando mira com a arma)
   const aim = character.b.aim;
   let spread = 4 + Math.min(player.horizontalSpeed, 8) * 1.3 + (player.onFloor ? 0 : 8);
-  if (gunOut) spread = lerp(spread + 6, 2, aim);
+  if (gunOut) spread = lerp(spread + 6, 2, aim) + (character._heldFlash ? 7 : 0);
   ui.crosshair.style.setProperty('--gap', spread.toFixed(1) + 'px');
   // mirando em 1ª pessoa usa a alça e massa do revólver (sem cruz)
   ui.crosshair.classList.toggle('hide', player.onLadder || player.isClimbing || player.rolling || player.dead || (gunOut && aim > 0.6 && !rig.thirdPerson));
