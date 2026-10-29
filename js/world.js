@@ -29,7 +29,7 @@ function smoothstep(a, b, x) {
   const t = Math.min(Math.max((x - a) / (b - a), 0), 1);
   return t * t * (3 - 2 * t);
 }
-export function terrainHeight(x, z) {
+function naturalHeight(x, z) {
   let h = 0, amp = 1, freq = 0.02;
   for (let i = 0; i < 4; i++) {
     h += (valueNoise(x * freq, z * freq) - 0.5) * amp;
@@ -44,11 +44,25 @@ export function terrainHeight(x, z) {
   return h * 9 * flat * road + edge * 14;
 }
 
+// lago na floresta (noroeste): margem exatamente no nível da água, fundo de até ~3,4 m
+export const LAKE = { x: -62, z: 50, r: 19, y: 0 };
+LAKE.y = naturalHeight(LAKE.x, LAKE.z) - 0.3;
+
+export function terrainHeight(x, z) {
+  const h = naturalHeight(x, z);
+  const d = Math.hypot(x - LAKE.x, z - LAKE.z);
+  if (d > LAKE.r + 12) return h;
+  const k = d / LAKE.r;
+  const bed = LAKE.y - 3.4 * (1 - k * k);
+  return h + (bed - h) * smoothstep(LAKE.r + 12, LAKE.r - 3, d);
+}
+
 // trilhas de terra saindo das entradas da cerca
 const TRAILS = [
   [[36, 4], [55, 10], [75, 22], [100, 30], [128, 26]],
   [[-36, -4], [-58, -12], [-80, -8], [-105, -20], [-132, -24]],
   [[30, -22], [42, -40], [60, -55], [70, -80], [95, -110]],
+  [[-30, 19], [-38, 28], [-44, 36], [-47, 40]], // até o lago
 ];
 function distToSegment(px, pz, ax, az, bx, bz) {
   const dx = bx - ax, dz = bz - az;
@@ -104,6 +118,89 @@ function lumpy(geo, amount, seed = 1) {
   return geo;
 }
 
+/**
+ * Porta que abre e fecha girando na dobradiça. Tem um Octree próprio (só a folha da porta),
+ * reconstruído enquanto ela se move, para o jogador e os objetos colidirem com ela.
+ */
+class Door {
+  constructor(world, hx, baseY, hz, wallRot, width, height, mat) {
+    this.world = world;
+    this.wallRot = wallRot;
+    this.angle = 0;
+    this.target = 0;
+    this.pivot = new THREE.Group();
+    this.pivot.position.set(hx, baseY, hz);
+    this.pivot.rotation.y = wallRot;
+    const slab = new THREE.Mesh(boxGeo(width, height, 0.06, 1.2), mat);
+    slab.position.set(width / 2, height / 2, 0);
+    slab.castShadow = slab.receiveShadow = true;
+    this.pivot.add(slab);
+    const knobMat = world.mat.chrome;
+    for (const s of [-1, 1]) {
+      const knob = new THREE.Mesh(new THREE.SphereGeometry(0.035, 10, 8), knobMat);
+      knob.position.set(width - 0.1, 1.0, s * 0.06);
+      knob.castShadow = true;
+      this.pivot.add(knob);
+    }
+    // tábuas horizontais de reforço
+    for (const y of [0.35, height - 0.35]) {
+      const brace = new THREE.Mesh(boxGeo(width - 0.08, 0.1, 0.08, 1), mat);
+      brace.position.set(width / 2, y, 0);
+      this.pivot.add(brace);
+    }
+    world.scene.add(this.pivot);
+    this.slab = slab;
+    this.slab.userData.door = this;
+    this.center = new THREE.Vector3(hx, baseY + height / 2, hz);
+    this._rebuild();
+  }
+
+  get isOpen() { return Math.abs(this.target) > 0.1; }
+
+  _rebuild() {
+    this.pivot.updateMatrixWorld(true);
+    const g = new THREE.Group();
+    const c = new THREE.Mesh(this.slab.geometry, this.world.colliderMat);
+    c.matrixAutoUpdate = false;
+    c.matrix.copy(this.slab.matrixWorld);
+    g.add(c);
+    this.octree = new Octree();
+    this.octree.fromGraphNode(g);
+  }
+
+  /** Abre para longe de quem está empurrando, ou fecha. */
+  toggle(fromPos) {
+    if (this.isOpen) { this.target = 0; return 'close'; }
+    // lado do jogador em relação à porta (eixo z local da dobradiça)
+    const local = this.pivot.worldToLocal(fromPos.clone());
+    this.target = local.z > 0 ? 1.7 : -1.7;
+    return 'open';
+  }
+
+  /** Move a porta; para se for bater no jogador. Retorna true se terminou de fechar. */
+  update(dt, playerCollider) {
+    if (this.angle === this.target) return false;
+    const prev = this.angle;
+    const before = this.octree.capsuleIntersect(playerCollider);
+    const step = 3.4 * dt;
+    const diff = this.target - this.angle;
+    this.angle += Math.sign(diff) * Math.min(Math.abs(diff), step);
+    this.pivot.rotation.y = this.wallRot + this.angle;
+    this._rebuild();
+    const after = this.octree.capsuleIntersect(playerCollider);
+    // só trava se a porta estiver entrando MAIS no jogador (encostado nela, ela ainda abre)
+    if (after && after.depth > 0.03 && after.depth > (before ? before.depth : 0) + 0.005) {
+      // bateu no jogador: fica onde está
+      this.angle = prev;
+      this.target = prev;
+      this.pivot.rotation.y = this.wallRot + prev;
+      this._rebuild();
+      return false;
+    }
+    return this.angle === 0 && prev !== 0;
+  }
+}
+
 function makeRng(seed) {
   let s = seed;
   return () => ((s = (s * 16807) % 2147483647) / 2147483647);
@@ -118,7 +215,9 @@ export class World {
     this.staticMeshes = [];
     this.noGrass = [];      // retângulos [x0, z0, x1, z1] sem grama/árvore
     this.ladders = [];
+    this.doors = [];
     this.firePositions = [];
+    this.propSpots = [];
     this.windUniform = { value: 0 };
 
     this.mat = {
@@ -134,7 +233,7 @@ export class World {
       rock: new THREE.MeshStandardMaterial({ color: 0x77736a, roughness: 1, flatShading: true }),
       carBody: new THREE.MeshStandardMaterial({ color: 0x5d6e76, roughness: 0.5, metalness: 0.35 }),
       carRed: new THREE.MeshStandardMaterial({ color: 0x7a2a22, roughness: 0.5, metalness: 0.35 }),
-      glass: new THREE.MeshStandardMaterial({ color: 0x1b2328, roughness: 0.1, metalness: 0.8 }),
+      glass: new THREE.MeshStandardMaterial({ color: 0x24302e, roughness: 0.05, metalness: 0.6, transparent: true, opacity: 0.45 }),
       tire: new THREE.MeshStandardMaterial({ color: 0x151515, roughness: 0.9 }),
       barrel: new THREE.MeshStandardMaterial({ color: 0x4f6a38, roughness: 0.55, metalness: 0.4 }),
       metal: new THREE.MeshStandardMaterial({ color: 0x4a4a48, roughness: 0.45, metalness: 0.75 }),
@@ -143,6 +242,16 @@ export class World {
       redPaint: new THREE.MeshStandardMaterial({ color: 0x8a2a20, roughness: 0.7 }),
       fabric: new THREE.MeshStandardMaterial({ color: 0x5b5f4a, roughness: 1 }),
       sandbag: new THREE.MeshStandardMaterial({ color: 0x8a7a58, roughness: 1, flatShading: true }),
+      door: new THREE.MeshStandardMaterial({ map: TEX.plankTexture(), color: 0xb0a090, roughness: 0.85 }),
+      water: new THREE.MeshStandardMaterial({
+        color: 0x1f3a3a, roughness: 0.06, metalness: 0.1, transparent: true, opacity: 0.86, side: THREE.DoubleSide,
+        normalMap: TEX.waterNormalTexture(), normalScale: new THREE.Vector2(0.35, 0.35),
+      }),
+      reed: new THREE.MeshStandardMaterial({ color: 0x7a7a3e, roughness: 1, side: THREE.DoubleSide }),
+      headlight: new THREE.MeshStandardMaterial({ color: 0xdedcc8, roughness: 0.2, metalness: 0.5, emissive: 0x222018 }),
+      taillight: new THREE.MeshStandardMaterial({ color: 0x8a1a12, roughness: 0.3, emissive: 0x200404 }),
+      seat: new THREE.MeshStandardMaterial({ color: 0x2a2622, roughness: 0.95 }),
+      chrome: new THREE.MeshStandardMaterial({ color: 0xa0a4a8, roughness: 0.25, metalness: 0.9 }),
     };
     for (const m of Object.values(this.mat)) m.envMapIntensity = 0.65;
     this.colliderMat = new THREE.MeshBasicMaterial();
@@ -154,7 +263,7 @@ export class World {
       [M.asphalt, 'concrete'], [M.paint, 'concrete'], [M.sandbag, 'grass'],
       [M.wood, 'wood'], [M.plank, 'wood'], [M.bark, 'wood'],
       [M.rust, 'metal'], [M.metal, 'metal'], [M.carBody, 'metal'], [M.carRed, 'metal'], [M.barrel, 'metal'],
-      [M.glass, 'metal'], [M.redPaint, 'metal'],
+      [M.glass, 'metal'], [M.redPaint, 'metal'], [M.chrome, 'metal'], [M.door, 'wood'],
     ]);
     this.surfaceMeshes = [];
     this._raycaster = new THREE.Raycaster();
@@ -171,6 +280,7 @@ export class World {
     this._buildTower();
     this._buildTown();
     this._buildCampfire();
+    this._buildLake();
     this._buildForest();
     this._buildGrass();
     this._buildBounds();
@@ -240,6 +350,7 @@ export class World {
    * openings: [{ at: distância do início, width, bottom, top }]
    */
   wall(x1, z1, x2, z2, { height = 3, thick = 0.25, base = 0, mat = this.mat.brick, openings = [], frames = false } = {}) {
+    // aberturas com `door: true` ganham uma porta de verdade (abre e fecha)
     const len = Math.hypot(x2 - x1, z2 - z1);
     const dir = new THREE.Vector2((x2 - x1) / len, (z2 - z1) / len);
     const rot = -Math.atan2(dir.y, dir.x);
@@ -257,6 +368,10 @@ export class World {
       piece(a, b, 0, o.bottom);
       piece(a, b, o.top, height);
       cursor = b;
+      if (o.door) {
+        const [hx, hz] = at(a + 0.02);
+        this.doors.push(new Door(this, hx, base, hz, rot, o.width - 0.04, o.top - 0.02, o.doorMat ?? this.mat.door));
+      }
       if (frames) {
         // batentes de madeira em volta da abertura
         const fw = 0.08, ft = thick + 0.06;
@@ -366,6 +481,7 @@ export class World {
   update(playerPos, time = 0) {
     this.windUniform.value = time;
     this.skyUniforms.uTime.value = time;
+    if (this.waterMesh) this.waterMesh.material.normalMap.offset.set(time * 0.012, time * 0.007);
     const snap = 4; // reduz "tremido" da sombra
     const x = Math.round(playerPos.x / snap) * snap;
     const z = Math.round(playerPos.z / snap) * snap;
@@ -470,14 +586,14 @@ export class World {
     this.box(w + 0.1, 0.3, d + 0.1, M.concrete, cx, -0.05, cz, 0, 2, false);
     // parede frontal (z1) com porta e janela
     this.wall(x0, z1, x1, z1, { height: h, frames: true, openings: [
-      { at: 3, width: 1.4, bottom: 0, top: 2.3 },
+      { at: 3, width: 1.4, bottom: 0, top: 2.3, door: true },
       { at: 7.2, width: 1.6, bottom: 1.0, top: 2.2 },
     ] });
     this.wall(x0, z0, x1, z0, { height: h, frames: true, openings: [{ at: 5, width: 2, bottom: 1.0, top: 2.2 }] });
     this.wall(x0, z0, x0, z1, { height: h, frames: true, openings: [{ at: 4, width: 1.4, bottom: 1.0, top: 2.2 }] });
     this.wall(x1, z0, x1, z1, { height: h });
     // divisória interna com vão
-    this.wall(cx + 1, z0, cx + 1, z1, { height: h, thick: 0.15, mat: M.paint, openings: [{ at: 5.5, width: 1.2, bottom: 0, top: 2.3 }] });
+    this.wall(cx + 1, z0, cx + 1, z1, { height: h, thick: 0.15, mat: M.paint, openings: [{ at: 5.5, width: 1.2, bottom: 0, top: 2.3, door: true }] });
     // laje / terraço + teto interno claro
     this.box(w + 0.6, 0.25, d + 0.6, M.roof, cx, h + 0.12, cz, 0, 3);
     this.box(w - 0.3, 0.02, d - 0.3, M.paint, cx, h - 0.01, cz, 0, 3, false);
@@ -514,7 +630,7 @@ export class World {
     this.box(w, 0.2, d, M.plank, cx, 0.1, cz, 0, 1.5);
     const opts = { height: h, thick: 0.2, mat: M.plank, frames: true };
     this.wall(x0, z0, x1, z0, { ...opts, openings: [
-      { at: 3.5, width: 1.2, bottom: 0, top: 2.2 },
+      { at: 3.5, width: 1.2, bottom: 0, top: 2.2, door: true },
       { at: 1.3, width: 1.0, bottom: 1.0, top: 2.0 },
       { at: 5.7, width: 1.0, bottom: 1.0, top: 2.0 },
     ] });
@@ -583,7 +699,7 @@ export class World {
     const opts = { height: kh, thick: 0.2, mat: M.concrete, frames: true };
     this.box(kw, 0.15, kd, M.concrete, kx, 0.075, kz, 0, 2);
     this.wall(kx + kw / 2, kz - kd / 2, kx + kw / 2, kz + kd / 2, { ...opts, openings: [
-      { at: 1.0, width: 1.1, bottom: 0, top: 2.2 }, { at: 2.6, width: 1.3, bottom: 0.9, top: 2.1 },
+      { at: 1.0, width: 1.1, bottom: 0, top: 2.2, door: true }, { at: 2.6, width: 1.3, bottom: 0.9, top: 2.1 },
     ] });
     this.wall(kx - kw / 2, kz - kd / 2, kx - kw / 2, kz + kd / 2, opts);
     this.wall(kx - kw / 2, kz - kd / 2, kx + kw / 2, kz - kd / 2, { ...opts, openings: [{ at: 2, width: 1.4, bottom: 1.0, top: 2.0 }] });
@@ -728,6 +844,20 @@ export class World {
       this.solid(r, false);
     }
 
+    // ===== Objetos soltos (com física) =====
+    const P = (type, x, y, z) => this.propSpots.push({ type, x, y, z });
+    P('can', 10.6, 1.0, -10.5); P('bottle', 11.2, 1.0, -10.75); P('can', 11.5, 1.0, -10.4); P('pot', 10.9, 1.0, -10.9);
+    P('bucket', 16.6, 0.2, -5.4); P('pot', 18, 0.2, -11.2);
+    P('pot', 16.3, 0.98, 20.4); P('bottle', 16.9, 0.98, 20.6); P('can', 16.05, 0.98, 20.75);
+    P('can', -20.4, 1.15, 22.2); P('can', -20.4, 1.15, 22.6); P('can', -20.35, 1.15, 23.1); P('bottle', -20.4, 1.15, 23.5);
+    P('jerrycan', -12.4, 0.12, 25.3); P('jerrycan', -15.9, 0.12, 22.5); P('bucket', -11, 0.12, 22);
+    P('can', 7.8, 0.81, 3.1); P('can', 8.35, 0.81, 2.85); P('bottle', 8.1, 0.81, 3.25);
+    P('pot', 7.7, 0, 16.7); P('can', 6.1, 0, 17.5); P('bottle', 8.3, 0, 15.2); P('can', 5.6, 0, 15.6);
+    P('can', -3, 0.05, 5); P('can', -5.5, 0.05, -10); P('bottle', -1.5, 0.05, 18);
+    P('crate', -17.4, 0, -9); P('crate', -16.7, 0, -8.4); P('crate', -17.1, 0.36, -8.8);
+    P('bucket', 15, 0.2, 16.6); P('can', 30.6, 5.6, -22.5); P('bucket', 12, 3.45, -6);
+    P('jerrycan', 26.5, 0, -12.6); P('can', 25.6, 0.85, -14.2);
+
     // ===== Mesa de piquenique =====
     this.box(1.8, 0.06, 0.8, M.wood, 8, 0.78, 3, 0.4);
     this.invisibleCollider(new THREE.BoxGeometry(1.8, 0.8, 0.8), new THREE.Vector3(8, 0.4, 3), new THREE.Euler(0, 0.4, 0));
@@ -791,31 +921,59 @@ export class World {
   car(x, z, rotY, paint, flipped = false) {
     const g = new THREE.Group();
     const M = this.mat;
-    const body = new THREE.Mesh(boxGeo(4.2, 0.7, 1.8), paint);
-    body.position.y = 0.72;
-    const hood = new THREE.Mesh(boxGeo(1.2, 0.12, 1.7), paint);
-    hood.position.set(1.45, 1.1, 0);
-    hood.rotation.z = -0.06;
-    const cabin = new THREE.Mesh(boxGeo(2.1, 0.62, 1.62), paint);
-    cabin.position.set(-0.25, 1.38, 0);
-    const glass = new THREE.Mesh(boxGeo(2.16, 0.46, 1.64), M.glass);
-    glass.position.set(-0.25, 1.38, 0);
-    const bumperF = new THREE.Mesh(boxGeo(0.15, 0.2, 1.8), M.metal);
-    bumperF.position.set(2.15, 0.5, 0);
-    const bumperB = bumperF.clone();
-    bumperB.position.x = -2.15;
-    g.add(body, hood, cabin, glass, bumperF, bumperB);
-    for (const [wx, wz] of [[1.3, 0.85], [1.3, -0.85], [-1.3, 0.85], [-1.3, -0.85]]) {
-      const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.38, 0.26, 14), M.tire);
-      wheel.rotation.x = Math.PI / 2;
-      wheel.position.set(wx, 0.38, wz);
-      g.add(wheel);
+    const add = (geo, mat, px, py, pz, rx = 0, ry = 0, rz = 0) => {
+      const m = new THREE.Mesh(geo, mat);
+      m.position.set(px, py, pz);
+      m.rotation.set(rx, ry, rz);
+      g.add(m);
+      return m;
+    };
+    // carroceria
+    const body = add(boxGeo(4.2, 0.62, 1.8), paint, 0, 0.74, 0);
+    add(boxGeo(1.25, 0.1, 1.72), paint, 1.45, 1.08, 0, 0, 0, -0.06);       // capô
+    add(boxGeo(0.8, 0.1, 1.72), paint, -1.75, 1.08, 0);                    // porta-malas
+    // cabine: teto, colunas e vidros (dá para ver os bancos lá dentro)
+    add(boxGeo(1.9, 0.07, 1.6), paint, -0.3, 1.66, 0);
+    for (const [px, pz] of [[0.62, 0.77], [0.62, -0.77], [-1.22, 0.77], [-1.22, -0.77]]) {
+      add(boxGeo(0.07, 0.6, 0.06), paint, px, 1.36, pz, 0, 0, px > 0 ? 0.35 : -0.25);
     }
-    g.position.set(x, flipped ? 1.85 : 0, z);
+    add(boxGeo(0.04, 0.55, 1.5), M.glass, 0.72, 1.36, 0, 0, 0, 0.42);       // para-brisa
+    add(boxGeo(0.04, 0.5, 1.5), M.glass, -1.3, 1.36, 0, 0, 0, -0.3);        // vidro traseiro
+    for (const s of [-1, 1]) add(boxGeo(1.75, 0.5, 0.03), M.glass, -0.3, 1.36, s * 0.79);
+    for (const sx of [0.05, -0.85]) {                                      // bancos
+      add(boxGeo(0.5, 0.15, 1.4), M.seat, sx, 1.1, 0);
+      add(boxGeo(0.12, 0.55, 1.4), M.seat, sx - 0.25, 1.35, 0, 0, 0, -0.15);
+    }
+    add(new THREE.TorusGeometry(0.15, 0.025, 6, 16), M.seat, 0.4, 1.32, 0.38, 0, Math.PI / 2, 0.5); // volante
+    // faróis, lanternas, para-choques, placa e retrovisores
+    for (const s of [-1, 1]) {
+      add(boxGeo(0.06, 0.16, 0.34), M.headlight, 2.11, 0.86, s * 0.62);
+      add(boxGeo(0.06, 0.14, 0.3), M.taillight, -2.11, 0.86, s * 0.65);
+      add(boxGeo(0.18, 0.1, 0.06), paint, 0.55, 1.2, s * 0.94);
+    }
+    add(boxGeo(0.15, 0.18, 1.86), M.chrome, 2.17, 0.52, 0);
+    add(boxGeo(0.15, 0.18, 1.86), M.chrome, -2.17, 0.52, 0);
+    add(boxGeo(0.03, 0.14, 0.42), M.paint, -2.25, 0.72, 0);
+    // rodas com calota
+    for (const [wx, wz] of [[1.3, 0.85], [1.3, -0.85], [-1.3, 0.85], [-1.3, -0.85]]) {
+      add(new THREE.CylinderGeometry(0.38, 0.38, 0.26, 16), M.tire, wx, 0.38, wz, Math.PI / 2);
+      add(new THREE.CylinderGeometry(0.2, 0.2, 0.27, 10), M.chrome, wx, 0.38, wz, Math.PI / 2);
+    }
+    g.position.set(x, flipped ? 1.72 : 0, z);
     g.rotation.set(flipped ? Math.PI : 0, rotY, flipped ? 0 : 0.03, 'YXZ');
     this.scene.add(g);
     g.updateMatrixWorld(true);
-    for (const m of [...g.children]) this.solid(m, m === body || m === cabin);
+    for (const m of [...g.children]) this.solid(m, m === body);
+    // colisor da cabine inteira (os vidros e colunas são finos demais)
+    const cabin = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.62, 1.62), this.colliderMat);
+    cabin.position.set(-0.3, 1.36, 0);
+    g.add(cabin);
+    g.updateMatrixWorld(true);
+    const c = new THREE.Mesh(cabin.geometry, this.colliderMat);
+    c.matrixAutoUpdate = false;
+    c.matrix.copy(cabin.matrixWorld);
+    this.colliders.add(c);
+    cabin.removeFromParent();
     this.noGrass.push([x - 2.4, z - 2.4, x + 2.4, z + 2.4]);
   }
 
@@ -856,8 +1014,84 @@ export class World {
     }
   }
 
+  // ---------- lago, píer e juncos ----------
+  _buildLake() {
+    const { x: lx, z: lz, r, y } = LAKE;
+    const water = new THREE.Mesh(new THREE.CircleGeometry(r + 2.5, 64), this.mat.water);
+    water.rotation.x = -Math.PI / 2;
+    water.position.set(lx, y, lz);
+    water.receiveShadow = true;
+    water.material.normalMap.repeat.set(6, 6);
+    this.scene.add(water);
+    this.waterMesh = water;
+
+    // píer de madeira saindo da margem voltada para o vilarejo
+    const dir = new THREE.Vector2(-lx, -lz).normalize();
+    const rot = Math.atan2(dir.x, dir.y);
+    const deckY = y + 0.55;
+    const start = r + 2.5, end = r - 8;
+    const mid = (start + end) / 2, len = start - end;
+    const cxp = lx + dir.x * mid, czp = lz + dir.y * mid;
+    this.box(1.8, 0.12, len, this.mat.plank, cxp, deckY - 0.06, czp, rot, 1.5, false);
+    // colisão do píer vai até dentro d'água: dá para subir nele nadando (não passa por baixo)
+    const skirt = deckY - (y - 1.3);
+    this.invisibleCollider(new THREE.BoxGeometry(1.8, skirt, len), new THREE.Vector3(cxp, deckY - skirt / 2, czp), new THREE.Euler(0, rot, 0));
+    for (let t = end + 0.3; t < start; t += 2) {
+      for (const s of [-0.8, 0.8]) {
+        const px = lx + dir.x * t + Math.cos(rot) * s, pz = lz + dir.y * t - Math.sin(rot) * s;
+        const bottom = terrainHeight(px, pz) - 0.3;
+        this.cylinder(0.08, 0.09, deckY - bottom, this.mat.bark, px, (deckY + bottom) / 2 - 0.06, pz, { seg: 7 });
+      }
+    }
+    this.propSpots.push(
+      { type: 'bucket', x: lx + dir.x * (end + 1.2) + 0.3, y: deckY, z: lz + dir.y * (end + 1.2) },
+      { type: 'bottle', x: lx + dir.x * (end + 2.5) - 0.4, y: deckY, z: lz + dir.y * (end + 2.5) },
+    );
+
+    // juncos na margem e vitórias-régias na água
+    const rand = makeRng(321);
+    const reedGeo = new THREE.ConeGeometry(0.025, 1.4, 4, 1, true);
+    reedGeo.translate(0, 0.7, 0);
+    const reedMat = this.mat.reed;
+    this.addWind(reedMat, 0.12, 0.6);
+    const n = this.quality === 'low' ? 260 : 520;
+    const reeds = new THREE.InstancedMesh(reedGeo, reedMat, n);
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), p = new THREE.Vector3();
+    for (let i = 0; i < n; i++) {
+      const a = rand() * Math.PI * 2;
+      // não nasce em cima do píer
+      if (Math.abs(Math.atan2(Math.sin(a - Math.atan2(dir.y, dir.x)), Math.cos(a - Math.atan2(dir.y, dir.x)))) < 0.12) { i--; continue; }
+      const d = r - 1.5 + rand() * 3;
+      const x = lx + Math.cos(a) * d, z = lz + Math.sin(a) * d;
+      q.setFromEuler(new THREE.Euler((rand() - 0.5) * 0.3, rand() * 6, (rand() - 0.5) * 0.3));
+      const k = 0.6 + rand() * 0.7;
+      m.compose(p.set(x, terrainHeight(x, z) - 0.05, z), q, sc.set(k, k, k));
+      reeds.setMatrixAt(i, m);
+    }
+    reeds.castShadow = true;
+    this.scene.add(reeds);
+
+    const padGeo = new THREE.CircleGeometry(0.28, 10, 0.3, Math.PI * 2 - 0.6);
+    padGeo.rotateX(-Math.PI / 2);
+    const pads = new THREE.InstancedMesh(padGeo, new THREE.MeshStandardMaterial({ color: 0x3e5a2a, roughness: 0.6 }), 30);
+    for (let i = 0; i < 30; i++) {
+      const a = rand() * Math.PI * 2, d = r * (0.55 + rand() * 0.4);
+      q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rand() * 6);
+      const k = 0.6 + rand() * 0.8;
+      m.compose(p.set(lx + Math.cos(a) * d, y + 0.01, lz + Math.sin(a) * d), q, sc.set(k, 1, k));
+      pads.setMatrixAt(i, m);
+    }
+    this.scene.add(pads);
+  }
+
+  /** Nível da água em (x, z), ou -Infinity se não houver água ali. */
+  waterAt(x, z) {
+    return Math.hypot(x - LAKE.x, z - LAKE.z) < LAKE.r + 2.4 ? LAKE.y : -Infinity;
+  }
+
   // ---------- floresta ----------
   _isFree(x, z, margin = 0) {
+    if (Math.hypot(x - LAKE.x, z - LAKE.z) < LAKE.r + 1 + margin) return false;
     for (const [x0, z0, x1, z1] of this.noGrass) {
       if (x > x0 - margin && x < x1 + margin && z > z0 - margin && z < z1 + margin) return false;
     }

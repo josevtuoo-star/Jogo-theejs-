@@ -11,25 +11,37 @@ Jogo de sobrevivência em primeira pessoa (estilo DayZ / Minecraft / The Walking
 - **Escalar e pular obstáculos** (estilo DayZ): caixotes, barris, muros, janelas; cercas baixas são puladas por cima
 - **Escadas de mão**: na torre de vigia e nos contêineres (subir, descer pelo topo, soltar pulando)
 - **Inclinar/espiar** com `Q`/`E` sem atravessar paredes
-- Colisões com cápsula + Octree (chão, paredes, rampas, escadas, teto), dano de queda, morte e renascimento
+- **Degraus baixos** (troncos, varandas, meio-fio) são subidos sem pular
+- **Água**: andar na parte rasa (mais lento), **nadar**, **mergulhar** e subir no píer pela água; cair na água amortece a queda
+- Colisões com cápsula + Octree (chão, paredes, rampas, escadas, teto, portas), dano de queda, morte e renascimento
+
+### Mecânicas
+- **Lanterna de verdade**: o modelo fica na mão (1ª e 3ª pessoa), a luz sai da lente e aponta para a mira, com feixe visível, sombras, anel de refletor e mau contato de vez em quando
+- **Portas** que abrem e fecham (`F` / **USAR**), abrindo para longe de quem empurra e parando se baterem no jogador
+- **Objetos com física**: latas, garrafas, baldes, galões, panelas e caixinhas caem, rolam e são chutados ao passar; a faca também os arremessa
+- **Faca** acerta paredes, chão, portas e objetos com som e partículas (faíscas no metal, lascas na madeira, poeira)
 
 ### Câmera e animações
 - 1ª pessoa com balanço da cabeça, inclinação, tranco no pouso, FOV maior correndo/deslizando
 - **Corpo visível em 1ª pessoa**: ao olhar para baixo você vê suas pernas, e sua sombra aparece no chão
 - 3ª pessoa (`V`) com colisão da câmera
-- Braços em 1ª pessoa e corpo completo (rosto, gorro, mochila, cotovelos e joelhos) com animações de parado, andar, correr, agachar, pular, escalar, escada, deslizar, rolar, inclinar, atacar e morrer
+- Braços em 1ª pessoa e corpo completo (rosto, gorro, mochila, mãos, cotovelos e joelhos) com animações de parado (mudando o peso), girar no lugar, andar, correr (inclinando nas curvas), agachar, pular, pouso, escalar, escada, deslizar, rolar, nadar, segurar a lanterna, inclinar, atacar e morrer
+- Os braços recolhem perto de paredes e inclinam ao andar de lado
 
 ### Mundo e gráficos
 - Céu procedural com sol e nuvens em movimento; luz de fim de tarde e reflexos do ambiente
 - Terreno com grama verde e seca, terra, trilhas e pedra nas encostas; estrada de asfalto atravessando o mapa
 - Floresta de outono: pinheiros, árvores coloridas, árvores mortas, arbustos, pedras e troncos caídos; grama e copas balançando com o vento
-- Vilarejo: casa de tijolos com terraço, cabana de madeira, posto de gasolina com loja, torre de vigia, contêineres, carros (um capotado), sacos de areia, fogueira acesa
+- Vilarejo: casa de tijolos com terraço, cabana de madeira, posto de gasolina com loja, torre de vigia, contêineres, carros detalhados (faróis, bancos, volante, calotas; um capotado), sacos de areia, fogueira acesa
+- Lago na floresta com píer, juncos e vitórias-régias; visão e som abafados debaixo d'água
 - Efeitos: poeira ao pousar/deslizar/correr, fumaça e brasas da fogueira, folhas caindo
 - Objetos estáticos agrupados por material e região (poucos draw calls) e grama em blocos que somem com a distância
 
 ### Som
 - Passos diferentes em grama, concreto, madeira e metal; escada, deslize, rolamento, escalada, dor
-- Ambiente: vento (abafado dentro de casa), pássaros e corvos ao longe, crepitar da fogueira
+- Ambiente: vento (abafado dentro de casa), pássaros e corvos ao longe, fogueira com som 3D vindo da direção dela
+- Eco dentro das casas, som abafado debaixo d'água, bolhas, respingos e braçadas
+- Portas rangendo e batendo, impactos diferentes para lata, vidro, metal, madeira; batimento cardíaco com pouca vida
 
 ### Interface e plataformas
 - HUD com vida, bússola, mira que abre com o movimento, dicas de escalar/escada, vinheta de ferimento
@@ -48,7 +60,9 @@ Jogo de sobrevivência em primeira pessoa (estilo DayZ / Minecraft / The Walking
 | Agachar / deslizar (correndo) / rolar (caindo) | `C` (alterna) / `Ctrl` (segurar) | **AGACHAR** | `B` |
 | Inclinar (espiar) | `Q` / `E` | — | `LB` / `RB` |
 | Atacar | Clique esquerdo | 🔪 | `RT` |
-| Lanterna | `F` | 🔦 | `X` |
+| Usar / porta | `F` | **USAR** (aparece perto da porta) | `X` |
+| Lanterna | `L` | 🔦 | `↑` (direcional) |
+| Nadar: mergulhar / subir | `Ctrl` / `Espaço` | **AGACHAR** / **PULAR** | `B` / `A` |
 | 1ª / 3ª pessoa | `V` | 👁 | `Y` |
 | Pausar | `Esc` | ❚❚ | `Start` |
 
@@ -82,6 +96,8 @@ js/viewmodel.js     braços e faca em 1ª pessoa (animações)
 js/character.js     corpo do personagem em 3ª pessoa (animações)
 js/world.js         mapa, céu, iluminação, relevo, vegetação e malha de colisão
 js/effects.js       partículas: poeira, fumaça, brasas, folhas caindo, fogueira
+js/flashlight.js    lanterna: modelo, luz que sai da lente, feixe e brilho
+js/physics.js       objetos soltos com física (latas, garrafas, baldes...)
 js/textures.js      texturas procedurais (canvas)
 js/audio.js         sons procedurais (Web Audio)
 ```

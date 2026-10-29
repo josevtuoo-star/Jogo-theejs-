@@ -194,3 +194,34 @@ export function asphaltTexture() {
     }
   });
 }
+
+/** Mapa de normais de ondinhas (repetível), animado deslocando a textura. */
+export function waterNormalTexture() {
+  const s = 128;
+  const c = document.createElement('canvas');
+  c.width = c.height = s;
+  const g = c.getContext('2d');
+  const img = g.createImageData(s, s);
+  const r = rng(123);
+  // soma de ondas senoidais com frequências inteiras: a textura emenda sem costura
+  const waves = Array.from({ length: 9 }, () => ({
+    fx: Math.floor(r() * 6) - 3 || 1, fy: Math.floor(r() * 6) - 3 || 2, ph: r() * 6.28, a: 0.4 + r(),
+  }));
+  const h = (x, y) => waves.reduce((acc, w) => acc + w.a * Math.sin((w.fx * x + w.fy * y) / s * Math.PI * 2 + w.ph), 0);
+  for (let y = 0; y < s; y++) {
+    for (let x = 0; x < s; x++) {
+      const dx = h(x + 1, y) - h(x - 1, y), dy = h(x, y + 1) - h(x, y - 1);
+      const nx = -dx * 2, ny = -dy * 2, nz = 1;
+      const l = Math.hypot(nx, ny, nz);
+      const i = (y * s + x) * 4;
+      img.data[i] = (nx / l * 0.5 + 0.5) * 255;
+      img.data[i + 1] = (ny / l * 0.5 + 0.5) * 255;
+      img.data[i + 2] = (nz / l * 0.5 + 0.5) * 255;
+      img.data[i + 3] = 255;
+    }
+  }
+  g.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  return t;
+}

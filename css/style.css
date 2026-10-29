@@ -37,10 +37,10 @@ html, body {
 
 #bars {
   position: absolute; left: max(16px, env(safe-area-inset-left)); top: 16px;
-  display: flex; flex-direction: column; gap: 6px; width: 220px;
+  display: flex; flex-direction: column; gap: 6px; width: min(220px, 26vw);
 }
 .bar { display: flex; align-items: center; gap: 8px; }
-.bar-label { width: 60px; font-size: 11px; letter-spacing: 1px; text-shadow: 0 1px 2px #000; }
+.bar-label { width: 44px; font-size: 11px; letter-spacing: 1px; text-shadow: 0 1px 2px #000; }
 .bar-track { flex: 1; height: 8px; background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.15); border-radius: 4px; overflow: hidden; }
 .bar-fill { height: 100%; width: 100%; transition: width 0.1s linear; }
 .bar-fill.health { background: linear-gradient(90deg, #8e1f1f, #d24545); }
@@ -61,7 +61,7 @@ html, body {
 /* bússola */
 #compass {
   position: absolute; left: 50%; top: 12px; transform: translateX(-50%);
-  width: min(360px, 60vw); height: 26px; overflow: hidden;
+  width: min(360px, 34vw); height: 26px; overflow: hidden;
   -webkit-mask-image: linear-gradient(90deg, transparent, #000 20%, #000 80%, transparent);
   mask-image: linear-gradient(90deg, transparent, #000 20%, #000 80%, transparent);
 }
@@ -184,3 +184,15 @@ body:not(.touch) .touch-only { display: none; }
   .tagline { display: none; }
   #play-btn { padding: 10px 40px; margin: 2px 0 10px; }
 }
+
+/* debaixo d'água */
+#underwater {
+  opacity: 1;
+  background:
+    radial-gradient(ellipse at 50% 0%, rgba(120,190,180,0.18), transparent 60%),
+    radial-gradient(ellipse at center, rgba(10,40,40,0.25) 30%, rgba(4,20,22,0.75) 100%);
+  animation: sway 3s ease-in-out infinite alternate;
+}
+@keyframes sway { from { transform: scale(1.02) translateX(-4px); } to { transform: scale(1.04) translateX(4px); } }
+
+#btn-use { right: calc(max(24px, env(safe-area-inset-right)) + 200px); bottom: 60px; width: 72px; height: 72px; font-size: 12px; border-color: #e6dcc0; background: rgba(120,100,50,0.5); }

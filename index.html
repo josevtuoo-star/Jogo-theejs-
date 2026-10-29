@@ -23,6 +23,7 @@
 
   <!-- HUD -->
   <div id="hud" class="hidden">
+    <div id="underwater" class="vignette hidden"></div>
     <div id="vignette-hurt" class="vignette"></div>
     <div id="damage-flash" class="vignette"></div>
 
@@ -55,6 +56,7 @@
     <button class="tbtn" id="btn-sprint" data-action="sprint">CORRER</button>
     <button class="tbtn" id="btn-crouch" data-action="crouch">AGACHAR</button>
     <button class="tbtn" id="btn-attack" data-action="attack" aria-label="Atacar">🔪</button>
+    <button class="tbtn hidden" id="btn-use" data-action="use">USAR</button>
     <button class="tbtn big" id="btn-jump" data-action="jump">PULAR</button>
   </div>
 
@@ -97,8 +99,10 @@
             <li><b>C</b> / <b>Ctrl</b> agachar (correndo: deslizar)</li>
             <li><b>C</b> antes de cair no chão: rolar</li>
             <li><b>Q</b> / <b>E</b> inclinar (espiar)</li>
-            <li><b>Clique</b> atacar</li>
-            <li><b>F</b> lanterna · <b>V</b> câmera</li>
+            <li><b>Clique</b> atacar (acerta objetos e paredes)</li>
+            <li><b>F</b> abrir/fechar porta</li>
+            <li><b>L</b> lanterna · <b>V</b> câmera</li>
+            <li>Na água: <b>Ctrl</b> mergulha, <b>Espaço</b> sobe</li>
             <li><b>Esc</b> pausar</li>
           </ul>
         </div>
@@ -110,6 +114,7 @@
             <li>Joystick no limite = correr</li>
             <li><b>PULAR</b> perto de obstáculo: escalar</li>
             <li><b>AGACHAR</b> correndo: deslizar</li>
+            <li><b>USAR</b> aparece perto de portas</li>
           </ul>
         </div>
         <div class="col">
@@ -119,7 +124,7 @@
             <li><b>A</b> pular/escalar · <b>B</b> agachar/deslizar</li>
             <li><b>L3</b> ou <b>LT</b> correr · <b>RT</b> atacar</li>
             <li><b>LB</b> / <b>RB</b> inclinar</li>
-            <li><b>X</b> lanterna · <b>Y</b> câmera</li>
+            <li><b>X</b> usar/porta · <b>↑</b> lanterna · <b>Y</b> câmera</li>
           </ul>
         </div>
       </div>

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { makeFlashlightModel } from './flashlight.js';
 
 // Corpo do personagem. Em terceira pessoa aparece inteiro; em primeira pessoa o tronco, a
 // cabeça e os braços ficam numa camada invisível para a câmera (mas ainda projetam sombra),
@@ -56,10 +57,12 @@ export class Character {
     this.hips.position.y = 0.95;
     this.body.add(this.hips);
 
-    // quadril e cinto
-    this.hips.add(part(new THREE.BoxGeometry(0.36, 0.2, 0.22), M.pants, 0, -0.02, 0));
-    this.hips.add(part(new THREE.BoxGeometry(0.38, 0.05, 0.24), M.leather, 0, 0.08, 0));
-    this.hips.add(part(new THREE.BoxGeometry(0.06, 0.05, 0.02), M.buckle, 0, 0.08, -0.125));
+    // quadril e cinto (em 1ª pessoa ficam escondidos: vistos de cima viravam um "quadrado")
+    const pelvis = part(new THREE.BoxGeometry(0.36, 0.2, 0.22), M.pants, 0, -0.02, 0);
+    const belt = part(new THREE.BoxGeometry(0.38, 0.05, 0.24), M.leather, 0, 0.08, 0);
+    const buckle = part(new THREE.BoxGeometry(0.06, 0.05, 0.02), M.buckle, 0, 0.08, -0.125);
+    this.hips.add(pelvis, belt, buckle);
+    this.fpHidden.push(pelvis, belt, buckle);
 
     // tronco
     this.torso = new THREE.Group();
@@ -118,14 +121,26 @@ export class Character {
       const elbow = limb(0.105, 0.3, 0.105, M.jacket, -0.14);
       elbow.position.y = -0.3;
       upper.add(elbow);
-      elbow.add(part(new THREE.BoxGeometry(0.08, 0.1, 0.09), M.glove, 0, -0.32, -0.005));
-      shoulder.userData = { upper, elbow };
+      const hand = new THREE.Group();
+      hand.position.set(0, -0.31, 0);
+      const palm = part(new THREE.CapsuleGeometry(0.038, 0.05, 3, 8), M.glove, 0, -0.03, -0.005);
+      palm.scale.z = 0.75;
+      const thumb = part(new THREE.CapsuleGeometry(0.014, 0.03, 3, 6), M.glove, -s * 0.035, -0.02, -0.03);
+      thumb.rotation.z = s * 0.5;
+      hand.add(palm, thumb);
+      elbow.add(hand);
+      shoulder.userData = { upper, elbow, hand };
       shoulder.traverse((o) => { if (o.isMesh) this.fpHidden.push(o); });
       return shoulder;
     };
     this.armL = makeArm(-1);
     this.armR = makeArm(1);
     this.torso.add(this.armL, this.armR);
+    // lanterna na mão esquerda, apontando para frente quando o braço está esticado
+    this.flash = makeFlashlightModel(1.3);
+    this.flash.rotation.x = -Math.PI / 2; // ao longo do antebraço (para baixo = -Y)
+    this.flash.position.set(0, -0.06, -0.02);
+    this.armL.userData.hand.add(this.flash);
 
     // pernas: quadril → joelho → bota
     const makeLeg = (x) => {
@@ -148,7 +163,12 @@ export class Character {
     this.root.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
     scene.add(this.root);
 
-    this.blend = { run: 0, move: 0, crouch: 0, air: 0, climb: 0, death: 0, ladder: 0, slide: 0 };
+    this.blend = { run: 0, move: 0, crouch: 0, air: 0, climb: 0, death: 0, ladder: 0, slide: 0, swim: 0, flash: 0, land: 0 };
+    this.flashOn = false;
+    this.turnStep = 0;     // passinhos ao girar parado
+    this.turnPhase = 0;
+    this.runLean = 0;      // inclinação nas curvas
+    this.prevYaw = 0;
     this.lean = 0;
     this.t = 0;
     this.yaw = 0;
@@ -162,10 +182,23 @@ export class Character {
     for (const m of this.fpHidden) m.layers.set(fp ? FP_HIDDEN_LAYER : 0);
   }
 
+  setFlashlight(on, intensity = 1) {
+    this.flashOn = on;
+    this.flash.userData.lensMat.color.setHex(on && intensity > 0.5 ? 0xfff6dc : 0x3a3a34);
+  }
+
+  /** Posição da lente da lanterna no mundo. */
+  getLensWorldPosition(target) {
+    this.root.updateMatrixWorld(true);
+    return this.flash.userData.lens.getWorldPosition(target);
+  }
+
   update(dt, player, attacking) {
     this.t += dt;
     const b = this.blend;
     this.root.position.copy(player.feetPosition);
+    for (const e of player.events) if (e.type === 'land' && e.speed > 4) b.land = Math.min(1, e.speed / 14);
+    b.land = damp(b.land, 0, 6, dt);
 
     // gira suavemente para a direção da câmera (na escada, de frente para ela)
     let targetYaw = player.yaw;
@@ -174,6 +207,9 @@ export class Character {
     dy = Math.atan2(Math.sin(dy), Math.cos(dy));
     this.yaw += dy * (1 - Math.exp(-14 * dt));
     this.root.rotation.y = this.yaw;
+    let yawRate = (this.yaw - this.prevYaw) / Math.max(dt, 1e-4);
+    yawRate = Math.max(-6, Math.min(6, yawRate));
+    this.prevYaw = this.yaw;
 
     const speed = player.horizontalSpeed;
     b.move = damp(b.move, player.onFloor && !player.sliding ? Math.min(speed / 4.2, 1) : 0, 10, dt);
@@ -184,7 +220,14 @@ export class Character {
     b.ladder = damp(b.ladder, player.onLadder || player.climb?.toLadder ? 1 : 0, 10, dt);
     b.slide = damp(b.slide, player.sliding ? 1 : 0, 12, dt);
     b.death = damp(b.death, player.dead ? 1 : 0, player.dead ? 3 : 30, dt);
+    b.swim = damp(b.swim, player.swimming ? 1 : 0, 5, dt);
+    b.flash = damp(b.flash, this.flashOn && !player.onLadder && !player.isClimbing && !player.swimming ? 1 : 0, 7, dt);
     this.lean = player.lean;
+    // girando parado: pequenos passos; correndo: inclina para dentro da curva
+    const standing = player.onFloor && speed < 0.4 && !player.crouched;
+    this.turnStep = damp(this.turnStep, standing && Math.abs(yawRate) > 0.8 ? 1 : 0, 10, dt);
+    this.turnPhase += Math.abs(yawRate) * dt * 2.2 * this.turnStep;
+    this.runLean = damp(this.runLean, player.onFloor ? yawRate * 0.04 * Math.min(1, speed / 6) : 0, 6, dt);
 
     // em 1ª pessoa o corpo fica um pouco atrás da câmera (sem atravessar a visão)
     this.body.position.z = this.firstPerson ? 0.1 + b.crouch * 0.1 + b.slide * 0.2 : 0;
@@ -203,12 +246,25 @@ export class Character {
     this.legR.rotation.x = -swing * amp + crouchBend - b.air * 0.1;
     kneeL.rotation.x = -(Math.max(0, -Math.cos(ph)) * amp * 1.3 + crouchBend * 1.7 + b.air * 1.0);
     kneeR.rotation.x = -(Math.max(0, Math.cos(ph)) * amp * 1.3 + crouchBend * 1.7 + b.air * 0.4);
+    if (this.turnStep > 0.01) {
+      const tL = Math.max(0, Math.sin(this.turnPhase)) * 0.35 * this.turnStep;
+      const tR = Math.max(0, -Math.sin(this.turnPhase)) * 0.35 * this.turnStep;
+      this.legL.rotation.x += tL; kneeL.rotation.x -= tL * 1.6;
+      this.legR.rotation.x += tR; kneeR.rotation.x -= tR * 1.6;
+    }
 
     // quadril: desce ao agachar, quica ao andar
     const bounce = Math.abs(Math.cos(ph)) * 0.05 * b.move;
-    this.hips.position.y = 0.95 - b.crouch * 0.38 + bounce - b.air * 0.05;
-    this.hips.position.x = this.lean * 0.05;
-    this.hips.rotation.x = 0;
+    // parado: muda o peso de uma perna para a outra devagar
+    const idle = (1 - b.move) * (1 - b.crouch) * (1 - b.air);
+    const shift = Math.sin(this.t * 0.45) * idle;
+    this.hips.position.y = 0.95 - b.crouch * 0.38 + bounce - b.air * 0.05 - b.land * 0.25 - Math.abs(shift) * 0.012;
+    this.hips.position.x = this.lean * 0.05 + shift * 0.025;
+    this.hips.rotation.set(0, 0, shift * 0.04 - this.runLean);
+    if (b.land > 0.01) {
+      this.legL.rotation.x += b.land * 0.6; kneeL.rotation.x -= b.land * 1.1;
+      this.legR.rotation.x += b.land * 0.6; kneeR.rotation.x -= b.land * 1.1;
+    }
 
     // ---------- tronco e cabeça ----------
     const fpLean = this.firstPerson ? 0.5 : 1;
@@ -232,6 +288,36 @@ export class Character {
       uR.rotation.x = 1.5;
       uR.rotation.z = 0.35;
       eR.rotation.x = 0.4;
+    }
+
+    // lanterna ligada: braço esquerdo esticado à frente, acompanhando o olhar
+    const F = b.flash;
+    if (F > 0.001) {
+      const aim = 1.45 + player.pitch - this.torso.rotation.x;
+      uL.rotation.x = lerp(uL.rotation.x, aim, F);
+      uL.rotation.y = lerp(uL.rotation.y, 0, F);
+      uL.rotation.z = lerp(uL.rotation.z, 0.22, F);
+      eL.rotation.x = lerp(eL.rotation.x, 0.12, F);
+    }
+
+    // natação: corpo deitado na água, braçadas de peito e pernas batendo
+    const W = b.swim;
+    if (W > 0.001) {
+      const sp = player.swimPhase;
+      const reach = Math.max(0, Math.sin(sp)), sweep = Math.max(0, -Math.sin(sp));
+      this.hips.rotation.x = lerp(this.hips.rotation.x, -1.1 - (player.underwater ? 0.2 : 0), W);
+      this.hips.position.y = lerp(this.hips.position.y, 1.25, W);
+      this.torso.rotation.x = lerp(this.torso.rotation.x, 0.25, W);
+      for (const [u, e, sd] of [[uL, eL, -1], [uR, eR, 1]]) {
+        u.rotation.x = lerp(u.rotation.x, 2.4 + reach * 0.6, W);
+        u.rotation.z = lerp(u.rotation.z, sd * (0.2 + sweep * 1.0), W);
+        e.rotation.x = lerp(e.rotation.x, 0.3 + sweep * 0.9, W);
+      }
+      const kick = Math.sin(sp * 2.5) * 0.4;
+      this.legL.rotation.x = lerp(this.legL.rotation.x, kick, W);
+      this.legR.rotation.x = lerp(this.legR.rotation.x, -kick, W);
+      kneeL.rotation.x = lerp(kneeL.rotation.x, -0.3 - Math.max(0, kick), W);
+      kneeR.rotation.x = lerp(kneeR.rotation.x, -0.3 - Math.max(0, -kick), W);
     }
 
     // ---------- escalada ----------

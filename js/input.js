@@ -11,7 +11,7 @@ const PAD_DEAD = 0.18;
 const PAD_LOOK_SPEED = 3.0; // rad/s com o analógico no máximo
 
 // mapeamento "standard" da Gamepad API (Xbox / PlayStation / genéricos no Android)
-const PAD = { A: 0, B: 1, X: 2, Y: 3, LB: 4, RB: 5, LT: 6, RT: 7, START: 9, L3: 10, LEFT: 14, RIGHT: 15 };
+const PAD = { A: 0, B: 1, X: 2, Y: 3, LB: 4, RB: 5, LT: 6, RT: 7, START: 9, L3: 10, UP: 12, LEFT: 14, RIGHT: 15 };
 
 function deadzone(v) {
   const a = Math.abs(v);
@@ -60,7 +60,8 @@ export class Input {
       Space: 'jump',
       KeyC: 'crouchToggle',
       KeyV: 'view',
-      KeyF: 'light',
+      KeyF: 'use',
+      KeyL: 'light',
     };
 
     window.addEventListener('keydown', (e) => {
@@ -240,6 +241,11 @@ export class Input {
     return l;
   }
 
+  /** Pulo segurado (subir à superfície nadando). */
+  get jumpHeld() {
+    return this.keys.has('Space') || this.touchHeld.has('jump') || this._padHeld(PAD.A);
+  }
+
   get crouchHeld() {
     return this.keys.has('ControlLeft') || this.keys.has('ControlRight') || this.touchCrouch;
   }
@@ -294,7 +300,8 @@ export class Input {
 
     if (down(PAD.A)) this.pressed.add('jump');
     if (down(PAD.B)) this.pressed.add('crouchToggle');
-    if (down(PAD.X)) this.pressed.add('light');
+    if (down(PAD.X)) this.pressed.add('use');
+    if (down(PAD.UP)) this.pressed.add('light');
     if (down(PAD.Y)) this.pressed.add('view');
     if (down(PAD.RT)) this.pressed.add('attack');
     if (down(PAD.START)) this.onPauseRequest?.();

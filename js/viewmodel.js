@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { makeFlashlightModel } from './flashlight.js';
 
 // Braços em primeira pessoa (renderizados numa cena separada, por cima do mundo,
 // para nunca atravessarem paredes). Todas as animações são procedurais.
@@ -110,6 +111,26 @@ export class ViewModel {
     this.knife.rotation.set(0.35, 0, 0);
     this.right.userData.hand.add(this.knife);
 
+    // lanterna na mão esquerda (a luz do jogo sai da lente dela)
+    this.flash = makeFlashlightModel(1.1);
+    this.flash.position.set(0.005, -0.015, -0.02);
+    this.left.userData.hand.add(this.flash);
+    const gc = document.createElement('canvas');
+    gc.width = gc.height = 64;
+    const gg = gc.getContext('2d');
+    const rg = gg.createRadialGradient(32, 32, 0, 32, 32, 32);
+    rg.addColorStop(0, 'rgba(255,248,225,1)');
+    rg.addColorStop(0.35, 'rgba(255,235,190,0.35)');
+    rg.addColorStop(1, 'rgba(255,230,180,0)');
+    gg.fillStyle = rg;
+    gg.fillRect(0, 0, 64, 64);
+    this.lensGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(gc), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
+    this.lensGlow.scale.setScalar(0.09);
+    this.lensGlow.position.z = -0.002;
+    this.flash.userData.lens.add(this.lensGlow);
+    this.lensGlow.visible = false;
+    this.flashOn = false;
+
     this.t = 0;
     this.sway = new THREE.Vector2();
     this.sprintBlend = 0;
@@ -122,6 +143,12 @@ export class ViewModel {
     this.landVel = 0;
     this.attackTime = -1;
     this.attackSide = 1;
+    this.flashBlend = 0;
+    this.swimBlend = 0;
+    this.obstruct = 0;      // 0..1: parede logo à frente, braços recolhidos
+    this.obstructTarget = 0;
+    this.strafe = 0;
+    this.recoil = 0;
     this.hidden = 0;   // 1 = abaixado/fora da tela (morte)
     this.visible = true;
   }
@@ -131,8 +158,29 @@ export class ViewModel {
     this.camera.updateProjectionMatrix();
   }
 
-  setFlashlight(on) {
-    this.flashFill.intensity = on ? 1.2 : 0;
+  setFlashlight(on, intensity = 1) {
+    this.flashOn = on;
+    this.flashFill.intensity = on ? 0.35 * intensity : 0;
+    this.flash.userData.lensMat.color.setHex(on && intensity > 0.5 ? 0xfff6dc : 0x3a3a34);
+    this.lensGlow.visible = on && intensity > 0.5;
+  }
+
+  /** Distância livre à frente (m): perto de paredes os braços recolhem. */
+  setObstruction(dist) {
+    this.obstructTarget = Math.max(0, Math.min(1, (0.75 - dist) / 0.45));
+  }
+
+  /** A faca bateu em algo duro: volta com tranco. */
+  hitRecoil() {
+    this.recoil = 1;
+    if (this.attackTime >= 0 && this.attackTime < 0.2) this.attackTime = 0.2;
+  }
+
+  /** Posição da lente da lanterna no mundo (para a luz sair dela). */
+  getLensWorldPosition(target, mainCamera) {
+    this.scene.updateMatrixWorld();
+    this.flash.userData.lens.getWorldPosition(target); // espaço da câmera dos braços
+    return target.applyMatrix4(mainCamera.matrixWorld);
   }
 
   attack() {
@@ -155,6 +203,11 @@ export class ViewModel {
     this.hidden = damp(this.hidden, player.dead ? 1 : player.rolling ? 0.7 : 0, player.rolling ? 14 : 5, dt);
     this.ladderBlend = damp(this.ladderBlend, player.onLadder ? 1 : 0, 10, dt);
     this.slideBlend = damp(this.slideBlend, player.sliding ? 1 : 0, 10, dt);
+    this.flashBlend = damp(this.flashBlend, this.flashOn && !player.onLadder && !player.isClimbing ? 1 : 0, 7, dt);
+    this.swimBlend = damp(this.swimBlend, player.swimming ? 1 : 0, 5, dt);
+    this.obstruct = damp(this.obstruct, player.onLadder || player.isClimbing ? 0 : this.obstructTarget, 8, dt);
+    this.strafe = damp(this.strafe, player.onFloor ? player.moveInput.x : 0, 6, dt);
+    this.recoil = damp(this.recoil, 0, 9, dt);
 
     // balanço ao olhar (os braços "atrasam" em relação à câmera)
     const ld = player.lookDelta || { x: 0, y: 0 };
@@ -178,14 +231,14 @@ export class ViewModel {
     const breath = Math.sin(this.t * 1.7) * 0.004 * (1 - Math.min(moveAmt, 1) * 0.7);
 
     this.root.position.set(
-      bobX - this.sway.x * 0.3 + player.lean * 0.02,
-      bobY + breath + this.sway.y * 0.25 + this.landKick + this.airOffset - this.crouchBlend * 0.015 - this.hidden * 0.5,
-      0
+      bobX - this.sway.x * 0.3 + player.lean * 0.02 - this.strafe * 0.012,
+      bobY + breath + this.sway.y * 0.25 + this.landKick + this.airOffset - this.crouchBlend * 0.015 - this.hidden * 0.5 - this.obstruct * 0.05,
+      this.obstruct * 0.1 + this.recoil * 0.03
     );
     this.root.rotation.set(
-      this.sway.y * 0.6,
+      this.sway.y * 0.6 - this.obstruct * 0.35,
       this.sway.x * 0.8,
-      bobX * 1.5 - this.sway.x * 0.4 + player.lean * 0.15
+      bobX * 1.5 - this.sway.x * 0.4 + player.lean * 0.15 - this.strafe * 0.06
     );
 
     // pose base + corrida: braços abaixam e giram
@@ -194,6 +247,31 @@ export class ViewModel {
     this.left.position.set(this.leftBase.x - s * 0.02, this.leftBase.y - s * 0.08 + Math.sin(ph) * 0.03 * s, this.leftBase.z + s * 0.06);
     this.right.rotation.set(0.1 - s * 0.5, 0.12 + s * 0.5, -s * 0.3);
     this.left.rotation.set(0.05 - s * 0.4 + Math.cos(ph) * 0.15 * s, -0.15 - s * 0.2, s * 0.2);
+
+    // lanterna ligada: braço esquerdo aponta para o centro da tela (mira)
+    const F = this.flashBlend * (1 - s * 0.6);
+    if (F > 0.001) {
+      this.left.position.x = THREE.MathUtils.lerp(this.left.position.x, -0.2, F);
+      this.left.position.y = THREE.MathUtils.lerp(this.left.position.y, -0.22, F);
+      this.left.rotation.x = THREE.MathUtils.lerp(this.left.rotation.x, 0.2, F);
+      this.left.rotation.y = THREE.MathUtils.lerp(this.left.rotation.y, -0.32, F);
+      this.left.rotation.z = THREE.MathUtils.lerp(this.left.rotation.z, 0.25, F);
+    }
+
+    // nadando: braçadas de peito, as duas mãos juntas à frente e abrindo para os lados
+    const W = this.swimBlend;
+    if (W > 0.001) {
+      const sp = player.swimPhase;
+      const reach = Math.max(0, Math.sin(sp)), sweep = Math.max(0, -Math.sin(sp));
+      for (const [arm, side] of [[this.right, 1], [this.left, -1]]) {
+        arm.position.x = THREE.MathUtils.lerp(arm.position.x, side * (0.1 + sweep * 0.2), W);
+        arm.position.y = THREE.MathUtils.lerp(arm.position.y, -0.24 + reach * 0.04, W);
+        arm.position.z = THREE.MathUtils.lerp(arm.position.z, -0.1 - reach * 0.16 + sweep * 0.08, W);
+        arm.rotation.x = THREE.MathUtils.lerp(arm.rotation.x, 0.05, W);
+        arm.rotation.y = THREE.MathUtils.lerp(arm.rotation.y, side * (0.25 - sweep * 0.9), W);
+        arm.rotation.z = THREE.MathUtils.lerp(arm.rotation.z, -side * 0.6, W);
+      }
+    }
 
     // escalada: as duas mãos se apoiam à frente, empurrando o corpo
     const c = this.climbBlend;

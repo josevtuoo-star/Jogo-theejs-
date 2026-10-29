@@ -49,6 +49,8 @@ export class CameraRig {
       if (e.type === 'damage') this.shake = 0.35;
       if (e.type === 'climb' || e.type === 'vault') this.landVel -= 0.6;
       if (e.type === 'slide') this.shake = Math.max(this.shake, 0.12);
+      // subiu um degrau: a câmera acompanha suave em vez de pular
+      if (e.type === 'stepUp') this.landOffset -= e.rise * 0.8;
     }
     // mola amortecida para o pouso
     this.landVel += (-this.landOffset * 160 - this.landVel * 16) * dt;

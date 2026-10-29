@@ -4,7 +4,8 @@ import { Capsule } from 'three/addons/math/Capsule.js';
 // Controlador do personagem em primeira pessoa.
 // Física: cápsula colidindo com o Octree do mundo (chão, paredes, rampas, teto).
 // Movimentos: andar, correr, pular, agachar, deslizar, escalar obstáculos, subir escadas
-// de mão, inclinar (espiar) e rolamento ao cair.
+// de mão, inclinar (espiar), rolamento ao cair, subir degraus baixos sozinho, andar na água
+// rasa, nadar e mergulhar. Portas têm colisão própria (Octree de cada porta).
 
 const GRAVITY = 26;
 const RADIUS = 0.35;
@@ -39,6 +40,16 @@ const SLIDE_MAX_TIME = 1.1;
 const LADDER_SPEED = 2.6;
 const LADDER_STEP = 0.45;
 
+// degraus baixos (meio-fio, varanda, raízes) são subidos sem pular
+const STEP_HEIGHT = 0.42;
+
+// água
+const SWIM_ENTER = 1.3;     // profundidade (dos pés à superfície) para começar a nadar
+const SWIM_EXIT = 1.1;
+const SWIM_SPEED = 2.5;
+const SWIM_FAST = 3.6;
+const FLOAT_DEPTH = 1.5;    // pés abaixo da superfície ao boiar (olhos logo acima d'água)
+
 // escalar / pular obstáculos (estilo DayZ)
 const LEDGE_MIN = 0.45;       // abaixo disso é só pular
 const LEDGE_MAX = 2.3;        // altura máxima que dá para escalar
@@ -66,9 +77,16 @@ function damp(a, b, lambda, dt) {
 }
 
 export class Player {
-  constructor(octree, spawn, ladders = []) {
+  constructor(octree, spawn, ladders = [], { waterAt = () => -Infinity, doors = [] } = {}) {
     this.octree = octree;
     this.ladders = ladders;
+    this.waterAt = waterAt;
+    this.doors = doors;
+    this._octrees = [octree];
+    this.swimming = false;
+    this.waterY = -Infinity;
+    this.waterDepth = 0;
+    this.swimPhase = 0;
     this.spawn = spawn.clone();
 
     this.collider = new Capsule(new THREE.Vector3(), new THREE.Vector3(), RADIUS);
@@ -130,6 +148,7 @@ export class Player {
     this.ladder = null;
     this.rollTime = -1;
     this.lean = 0;
+    this.swimming = false;
   }
 
   get sliding() { return this.slide !== null; }
@@ -189,6 +208,27 @@ export class Player {
     if (this.climb) { this._updateClimb(dt); this._updateLean(dt, 0); return; }
     if (this.ladder) { this._updateLadder(dt, input, move); this._updateLean(dt, 0); return; }
 
+    // portas próximas também colidem
+    this._octrees.length = 1;
+    for (const d of this.doors) {
+      if (d.center.distanceToSquared(this.collider.start) < 16) this._octrees.push(d.octree);
+    }
+
+    // ---------- água ----------
+    const feetY = this.collider.start.y - RADIUS;
+    this.waterY = this.waterAt(this.collider.start.x, this.collider.start.z);
+    this.waterDepth = this.waterY - feetY;
+    if (!this.swimming && this.waterDepth > SWIM_ENTER) {
+      this.swimming = true;
+      this.events.push({ type: 'splash', speed: Math.abs(this.velocity.y) });
+      this.velocity.y *= 0.25; // a água freia a queda
+      this.slide = null;
+    } else if (this.swimming && this.waterDepth < SWIM_EXIT) {
+      this.swimming = false;
+    }
+    if (this.swimming) { this._updateSwim(dt, input, move); this._updateLean(dt, 0); return; }
+    this.underwater = false;
+
     // entrar numa escada de mão
     const ladder = this._findLadder(move, false);
     if (ladder) { this._enterLadder(ladder); return; }
@@ -240,6 +280,8 @@ export class Player {
     // ---------- velocidade horizontal desejada ----------
     let speed = this.crouched ? CROUCH_SPEED : this.sprinting ? RUN_SPEED : WALK_SPEED;
     if (move.y < 0) speed *= BACKWARD_MULT;
+    // andando na água rasa fica mais lento
+    if (this.waterDepth > 0.3) speed *= Math.max(0.45, 1 - this.waterDepth * 0.45);
     this.forwardVector(_forward);
     _right.set(-_forward.z, 0, _forward.x);
     _wish.set(0, 0, 0).addScaledVector(_forward, move.y).addScaledVector(_right, move.x);
@@ -302,9 +344,17 @@ export class Player {
     const sdt = dt / SUBSTEPS;
     const startPos = _v.copy(this.collider.start);
     const startX = startPos.x, startZ = startPos.z;
+    const wantX = this.velocity.x * dt, wantZ = this.velocity.z * dt;
     for (let i = 0; i < SUBSTEPS; i++) {
       this.collider.translate(_wish.copy(this.velocity).multiplyScalar(sdt));
       this._collide();
+    }
+
+    // travou num degrau baixo? tenta subir nele
+    if (wasOnFloor && !jumping && !this.slide) {
+      const want = Math.hypot(wantX, wantZ);
+      const got = Math.hypot(this.collider.start.x - startX, this.collider.start.z - startZ);
+      if (want > 0.004 && got < want * 0.6) this._tryStepUp(wantX - (this.collider.start.x - startX), wantZ - (this.collider.start.z - startZ), wantX / dt, wantZ / dt);
     }
 
     if (wasOnFloor && !this.onFloor && !jumping) this._snapToGround();
@@ -326,7 +376,7 @@ export class Player {
         this.events.push({ type: 'roll' });
       }
       if (fallSpeed > FALL_DAMAGE_SPEED) {
-        const dmg = (fallSpeed - FALL_DAMAGE_SPEED) * 7 * (roll ? 0.3 : 1);
+        const dmg = (fallSpeed - FALL_DAMAGE_SPEED) * 7 * (roll ? 0.3 : 1) * (this.waterDepth > 0.5 ? 0.3 : 1);
         this.health = Math.max(0, this.health - dmg);
         this.events.push({ type: 'damage', amount: dmg });
       }
@@ -414,7 +464,7 @@ export class Player {
 
     // 1) tem parede na frente? (joelho, cintura, peito)
     let wall = Infinity;
-    for (const h of [0.35, 0.9, 1.5]) {
+    for (const h of [0.35, 0.9, 1.5, 2.0]) {
       const hit = this._rayHit(x, feet + h, z, f.x, 0, f.z);
       if (hit && hit.distance < wall) wall = hit.distance;
     }
@@ -539,10 +589,14 @@ export class Player {
    * isso faria o jogador "perder" o chão.)
    */
   _collide() {
+    for (const oct of this._octrees) this._collideWith(oct);
+  }
+
+  _collideWith(octree) {
     _tris.length = 0;
-    this.octree.getCapsuleTriangles(this.collider, _tris);
+    octree.getCapsuleTriangles(this.collider, _tris);
     for (let i = 0; i < _tris.length; i++) {
-      const r = this.octree.triangleCapsuleIntersect(this.collider, _tris[i]);
+      const r = octree.triangleCapsuleIntersect(this.collider, _tris[i]);
       if (!r || r.depth <= 0) continue;
       const n = r.normal;
       if (n.y >= MIN_FLOOR_NORMAL_Y) {
@@ -692,8 +746,94 @@ export class Player {
     }
   }
 
+  // ---------- subir degraus baixos ----------
+  _tryStepUp(dx, dz, vx, vz) {
+    _saveStart.copy(this.collider.start);
+    _saveEnd.copy(this.collider.end);
+    const savedVel = _lf.copy(this.velocity);
+    const feet0 = this.collider.start.y;
+    // sobe, verifica espaço, avança e desce de novo
+    this.collider.translate(_push.set(0, STEP_HEIGHT, 0));
+    let blocked = false;
+    for (const oct of this._octrees) if (oct.capsuleIntersect(this.collider)) { blocked = true; break; }
+    if (!blocked) {
+      // avança pelo menos um pouco: obstáculos arredondados (troncos) precisam disso
+      const len = Math.hypot(dx, dz);
+      const adv = Math.max(len, 0.28) / Math.max(len, 1e-6);
+      this.collider.translate(_push.set(dx * adv, 0, dz * adv));
+      this.velocity.set(vx, 0, vz);
+      this._collide();
+      this.onFloor = false;
+      this.collider.translate(_push.set(0, -STEP_HEIGHT - 0.06, 0));
+      this._collide();
+      const rise = this.collider.start.y - feet0;
+      const moved = Math.hypot(this.collider.start.x - _saveStart.x, this.collider.start.z - _saveStart.z);
+      if (this.onFloor && rise > 0.03 && rise < STEP_HEIGHT + 0.03 && moved > Math.hypot(dx, dz) * 0.5) {
+        this.velocity.set(savedVel.x, 0, savedVel.z);
+        this.events.push({ type: 'stepUp', rise });
+        return;
+      }
+    }
+    this.collider.start.copy(_saveStart);
+    this.collider.end.copy(_saveEnd);
+    this.velocity.copy(savedVel);
+    this.onFloor = true;
+  }
+
+  // ---------- nadar e mergulhar ----------
+  _updateSwim(dt, input, move) {
+    this.crouched = false;
+    this.crouchToggle = false;
+    this.sprinting = false;
+    this.height = damp(this.height, STAND_HEIGHT, 10, dt);
+    this.timeSinceGround = 1;
+
+    const fast = input.sprint;
+    this.forwardVector(_forward);
+    _right.set(-_forward.z, 0, _forward.x);
+    _wish.set(0, 0, 0).addScaledVector(_forward, move.y).addScaledVector(_right, move.x);
+    if (_wish.lengthSq() > 1) _wish.normalize();
+    _wish.multiplyScalar(fast ? SWIM_FAST : SWIM_SPEED);
+    this.velocity.x = damp(this.velocity.x, _wish.x, 3, dt);
+    this.velocity.z = damp(this.velocity.z, _wish.z, 3, dt);
+
+    const feet = this.collider.start.y - RADIUS;
+    const floatFeet = this.waterY - FLOAT_DEPTH;
+    const submerged = feet < floatFeet - 0.35;
+    let vyTarget;
+    if (input.crouchHeld) vyTarget = -2.2;                 // mergulhar
+    else if (input.jumpHeld && submerged) vyTarget = 2.4;  // voltar para a superfície
+    else vyTarget = Math.max(-1.5, Math.min(1.5, (floatFeet - feet) * 2.5)); // boiar
+    // debaixo d'água, nadar para frente segue o olhar (para cima ou para baixo)
+    if (submerged || (move.y > 0 && this.pitch < -0.4)) vyTarget += move.y * Math.sin(this.pitch) * (fast ? SWIM_FAST : SWIM_SPEED);
+    this.velocity.y = damp(this.velocity.y, vyTarget, 3, dt);
+
+    // sair da água subindo no píer / margem
+    if (input.wasPressed('jump') && !submerged) {
+      const ledge = this.findLedge(0.1);
+      if (ledge) { this.swimming = false; this._startClimb(ledge, input); return; }
+    }
+
+    const startX = this.collider.start.x, startZ = this.collider.start.z;
+    const sdt = dt / SUBSTEPS;
+    this.onFloor = false;
+    for (let i = 0; i < SUBSTEPS; i++) {
+      this.collider.translate(_push.copy(this.velocity).multiplyScalar(sdt));
+      this._collide();
+    }
+    this.horizontalSpeed = Math.hypot(this.collider.start.x - startX, this.collider.start.z - startZ) / Math.max(dt, 1e-4);
+
+    const before = Math.floor(this.swimPhase / Math.PI);
+    this.swimPhase += dt * (1.6 + this.horizontalSpeed * 0.9);
+    if (Math.floor(this.swimPhase / Math.PI) !== before && this.horizontalSpeed > 0.4) {
+      this.events.push({ type: 'swimStroke', under: submerged });
+    }
+    this.underwater = submerged;
+  }
+
   get state() {
     if (this.dead) return 'MORTO';
+    if (this.swimming) return this.underwater ? 'MERGULHANDO' : 'NADANDO';
     if (this.ladder || this.climb?.toLadder) return 'NA ESCADA';
     if (this.slide) return 'DESLIZANDO';
     if (this.rollTime >= 0) return 'ROLANDO';
