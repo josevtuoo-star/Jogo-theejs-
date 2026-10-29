@@ -33,11 +33,19 @@ export class CameraRig {
     this.landOffset = 0;
     this.landVel = 0;
     this.shake = 0;
+    this.kickP = 0;
+    this.kickY = 0;
     this.fov = this.baseFov;
     this.deathBlend = 0;
     this.climbPitch = 0;
     this.slideBlend = 0;
     this.ladderBlend = 0;
+  }
+
+  /** Tranco da câmera (golpe dado ou recebido). */
+  kick(pitch, yaw = 0) {
+    this.kickP += pitch;
+    this.kickY += yaw;
   }
 
   toggleView() {
@@ -55,6 +63,9 @@ export class CameraRig {
       if (e.type === 'land' && e.speed > 8) this.shake = Math.max(this.shake, Math.min(0.3, (e.speed - 8) * 0.05));
     }
     this.shake = Math.max(0, this.shake - dt);
+    // tranco dos golpes: mola rápida que volta ao centro
+    this.kickP = damp(this.kickP, 0, 14, dt);
+    this.kickY = damp(this.kickY, 0, 14, dt);
     this.deathBlend = damp(this.deathBlend, player.dead ? 1 : 0, player.dead ? 2.5 : 20, dt);
 
     player.getEyePosition(_eye);
@@ -85,8 +96,8 @@ export class CameraRig {
 
     const shakeX = this.shake > 0 ? (Math.random() - 0.5) * this.shake * 0.08 : 0;
     const shakeY = this.shake > 0 ? (Math.random() - 0.5) * this.shake * 0.08 : 0;
-    const pitch = player.pitch + shakeY + this.climbPitch + rollPitch;
-    const yaw = player.yaw + shakeX;
+    const pitch = player.pitch + shakeY + this.climbPitch + rollPitch + this.kickP;
+    const yaw = player.yaw + shakeX + this.kickY;
 
     if (!this.thirdPerson) {
       // segue os olhos do corpo, sem sair da cápsula (não atravessa paredes)

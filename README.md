@@ -24,8 +24,13 @@ Jogo de sobrevivência em primeira pessoa (estilo DayZ / Minecraft / The Walking
 - 3ª pessoa (`V`) com colisão da câmera
 
 ### Itens e combate
+- **Personagem e faca em modelos 3D** (`models/`): o personagem é preso no esqueleto procedural do jogo com pesos automáticos, então anima igual em 1ª e 3ª pessoa
 - **Mãos livres** ou **faca** (`1` / `2`): a faca fica guardada na bainha no quadril e é sacada com animação e som
-- **Soco** com as mãos livres e **golpe de faca** (acertam objetos, portas e paredes)
+- **Combos**: mãos livres = jab → direto → gancho; faca = corte → corte de volta → estocada
+- **Golpe forte**: segurar o botão carrega (o braço vai para trás) e soltar desfere — soco giratório ou facada de cima para baixo, com passo à frente
+- Guarda alta com os punhos durante a briga, punho fechado segurando a faca
+- Impacto com peso: congelamento rápido no acerto, tranco da câmera, vibração, partículas e som por material
+- **Bonecos de treino** de estopa: balançam conforme a força e direção do golpe, guardam as marcas de corte e soltam palha
 - **Lanterna** (`L`): presa no peito quando desligada; ligada, vai para a mão esquerda e a luz sai da lente
 
 ### Mundo pós-apocalíptico
@@ -57,7 +62,8 @@ Jogo de sobrevivência em primeira pessoa (estilo DayZ / Minecraft / The Walking
 | Escada de mão | `W` / `S` (Espaço solta) | Joystick | Analógico |
 | Agachar / deslizar (correndo) / rolar (caindo) | `C` (alterna) / `Ctrl` (segurar) | **AGACHAR** | `B` |
 | Inclinar (espiar) | `Q` / `E` | — | `LB` / `RB` |
-| Soco / golpe de faca | Clique esquerdo | 👊 / 🔪 | `RT` |
+| Soco / golpe de faca (combo) | Clique esquerdo | 👊 / 🔪 | `RT` |
+| Golpe forte | Segurar e soltar o clique | Segurar 👊 / 🔪 | Segurar `RT` |
 | Usar / porta | `F` | **USAR** (aparece perto da porta) | `X` |
 | Lanterna | `L` | 🔦 | `↑` (direcional) |
 | Nadar: mergulhar / subir | `Ctrl` / `Espaço` | **AGACHAR** / **PULAR** | `B` / `A` |
@@ -95,7 +101,10 @@ js/world.js         mapa, céu, iluminação, relevo, vegetação e malha de col
 js/effects.js       partículas: poeira, fumaça, brasas, folhas caindo, fogueira
 js/flashlight.js    lanterna: modelo, luz que sai da lente, feixe e brilho
 js/physics.js       objetos soltos com física (latas, garrafas, baldes...)
+js/playerModel.js   carrega os modelos 3D (personagem com pesos automáticos no esqueleto, faca)
+js/dummies.js       bonecos de treino (balanço com mola, marcas de corte)
 js/textures.js      texturas procedurais (canvas)
+models/             carl.glb (personagem) e faca.glb
 js/audio.js         sons procedurais (Web Audio)
 ```
 
@@ -109,3 +118,8 @@ No console do navegador, `window.game` dá acesso ao jogador e ao mundo para dep
 5. Combate corpo a corpo / armas
 6. Construção e coleta de recursos (estilo Minecraft)
 7. Ciclo dia/noite e salvamento
+
+## Créditos dos modelos 3D
+
+- “TWD Carl Grimes (Season 4)” por **floh** — https://sketchfab.com/3d-models/twd-carl-grimes-season-4-77f91796c09d431a9de30f6fdeb0a748 — licença CC BY-NC 4.0 (uso não comercial). Convertido (materiais e texturas comprimidas) para uso no jogo.
+- “Faca de Ação” por **Wesley Pontes** — https://sketchfab.com/3d-models/faca-de-acao-07d233fb3a124bf8baf276e2f0fb730b — licença CC BY 4.0.

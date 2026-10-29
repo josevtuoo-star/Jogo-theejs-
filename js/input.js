@@ -244,6 +244,11 @@ export class Input {
     return l;
   }
 
+  /** Botão de golpe segurado (carrega o golpe forte). */
+  get attackHeld() {
+    return this.mouseDown || this.touchHeld.has('attack') || this._padHeld(PAD.RT);
+  }
+
   /** Pulo segurado (subir à superfície nadando). */
   get jumpHeld() {
     return this.keys.has('Space') || this.touchHeld.has('jump') || this._padHeld(PAD.A);

@@ -17,8 +17,10 @@ import { makeFlashlightModel } from './flashlight.js';
 export const FP_HIDDEN_LAYER = 1;
 
 const HIP_Y = 0.9;
-const UPPER_ARM = 0.29;
+// medidas iguais às do modelo 3D do personagem (ver playerModel.js)
+const UPPER_ARM = 0.286;
 const FOREARM = 0.32; // até o centro da mão
+const WRIST = 0.244;  // cotovelo → punho
 
 function damp(a, b, lambda, dt) {
   return a + (b - a) * (1 - Math.exp(-lambda * dt));
@@ -93,6 +95,33 @@ function solveArmIK(arm, target, pole, weight) {
   elbow.rotation.x = lerp(elbow.rotation.x, Math.acos(Math.max(-1, Math.min(1, _u.dot(_w)))), weight);
 }
 
+// Golpes. a = fim da preparação, hit = instante do impacto, r = começo da volta, dur = fim.
+// reach (m), power (força no alvo), lunge (passo à frente, m/s). Poses: [braço.x, braço.y, braço.z, cotovelo]
+// (y e z espelhados para o braço esquerdo), wind = preparação, strike = golpe estendido.
+export const MOVES = {
+  jab:      { kind: 'punch', hand: -1, a: 0.06, hit: 0.1, r: 0.16, dur: 0.34, reach: 1.25, power: 2, lunge: 0.6, twist: -0.25,
+              wind: [0.95, -0.3, 0.2, 2.0], strike: [1.5, -0.1, 0.02, 0.05] },
+  cross:    { kind: 'punch', hand: 1, a: 0.07, hit: 0.12, r: 0.2, dur: 0.42, reach: 1.35, power: 3, lunge: 0.9, twist: -0.45,
+              wind: [0.85, -0.35, 0.25, 2.1], strike: [1.5, -0.3, 0.0, 0.05] },
+  hook:     { kind: 'punch', hand: -1, a: 0.1, hit: 0.17, r: 0.25, dur: 0.52, reach: 1.15, power: 4, lunge: 0.8, twist: 0.6,
+              wind: [1.1, 0.5, 1.1, 1.5], strike: [1.35, -0.75, 0.45, 1.45] },
+  haymaker: { kind: 'punch', hand: 1, a: 0.0, hit: 0.13, r: 0.26, dur: 0.6, reach: 1.45, power: 7, lunge: 2.4, twist: -0.8, heavy: true,
+              wind: [-0.35, 0.3, 0.5, 1.7], strike: [1.6, -0.35, 0.0, 0.1] },
+  slash:    { kind: 'knife', hand: 1, a: 0.09, hit: 0.15, r: 0.24, dur: 0.48, reach: 1.75, power: 4, lunge: 0.6, twist: -0.35, grip: 0,
+              wind: [1.8, 0.6, 0.55, 1.5], strike: [1.05, -0.6, -0.1, 0.25] },
+  backslash:{ kind: 'knife', hand: 1, a: 0.09, hit: 0.15, r: 0.24, dur: 0.48, reach: 1.75, power: 4, lunge: 0.6, twist: 0.4, grip: 0,
+              wind: [1.35, -0.75, -0.2, 1.75], strike: [1.25, 0.65, 0.65, 0.3] },
+  stab:     { kind: 'knife', hand: 1, a: 0.09, hit: 0.14, r: 0.24, dur: 0.5, reach: 1.9, power: 5, lunge: 1.4, twist: -0.3, grip: 1,
+              wind: [0.55, 0.1, 0.35, 1.95], strike: [1.6, -0.12, 0.05, 0.05] },
+  overhead: { kind: 'knife', hand: 1, a: 0.0, hit: 0.16, r: 0.3, dur: 0.72, reach: 1.95, power: 9, lunge: 2.6, twist: -0.25, heavy: true, grip: 1,
+              wind: [2.85, 0.15, 0.45, 1.35], strike: [0.95, -0.15, 0.0, 0.2] },
+};
+const COMBOS = { punch: ['jab', 'cross', 'hook'], knife: ['slash', 'backslash', 'stab'] };
+const HEAVY = { punch: 'haymaker', knife: 'overhead' };
+const HAND_TWIST = Math.PI / 2;
+const KNIFE_REST = -Math.PI / 2 - 0.5; // faca na mão, lâmina para frente
+const KNIFE_STAB = -Math.PI * 0.97;    // lâmina alinhada com o antebraço
+
 export class Character {
   constructor(scene) {
     const M = {
@@ -126,7 +155,7 @@ export class Character {
     this.hips.add(part(new THREE.BoxGeometry(0.36, 0.05, 0.23), M.leather, 0, 0.08, 0));
     this.hips.add(part(new THREE.BoxGeometry(0.06, 0.05, 0.02), M.buckle, 0, 0.08, -0.12));
     this.sheath = new THREE.Group();
-    this.sheath.position.set(0.19, 0.0, 0.02);
+    this.sheath.position.set(0.215, -0.02, 0.035);
     this.sheath.add(part(new THREE.BoxGeometry(0.04, 0.2, 0.03), M.leather, 0, -0.06, 0));
     this.hips.add(this.sheath);
 
@@ -155,7 +184,7 @@ export class Character {
     }
     // presilha da lanterna na alça esquerda (onde ela fica quando desligada)
     this.chestClip = new THREE.Group();
-    this.chestClip.position.set(-0.1, 0.36, -0.15);
+    this.chestClip.position.set(-0.09, 0.34, -0.118);
     this.torso.add(this.chestClip);
 
     // ---------- pescoço e cabeça (escondidos da câmera em 1ª pessoa) ----------
@@ -177,14 +206,14 @@ export class Character {
       this.head.add(part(new THREE.SphereGeometry(0.024, 6, 6), M.skin, s * 0.12, 0.11, 0));
     }
     this.torso.add(this.head);
-    this.eyeLocal = new THREE.Vector3(0, 0.14, -0.15); // olhos, no espaço da cabeça
+    this.eyeLocal = new THREE.Vector3(0, 0.14, -0.1); // olhos, no espaço da cabeça
     // em 1ª pessoa: tudo do tronco para cima some da câmera (menos braços e itens)
     this.torso.traverse((o) => { if (o.isMesh) this.fpHidden.push(o); });
 
     // ---------- braços: ombro → cotovelo → mão ----------
     const makeArm = (s) => {
       const shoulder = new THREE.Group();
-      shoulder.position.set(s * 0.21, 0.46, 0);
+      shoulder.position.set(s * 0.198, 0.47, 0.039);
       const ball = part(new THREE.SphereGeometry(0.072, 10, 8), M.jacket, 0, 0, 0);
       shoulder.add(ball);
       this.fpHidden.push(ball);
@@ -194,15 +223,22 @@ export class Character {
       elbow.position.y = -UPPER_ARM;
       upper.add(elbow);
       const hand = new THREE.Group();
-      hand.position.y = -0.27;
+      hand.position.y = -WRIST;
       const palm = part(new THREE.CapsuleGeometry(0.037, 0.05, 3, 8), M.glove, 0, -0.04, 0);
       palm.scale.z = 0.75;
       const thumb = part(new THREE.CapsuleGeometry(0.014, 0.03, 3, 6), M.glove, -s * 0.034, -0.03, -0.028);
       thumb.rotation.z = s * 0.5;
       hand.add(palm, thumb);
+      // dedos (fecham em punho para segurar a faca e socar)
+      const fingers = new THREE.Group();
+      fingers.position.y = -0.0785;
+      hand.add(fingers);
+      const fingers2 = new THREE.Group();
+      fingers2.position.y = -0.038;
+      fingers.add(fingers2);
       elbow.add(hand);
       this.torso.add(shoulder);
-      return { shoulder, upper, elbow, hand, side: s };
+      return { shoulder, upper, elbow, hand, fingers, fingers2, side: s, fist: 0 };
     };
     this.armL = makeArm(-1);
     this.armR = makeArm(1);
@@ -214,13 +250,13 @@ export class Character {
 
     // ---------- pernas: quadril → joelho → tornozelo → pé ----------
     const makeLeg = (x) => {
-      const thigh = limb(0.165, 0.42, 0.175, M.pants);
-      thigh.position.set(x, -0.04, 0);
-      const knee = limb(0.145, 0.42, 0.15, M.pants);
-      knee.position.y = -0.4;
+      const thigh = limb(0.165, 0.39, 0.175, M.pants);
+      thigh.position.set(x, -0.042, 0.013);
+      const knee = limb(0.145, 0.44, 0.15, M.pants);
+      knee.position.y = -0.352;
       const ankle = new THREE.Group();
-      ankle.position.y = -0.4;
-      const boot = part(new THREE.BoxGeometry(0.12, 0.09, 0.26), M.boots, 0, -0.025, -0.055);
+      ankle.position.y = -0.414;
+      const boot = part(new THREE.BoxGeometry(0.12, 0.09, 0.26), M.boots, 0, -0.045, -0.055);
       boot.add(part(new THREE.BoxGeometry(0.13, 0.03, 0.28), M.sole, 0, -0.05, 0));
       const cuff = part(new THREE.CylinderGeometry(0.065, 0.07, 0.08, 10), M.boots, 0, 0.03, 0);
       ankle.add(boot, cuff);
@@ -228,14 +264,16 @@ export class Character {
       thigh.add(knee);
       return { thigh, knee, ankle };
     };
-    this.legL = makeLeg(-0.1);
-    this.legR = makeLeg(0.1);
+    this.legL = makeLeg(-0.104);
+    this.legR = makeLeg(0.104);
     this.hips.add(this.legL.thigh, this.legR.thigh);
 
     this.root.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
     scene.add(this.root);
+    this.scene = scene;
+    this.skinned = null;
 
-    this.b = { run: 0, move: 0, crouch: 0, air: 0, climb: 0, death: 0, ladder: 0, slide: 0, swim: 0, flash: 0, land: 0, hang: 0, knife: 0, obstruct: 0 };
+    this.b = { run: 0, move: 0, crouch: 0, air: 0, climb: 0, death: 0, ladder: 0, slide: 0, swim: 0, flash: 0, land: 0, hang: 0, knife: 0, obstruct: 0, guard: 0 };
     this.t = 0;
     this.yaw = 0;
     this.prevYaw = 0;
@@ -249,8 +287,14 @@ export class Character {
     this.swap = -1;          // troca de item em andamento (0..1)
     this.swapTo = 'hands';
     this.attackT = -1;
-    this.attackKind = 'knife';
-    this.attackSide = 1;
+    this.move = null;        // golpe em andamento (MOVES)
+    this.comboIndex = -1;
+    this.comboTimer = 0;     // janela para emendar o próximo golpe
+    this.queued = null;      // golpe apertado durante o anterior (entra assim que der)
+    this.charge = 0;         // golpe forte sendo carregado (0..1)
+    this.combatTimer = 0;    // guarda alta por alguns segundos depois de lutar
+    this.hitDone = false;
+    this.events = [];        // { type: 'swing' | 'hit', move }
     this.recoil = 0;
     this.obstructTarget = 0;
     this.firstPerson = true;
@@ -265,7 +309,7 @@ export class Character {
     // faca: na mão direita (lâmina para cima/frente) ou na bainha (lâmina para baixo)
     if (equip === 'knife') {
       this.armR.hand.add(this.knife);
-      this.knife.position.set(0, -0.05, -0.01);
+      this.knife.position.set(-0.022, -0.078, 0); // na palma (o lado da palma é -X na mão direita)
       this.knife.rotation.set(-Math.PI / 2 - 0.5, 0, 0);
     } else {
       this.sheath.add(this.knife);
@@ -286,6 +330,27 @@ export class Character {
     if (this.fpHidden) this._flashLayer();
   }
 
+  /**
+   * Troca o corpo procedural pelo modelo 3D (SkinnedMeshes presos nos mesmos ossos).
+   * Faca, lanterna e bainha continuam.
+   */
+  useModel(meshes) {
+    const keep = new Set();
+    for (const g of [this.knife, this.flash, this.sheath]) g.traverse((o) => keep.add(o));
+    this.root.traverse((o) => { if (o.isMesh && !keep.has(o)) o.visible = false; });
+    this.skinned = meshes;
+    for (const m of meshes) this.scene.add(m);
+    this.fpHidden = meshes.filter((m) => m.userData.fpHide);
+    this.setFirstPerson(this.firstPerson);
+  }
+
+  /** Troca o modelo da faca (mesma convenção: cabo na origem, lâmina em +Y). */
+  setKnifeModel(model) {
+    this.knife.clear();
+    this.knife.add(model);
+    this._flashLayer();
+  }
+
   /** Troca para 'hands' (mãos livres) ou 'knife'. Retorna true se começou a trocar. */
   setEquip(equip) {
     if (equip === this.equip || this.swap >= 0) return false;
@@ -299,22 +364,59 @@ export class Character {
     this.flash.userData.lensMat.color.setHex(on && intensity > 0.5 ? 0xfff6dc : 0x3a3a34);
   }
 
-  /** Começa um golpe (faca) ou soco (mãos livres). */
-  attack() {
-    if (this.attackT >= 0 && this.attackT < 0.38) return false;
+  get attackKind() { return this.equip === 'knife' ? 'knife' : 'punch'; }
+
+  /**
+   * Golpe leve (emenda combo: jab → direto → gancho; corte → corte de volta → estocada)
+   * ou forte (heavy: depois de carregar). Se outro golpe ainda está no meio, fica na fila.
+   */
+  attack(heavy = false) {
     if (this.swap >= 0) return false;
-    this.attackT = 0;
-    this.attackKind = this.equip === 'knife' ? 'knife' : 'punch';
-    this.attackSide = -this.attackSide;
+    const kind = this.attackKind;
+    let name;
+    if (heavy) name = HEAVY[kind];
+    else {
+      const chain = COMBOS[kind];
+      const next = this.comboTimer > 0 && this.comboIndex < chain.length - 1 ? this.comboIndex + 1 : 0;
+      name = chain[next];
+    }
+    // ainda golpeando: só aceita a partir do impacto (fica na fila)
+    if (this.move && this.attackT < this.move.r) {
+      if (this.attackT > this.move.hit - 0.05) this.queued = heavy ? 'heavy' : 'light';
+      return false;
+    }
+    this._startMove(name, heavy);
     return true;
   }
 
-  get isAttacking() { return this.attackT >= 0 && this.attackT < 0.5; }
+  _startMove(name, heavy) {
+    const m = MOVES[name];
+    // com a lanterna na mão esquerda, os socos saem todos da direita
+    this.move = this.flashOn && m.hand < 0 ? { ...m, hand: 1, wind: [m.wind[0], -Math.abs(m.wind[1]), m.wind[2], m.wind[3]] } : m;
+    this.moveName = name;
+    if (!heavy) this.comboIndex = COMBOS[m.kind].indexOf(name);
+    else this.comboIndex = -1;
+    this.attackT = heavy ? Math.max(0.02, this.charge * 0.05) : 0;
+    this.charge = 0;
+    this.hitDone = false;
+    this.queued = null;
+    this.combatTimer = 3.5;
+    this.events.push({ type: 'swing', move: this.move, name });
+  }
+
+  /** Carregando o golpe forte (segurando o botão): 0..1. */
+  setCharge(c) {
+    if (this.swap >= 0 || (this.move && this.attackT < this.move.r)) c = 0;
+    this.charge = c;
+    if (c > 0) this.combatTimer = 3.5;
+  }
+
+  get isAttacking() { return !!this.move; }
 
   /** Golpe acertou algo duro: o braço volta com tranco. */
-  hitRecoil() {
-    this.recoil = 1;
-    if (this.attackT >= 0 && this.attackT < 0.24) this.attackT = 0.24;
+  hitRecoil(strength = 1) {
+    this.recoil = Math.min(1, strength);
+    if (this.move && this.attackT < this.move.r) this.attackT = this.move.r;
   }
 
   /** Distância livre à frente: perto de paredes os braços recolhem. */
@@ -514,37 +616,112 @@ export class Character {
       Bm.elbow.rotation.x = lerp(Bm.elbow.rotation.x, 0.5, swapDip);
     }
 
-    // golpe de faca (corte diagonal, alternando) ou soco (jab reto)
-    if (this.attackT >= 0) {
+    // ----- luta -----
+    this.comboTimer = Math.max(0, this.comboTimer - dt);
+    this.combatTimer = Math.max(0, this.combatTimer - dt);
+    const canFight = !busyHands && !player.sliding && !player.rolling;
+    // guarda: punhos na altura do queixo enquanto está brigando (mãos livres)
+    const guardWant = this.equip === 'hands' && canFight && (this.combatTimer > 0 || this.charge > 0) ? 1 : 0;
+    b.guard = damp(b.guard ?? 0, guardWant * (1 - sprint * 0.7), 9, dt);
+    const fp = this.firstPerson ? 1 : 0; // em 1ª pessoa os punhos ficam um pouco mais à frente para aparecer na tela
+    // punhos à frente do rosto (IK a partir dos olhos, então seguem o olhar e aparecem na tela)
+    const guardIK = (arm, w) => {
+      if (w < 0.001 || (arm === A && F > 0.5)) return; // esquerda segurando a lanterna
+      const s = arm.side, lead = arm === A ? 1 : 0; // a esquerda fica mais à frente
+      const bobG = Math.sin(this.t * 2.2 + s) * 0.012 + Math.sin(ph * 2) * 0.012 * b.move;
+      this.getEyeWorldPosition(this._t2);
+      const cy = Math.cos(player.yaw), sy = Math.sin(player.yaw), cp = Math.cos(look), sp = Math.sin(look);
+      // frente, direita e cima do olhar
+      const fx = -sy * cp, fy = sp, fz = -cy * cp;
+      const ux = sy * sp, uy = cp, uz = cy * sp;
+      const fwdD = 0.33 + lead * 0.06 + fp * 0.12, down = 0.16 + fp * 0.06 - bobG, sideD = 0.12;
+      this._t1.set(
+        this._t2.x + fx * fwdD + cy * s * sideD - ux * down,
+        this._t2.y + fy * fwdD - uy * down,
+        this._t2.z + fz * fwdD - sy * s * sideD - uz * down,
+      );
+      solveArmIK(arm, this._t1, this._v.set(s * 0.45, -0.9, 0.35), w);
+    };
+    guardIK(A, b.guard);
+    guardIK(Bm, b.guard);
+    // dedos: punho fechado segurando a faca, socando ou em guarda; meio abertos relaxados
+    for (const arm of [A, Bm]) {
+      let want = 0.35;
+      if (arm === Bm && (this.equip === 'knife' || this.swap >= 0.45)) want = 1.45;
+      if (arm === A && this._heldFlash) want = 1.35;
+      if (b.guard > 0.3 || (this.move && this.move.hand === arm.side)) want = Math.max(want, 1.5);
+      if (b.climb > 0.3 || b.hang > 0.3 || b.ladder > 0.3) want = 0.9;
+      arm.fist = damp(arm.fist, want, 14, dt);
+      arm.fingers.rotation.set(0, 0, -arm.side * arm.fist * 1.1);
+      arm.fingers2.rotation.set(0, 0, -arm.side * arm.fist * 1.3);
+    }
+
+    // carregando o golpe forte: braço vai para trás e o corpo gira
+    const heavyMove = MOVES[HEAVY[this.attackKind]];
+    const ch = smoothstep(0, 1, this.charge);
+    const armOf = (m) => (m.hand > 0 || this.flashOn ? Bm : A);
+    const poseArm = (arm, P, w) => {
+      const s = arm.side;
+      arm.upper.rotation.x = lerp(arm.upper.rotation.x, P[0] + look * 0.6 * Math.max(0, Math.min(1, P[0] / 1.2)), w);
+      arm.upper.rotation.y = lerp(arm.upper.rotation.y, P[1] * s, w);
+      arm.upper.rotation.z = lerp(arm.upper.rotation.z, P[2] * s, w);
+      arm.elbow.rotation.x = lerp(arm.elbow.rotation.x, P[3] - (P[0] > 1.2 ? look * 0.2 : 0), w);
+    };
+    let grip = 0;
+    if (ch > 0.001 && !this.move) {
+      const tremble = Math.sin(this.t * 40) * 0.015 * ch;
+      poseArm(armOf(heavyMove), heavyMove.wind.map((v, i) => v + (i === 0 ? tremble : 0)), ch);
+      this.torso.rotation.y += -heavyMove.twist * 0.6 * ch;
+      this.torso.rotation.x -= heavyMove.kind === 'knife' ? 0.12 * ch : -0.05 * ch;
+      grip = heavyMove.grip ? ch : 0;
+    }
+
+    // golpe em andamento
+    if (this.move) {
+      const m = this.move;
       this.attackT += dt;
       const t = this.attackT;
-      if (this.attackKind === 'knife') {
-        const wind = smoothstep(0, 0.09, t), strike = smoothstep(0.09, 0.2, t), back = smoothstep(0.22, 0.5, t);
-        const k = wind * (1 - back);
-        const side = this.attackSide;
-        Bm.upper.rotation.x = lerp(Bm.upper.rotation.x, lerp(1.8 + look * 0.6, 1.05 + look * 0.6, strike), k);
-        Bm.upper.rotation.y = lerp(Bm.upper.rotation.y, lerp(side > 0 ? 0.6 : -0.5, side > 0 ? -0.55 : 0.55, strike), k);
-        Bm.upper.rotation.z = lerp(Bm.upper.rotation.z, lerp(0.55, -0.1, strike), k);
-        Bm.elbow.rotation.x = lerp(Bm.elbow.rotation.x, lerp(1.5, 0.25, strike), k);
-        this.torso.rotation.y += lerp(0.25, -0.35, strike) * side * k;
-        if (t > 0.5) this.attackT = -1;
-      } else {
-        const out = smoothstep(0.02, 0.11, t), back = smoothstep(0.16, 0.36, t);
-        const k = out * (1 - back);
-        // guarda com a esquerda, soco com a direita
-        Bm.upper.rotation.x = lerp(Bm.upper.rotation.x, 1.5 + look * 0.9, k);
-        Bm.upper.rotation.y = lerp(Bm.upper.rotation.y, -0.2, k);
-        Bm.upper.rotation.z = lerp(Bm.upper.rotation.z, 0.05, k);
-        Bm.elbow.rotation.x = lerp(Bm.elbow.rotation.x, 0.08, k);
-        if (!this.flashOn) {
-          A.upper.rotation.x = lerp(A.upper.rotation.x, 0.9 + look * 0.5, smoothstep(0, 0.08, t) * (1 - back));
-          A.elbow.rotation.x = lerp(A.elbow.rotation.x, 1.9, smoothstep(0, 0.08, t) * (1 - back));
-        }
-        this.torso.rotation.y += -0.3 * k;
-        if (t > 0.38) this.attackT = -1;
+      if (!this.hitDone && t >= m.hit) { this.hitDone = true; this.events.push({ type: 'hit', move: m, name: this.moveName }); }
+      const wind = m.a > 0 ? smoothstep(0, m.a, t) : 1;
+      const strike = smoothstep(m.a, m.hit + 0.02, t);
+      const back = smoothstep(m.r, m.dur, t);
+      const k = wind * (1 - back);
+      this._moveK = m.kind === 'punch' ? k : 0;
+      const P = m.wind.map((v, i) => lerp(v, m.strike[i], strike));
+      const arm = armOf(m);
+      poseArm(arm, P, k);
+      if (m.kind === 'punch') {
+        // a outra mão volta para proteger o rosto
+        const other = arm === A ? Bm : A;
+        guardIK(other, k * 0.85);
       }
-      Bm.upper.rotation.x -= this.recoil * 0.25;
+      // o corpo gira e avança junto com o golpe
+      const tw = lerp(-m.twist * 0.6, m.twist, strike) * k;
+      this.torso.rotation.y += tw;
+      this.hips.rotation.y += tw * 0.35;
+      this.torso.rotation.x -= (m.heavy ? 0.22 : 0.08) * Math.sin(strike * Math.PI) * k;
+      if (m.grip) grip = Math.max(grip, k);
+      arm.upper.rotation.x -= this.recoil * 0.3;
+      if (t >= m.dur) {
+        this.move = null;
+        this.attackT = -1;
+        this.comboTimer = 0.4;
+      } else if (this.queued && t >= m.r) {
+        const heavy = this.queued === 'heavy';
+        this.queued = null;
+        this.attack(heavy);
+      }
     }
+    if (!this.move) this._moveK = 0;
+    // punho de briga: gira o antebraço para os nós dos dedos ficarem à frente (palma para dentro)
+    for (const arm of [A, Bm]) {
+      let tw = b.guard;
+      if (arm === A && F > 0.5) tw = 0;
+      tw = Math.max(tw, this._moveK || 0) * (1 - b.climb) * (1 - b.hang);
+      arm.hand.rotation.set(0, arm.side * HAND_TWIST * tw, 0);
+    }
+    // pegada da faca: normal (lâmina à frente) ou alinhada ao braço (estocada)
+    if (this.knife.parent !== this.sheath) this.knife.rotation.x = lerp(KNIFE_REST, KNIFE_STAB, grip);
 
     // ================= 3) ações de corpo inteiro =================
     this._climbPose(dt, player);

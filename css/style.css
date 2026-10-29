@@ -203,3 +203,10 @@ body:not(.touch) .touch-only { display: none; }
 }
 body.touch #equip-label { right: auto; left: 50%; transform: translateX(-50%); bottom: 40px; }
 #btn-swap { right: calc(max(24px, env(safe-area-inset-right)) + 108px); bottom: 180px; width: 56px; height: 56px; font-size: 13px; }
+
+#credits {
+  position: fixed; left: 50%; bottom: 6px; transform: translateX(-50%);
+  font-size: 10px; letter-spacing: 0.02em; color: rgba(230, 225, 210, 0.45);
+  text-align: center; width: max-content; max-width: calc(100% - 32px); pointer-events: none; z-index: 30;
+}
+body.playing #credits { display: none; }

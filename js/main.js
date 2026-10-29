@@ -8,6 +8,8 @@ import { GameAudio } from './audio.js';
 import { Effects } from './effects.js';
 import { Flashlight } from './flashlight.js';
 import { PropSystem } from './physics.js';
+import { TrainingDummies } from './dummies.js';
+import { loadPlayerModel, loadKnifeModel } from './playerModel.js';
 
 // ---------- renderizador ----------
 const container = document.getElementById('game');
@@ -35,18 +37,26 @@ world.firePositions.forEach((p) => effects.addFire(p));
 effects.addPlume(new THREE.Vector3(260, 10, -230), 1.6);
 effects.addPlume(new THREE.Vector3(-300, 0, 180), 2.2);
 const input = new Input(renderer.domElement);
+// bonecos de treino (estopa e palha) perto do começo e no acampamento: [x, z, giro]
+const DUMMY_SPOTS = [[-3.2, 9.5, 0.4], [3.4, 8.6, -0.5], [47.2, -4.6, 2.6]];
+const dummies = new TrainingDummies(scene, (x, z) => world.groundHeight(x, z), DUMMY_SPOTS);
 const player = new Player(world.octree, world.spawn, world.ladders, {
   waterAt: (x, z) => world.waterAt(x, z),
-  doors: world.doors,
+  doors: [...world.doors, ...dummies.list],
 });
 // lanterna: a luz sai da lente do modelo na mão do personagem
 const flashlight = new Flashlight(scene);
 // objetos soltos com física
 const props = new PropSystem(scene, world.octree);
-props.extraColliders = world.doors;
+props.extraColliders = [...world.doors, ...dummies.list];
 for (const p of world.propSpots) props.add(p.type, p.x, p.y, p.z);
 const rig = new CameraRig(camera, world.octree);
 const character = new Character(scene);
+// modelos 3D (personagem e faca); enquanto carregam, fica o corpo procedural
+const modelsReady = Promise.allSettled([
+  loadPlayerModel(character, 'models/carl.glb'),
+  loadKnifeModel('models/faca.glb').then((m) => character.setKnifeModel(m)),
+]).then((r) => r.forEach((x) => x.status === 'rejected' && console.warn('modelo não carregou:', x.reason)));
 const audio = new GameAudio();
 props.onImpact = (kind, strength, pos) => audio.impact(kind, strength, pos);
 
@@ -338,14 +348,44 @@ function handleActions() {
   if (wantEquip && character.setEquip(wantEquip)) {
     if (wantEquip === 'knife') setTimeout(() => audio.unsheath(), 180); else setTimeout(() => audio.sheathe(), 200);
   }
-  const busy = player.isClimbing || player.onLadder || player.swimming || player.isHanging || player.sliding;
-  if (input.wasPressed('attack') && !busy && character.attack()) {
-    hitKind = character.attackKind;
-    pendingHit = hitKind === 'knife' ? 0.15 : 0.1; // o golpe chega ao alvo no meio do movimento
-    if (hitKind === 'knife') audio.swing(); else audio.punch();
-  }
+  handleCombat();
 }
-let hitKind = 'knife';
+
+// ---------- combate ----------
+// toque rápido = golpe leve (emenda combo); segurar = carrega o golpe forte, soltar = desfere
+const CHARGE_DELAY = 0.22, CHARGE_TIME = 0.55;
+let attackHold = -1;
+let hitStop = 0;
+function handleCombat() {
+  const busy = player.isClimbing || player.onLadder || player.swimming || player.isHanging || player.sliding || player.rolling || player.dead;
+  if (busy) { attackHold = -1; character.setCharge(0); return; }
+  if (input.wasPressed('attack')) attackHold = 0;
+  if (attackHold < 0) return;
+  if (input.attackHeld) {
+    attackHold += frameDt;
+    if (attackHold > CHARGE_DELAY) character.setCharge(Math.min(1, (attackHold - CHARGE_DELAY) / CHARGE_TIME));
+    return;
+  }
+  if (attackHold > CHARGE_DELAY && character.charge > 0.3) character.attack(true);
+  else character.attack(false);
+  character.setCharge(0);
+  attackHold = -1;
+}
+
+/** Golpe começou: som, passo à frente e tranco da câmera. */
+function onSwing(m, name) {
+  const knife = m.kind === 'knife';
+  if (knife) audio.swing(!!m.heavy, name === 'stab'); else audio.punch(!!m.heavy);
+  if (player.onFloor && m.lunge) {
+    camera.getWorldDirection(_fwd);
+    const h = Math.hypot(_fwd.x, _fwd.z) || 1;
+    player.velocity.x += (_fwd.x / h) * m.lunge;
+    player.velocity.z += (_fwd.z / h) * m.lunge;
+  }
+  const side = name === 'backslash' || name === 'hook' ? -1 : 1;
+  rig.kick(m.heavy ? -0.03 : -0.008, (m.heavy ? 0.02 : 0.012) * side * (name === 'stab' || name === 'jab' || name === 'cross' ? 0 : 1));
+  haptic(m.heavy ? 12 : 6);
+}
 
 // ---------- interação e golpes ----------
 const raycaster = new THREE.Raycaster();
@@ -356,7 +396,6 @@ const _aim = new THREE.Vector3();
 const _head = new THREE.Vector3();
 const _ray = new THREE.Ray();
 let useTarget = null;
-let pendingHit = -1;
 const doorSlabs = world.doors.map((d) => d.slab);
 
 function cameraRay(far) {
@@ -375,17 +414,43 @@ function updateUseTarget() {
 }
 
 const SPARK = [1, 0.7, 0.3];
-/** Golpe (faca ou soco) acerta o que estiver na frente: objetos, portas ou paredes/chão. */
-function knifeHit() {
-  const knife = hitKind === 'knife';
-  const reach = (knife ? 1.8 : 1.3) + (rig.thirdPerson ? rig.currentTpDist : 0);
+const STRAW = [0.78, 0.68, 0.42];
+const _org = new THREE.Vector3();
+/** O golpe chegou: acerta boneco, objeto, porta ou parede/chão à frente. */
+function strikeHit(m, name) {
+  const knife = m.kind === 'knife';
+  const heavy = !!m.heavy;
+  camera.getWorldDirection(_fwd);
+  // bonecos: alcance a partir dos olhos do corpo, num cone à frente (golpe corpo a corpo é "largo")
+  character.getEyeWorldPosition(_org);
+  const target = dummies.find(_org, _fwd, m.reach, name === 'stab' || name === 'jab' || name === 'cross' ? 0.45 : 0.7);
+  if (target) {
+    const slashAngle = name === 'slash' ? 0.5 : name === 'backslash' ? -0.5 : name === 'overhead' ? 1.4 : 0;
+    dummies.hit(target, _fwd, m.power, { knife, slashAngle });
+    audio.sackHit(target.point, knife, m.power);
+    const n = 6 + m.power * 2;
+    for (let i = 0; i < n; i++) {
+      effects.dust.emit(target.point.x, target.point.y, target.point.z,
+        target.normal.x * 1.5 + (Math.random() - 0.5) * 2.5, Math.random() * 2.2, target.normal.z * 1.5 + (Math.random() - 0.5) * 2.5,
+        { life: 0.9 + Math.random() * 0.6, size: 0.025, grow: 0, color: STRAW, alpha: 0.95, drag: 1.5, gravity: 5 });
+    }
+    effects.puff(target.point, 3, 0.35, [0.5, 0.45, 0.35]);
+    hitStop = heavy ? 0.11 : 0.055;
+    rig.kick(heavy ? 0.035 : 0.012, (Math.random() - 0.5) * 0.015);
+    rig.shake = Math.max(rig.shake, heavy ? 0.16 : 0.06);
+    character.recoil = heavy ? 0.5 : 0.25;
+    haptic(heavy ? 40 : 22);
+    return;
+  }
+  const reach = m.reach + (rig.thirdPerson ? rig.currentTpDist : 0);
   const rc = cameraRay(reach);
-  const prop = props.hit(rc, knife ? 4.5 : 3);
+  const prop = props.hit(rc, m.power * (knife ? 1.1 : 1));
   if (prop) {
-    audio.impact(prop.body.type.sound, 0.9, prop.point);
+    audio.impact(prop.body.type.sound, Math.min(1.2, 0.5 + m.power * 0.1), prop.point);
     if (!knife) audio.punchHit(prop.point);
     effects.puff(prop.point, 3, 0.4, [0.5, 0.48, 0.44]);
-    character.hitRecoil();
+    hitStop = 0.04;
+    character.recoil = 0.4;
     haptic(15);
     return;
   }
@@ -393,13 +458,16 @@ function knifeHit() {
   _ray.set(camera.position, _fwd);
   const wall = world.octree.rayIntersect(_ray);
   if (!knife) {
-    // soco: só um baque seco na parede/porta
+    // soco em parede/porta: baque seco e a mão volta
     const p = door && (!wall || door.distance < wall.distance) ? door.point : wall && wall.distance < reach ? wall.position : null;
     if (!p) return;
     audio.punchHit(p);
-    character.hitRecoil();
+    character.hitRecoil(1);
+    hitStop = 0.05;
     rig.shake = Math.max(rig.shake, 0.1);
-    haptic(20);
+    rig.kick(0.02, 0);
+    haptic(25);
+    if (heavy) player.health = Math.max(1, player.health - 2); // socar parede com força dói
     return;
   }
   if (door && (!wall || door.distance < wall.distance)) {
@@ -421,8 +489,10 @@ function knifeHit() {
   } else {
     return; // golpe no ar
   }
-  character.hitRecoil();
+  character.hitRecoil(1);
+  hitStop = 0.045;
   rig.shake = Math.max(rig.shake, 0.08);
+  rig.kick(0.015, 0);
   haptic(15);
 }
 
@@ -577,9 +647,13 @@ function updateHud() {
   updateCompass();
 }
 
+let frameDt = 0.016;
 function frame() {
   requestAnimationFrame(frame);
-  const dt = Math.min(clock.getDelta(), 0.05);
+  let dt = Math.min(clock.getDelta(), 0.05);
+  // "hit stop": o mundo quase congela por um instante quando um golpe acerta
+  if (hitStop > 0) { hitStop -= dt; dt *= 0.12; }
+  frameDt = dt;
   elapsed += dt;
 
   input.pollGamepad(dt);
@@ -589,7 +663,6 @@ function frame() {
     player.update(dt, input);
     handleEvents(dt);
     input.endFrame();
-    if (pendingHit >= 0) { pendingHit -= dt; if (pendingHit < 0) knifeHit(); }
     updateHud();
     updateAmbience(dt);
   } else if (!started) {
@@ -610,6 +683,12 @@ function frame() {
   character.setObstruction(wallAhead && !rig.thirdPerson ? wallAhead.distance : 99);
   // o corpo anima primeiro; a câmera de 1ª pessoa vai nos olhos dele
   character.update(dt, player);
+  for (const e of character.events) {
+    if (e.type === 'swing') onSwing(e.move, e.name);
+    else if (e.type === 'hit' && playing) strikeHit(e.move, e.name);
+  }
+  character.events.length = 0;
+  dummies.update(dt);
   character.getEyeWorldPosition(_head);
   rig.update(dt, player, _head);
   camera.updateMatrixWorld();
@@ -643,11 +722,12 @@ function frame() {
   }
 }
 
-// pronto
+// pronto (espera os modelos 3D)
+await modelsReady;
 loadSettings();
 ui.loading.classList.add('hidden');
 ui.play.classList.remove('hidden');
 frame();
 
 // para depuração no console
-window.game = { player, world, rig, input, character, effects, props, flashlight, renderer, scene, camera, STAND_HEIGHT };
+window.game = { player, world, rig, input, character, effects, props, flashlight, renderer, scene, camera, dummies, STAND_HEIGHT };

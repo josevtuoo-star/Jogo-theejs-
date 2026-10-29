@@ -267,8 +267,45 @@ export class GameAudio {
     this._burst({ duration: 0.05, freq: 600, q: 2, gain: 0.12, type: 'bandpass', delay: 0.16 });
   }
 
-  punch() {
-    this._burst({ duration: 0.12, freq: 900, q: 1, gain: 0.08, type: 'bandpass', attack: 0.03 });
+  punch(heavy = false) {
+    // braço cortando o ar + roupa
+    this._sweep(heavy ? 1400 : 1100, heavy ? 380 : 450, heavy ? 0.3 : 0.16, heavy ? 0.16 : 0.1, 1.4);
+    this._burst({ duration: 0.14, freq: 1300, q: 0.8, gain: 0.04, type: 'bandpass', attack: 0.03 });
+    if (heavy) this.grunt(1);
+    else if (Math.random() < 0.3) this.grunt(0.45);
+  }
+
+  /** Ruído com filtro deslizando (golpes cortando o ar). */
+  _sweep(f0, f1, dur, gain, q = 3) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    const src = this.ctx.createBufferSource();
+    src.buffer = this.noise;
+    const f = this.ctx.createBiquadFilter();
+    f.type = 'bandpass'; f.Q.value = q;
+    f.frequency.setValueAtTime(f0, t);
+    f.frequency.exponentialRampToValueAtTime(f1, t + dur);
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(gain, t + dur * 0.35);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    src.connect(f).connect(g).connect(this._dest ?? this.sfx);
+    src.start(t, Math.random());
+    src.stop(t + dur + 0.02);
+  }
+
+  /** Golpe acertando o boneco de estopa: baque abafado, palha e (faca) o pano rasgando. */
+  sackHit(pos, knife, power = 4) {
+    const k = Math.min(1, power / 8);
+    this._at(pos, () => {
+      this._burst({ duration: 0.14 + k * 0.08, freq: 150 + k * 60, q: 0.8, gain: 0.45 + k * 0.4 });
+      this._burst({ duration: 0.1, freq: 700, q: 1.2, gain: 0.12 + k * 0.1, type: 'bandpass' });
+      this._grains(6 + Math.round(k * 8), 0.12, { fMin: 2500, fMax: 6500, gain: 0.05 }); // palha
+      if (knife) {
+        this._burst({ duration: 0.16, freq: 2200, q: 2.5, gain: 0.2, type: 'bandpass', attack: 0.01 }); // rasgo
+        this._burst({ duration: 0.08, freq: 4200, q: 3, gain: 0.08, type: 'bandpass', delay: 0.04 });
+      }
+    });
   }
 
   punchHit(pos) {
@@ -322,9 +359,14 @@ export class GameAudio {
     this._burst({ duration: 0.12, freq: 180, gain: 0.35, delay: 0.25 });
   }
 
-  swing() {
+  swing(heavy = false, stab = false) {
     // corte no ar: o tom do vento cai conforme a lâmina passa
     if (!this.ctx) return;
+    if (heavy || stab) {
+      this._sweep(stab ? 2600 : 3600, stab ? 1400 : 600, heavy ? 0.32 : 0.15, heavy ? 0.17 : 0.11, 3);
+      if (heavy) this.grunt(1);
+      return;
+    }
     const t = this.ctx.currentTime;
     const src = this.ctx.createBufferSource();
     src.buffer = this.noise;
