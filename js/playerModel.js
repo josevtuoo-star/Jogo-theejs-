@@ -10,6 +10,34 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 const loader = new GLTFLoader();
 
+/**
+ * Carrega .glb normalmente. Também aceita glTF em .json cuja geometria está num arquivo de
+ * texto base64 (.txt) — usado onde a página não pode buscar .glb nem endereços data: (artifact).
+ * A geometria é decodificada aqui e montada num GLB em memória; as texturas continuam .jpg.
+ */
+async function loadModelFile(url) {
+  if (!url.endsWith('.json')) return loader.loadAsync(url);
+  const base = url.slice(0, url.lastIndexOf('/') + 1);
+  const json = await (await fetch(url)).json();
+  const b64 = (await (await fetch(base + json.buffers[0].uri)).text()).trim();
+  const raw = atob(b64);
+  const bin = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) bin[i] = raw.charCodeAt(i);
+  delete json.buffers[0].uri;
+  json.buffers[0].byteLength = bin.length;
+  let js = new TextEncoder().encode(JSON.stringify(json));
+  const pad = (n) => (4 - (n % 4)) % 4;
+  const jsLen = js.length + pad(js.length), binLen = bin.length + pad(bin.length);
+  const glb = new Uint8Array(12 + 8 + jsLen + 8 + binLen);
+  const dv = new DataView(glb.buffer);
+  dv.setUint32(0, 0x46546c67, true); dv.setUint32(4, 2, true); dv.setUint32(8, glb.length, true);
+  dv.setUint32(12, jsLen, true); dv.setUint32(16, 0x4e4f534a, true);
+  glb.fill(0x20, 20, 20 + jsLen); glb.set(js, 20);
+  dv.setUint32(20 + jsLen, binLen, true); dv.setUint32(24 + jsLen, 0x004e4942, true);
+  glb.set(bin, 28 + jsLen);
+  return loader.parseAsync(glb.buffer, base);
+}
+
 // Escala e juntas do modelo, medidas no próprio arquivo (unidades originais, Z para cima,
 // rosto para -Y). S converte para metros; depois o modelo gira 180° para olhar para -Z.
 const S = 0.026;
@@ -48,7 +76,7 @@ const _ab = new THREE.Vector3(), _ap = new THREE.Vector3(), _c = new THREE.Vecto
  * Retorna true se deu certo (senão o corpo procedural continua).
  */
 export async function loadPlayerModel(character, url) {
-  const gltf = await loader.loadAsync(url);
+  const gltf = await loadModelFile(url);
   const ch = character;
 
   // ---------- ossos: um por grupo do esqueleto procedural ----------
@@ -150,7 +178,7 @@ export async function loadPlayerModel(character, url) {
 
 /** Faca do arquivo, reorientada: cabo no centro, lâmina para +Y, fio para -Z. */
 export async function loadKnifeModel(url, length = 0.26) {
-  const gltf = await loader.loadAsync(url);
+  const gltf = await loadModelFile(url);
   const m = gltf.scene;
   m.updateMatrixWorld(true);
   const box = new THREE.Box3().setFromObject(m);
