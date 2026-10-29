@@ -294,6 +294,105 @@ export class GameAudio {
     src.stop(t + dur + 0.02);
   }
 
+  // ---------- revólver ----------
+  /** Tiro de .357: estalo seco, estrondo grave e o eco voltando do vale. */
+  gunshot(indoor = 0) {
+    if (!this.ctx) return;
+    this._burst({ duration: 0.035, freq: 3200, q: 0.7, gain: 1.1, type: 'bandpass', attack: 0.001 }); // estalo
+    this._burst({ duration: 0.09, freq: 1200, q: 0.6, gain: 0.9, attack: 0.001 });
+    this._burst({ duration: 0.45, freq: 260, q: 0.5, gain: 1.2, attack: 0.002 });                    // estrondo
+    this._tone(70, 0.35, 0.6, 'sine', 0, 0.5);                                                       // pancada no peito
+    this._tone(5200 + Math.random() * 600, 0.06, 0.05, 'triangle', 0.02);                            // mecanismo
+    // eco ao ar livre (some dentro de casa, onde o reverb faz o papel)
+    const k = 1 - indoor;
+    if (k > 0.05) {
+      this._burst({ duration: 0.6, freq: 420, q: 0.6, gain: 0.32 * k, delay: 0.22, attack: 0.02 });
+      this._burst({ duration: 0.9, freq: 300, q: 0.6, gain: 0.18 * k, delay: 0.62, attack: 0.05 });
+      this._burst({ duration: 1.2, freq: 220, q: 0.6, gain: 0.1 * k, delay: 1.3, attack: 0.1 });
+    }
+  }
+
+  dryFire() {
+    this._tone(2600, 0.04, 0.12, 'square', 0, 0.8, 0, 2600);
+    this._burst({ duration: 0.03, freq: 4000, q: 3, gain: 0.15, type: 'bandpass' });
+  }
+
+  /** Sacar do coldre / guardar: couro raspando e o clique do metal. */
+  holster(draw = true) {
+    this._burst({ duration: 0.22, freq: 1500, q: 1.2, gain: 0.12, type: 'bandpass', attack: 0.04 });
+    this._tone(draw ? 3400 : 2900, 0.06, 0.04, 'triangle', draw ? 0.18 : 0.12);
+    this._burst({ duration: 0.03, freq: 2500, q: 3, gain: 0.12, type: 'bandpass', delay: draw ? 0.2 : 0.14 });
+  }
+
+  cylinderOpen() {
+    this._burst({ duration: 0.04, freq: 3000, q: 4, gain: 0.2, type: 'bandpass' });
+    this._tone(1800, 0.08, 0.05, 'triangle', 0.03, 0.9);
+  }
+
+  cylinderClose() {
+    this._burst({ duration: 0.035, freq: 2400, q: 4, gain: 0.3, type: 'bandpass' });
+    this._tone(1400, 0.1, 0.08, 'triangle', 0, 0.85);
+    this._burst({ duration: 0.02, freq: 5000, q: 3, gain: 0.08, type: 'bandpass', delay: 0.05 });
+  }
+
+  ejectShells(count) {
+    // cápsulas deslizando para fora do tambor
+    for (let i = 0; i < count; i++) this._tone(3600 + Math.random() * 1500, 0.07, 0.03, 'triangle', i * 0.012);
+    this._burst({ duration: 0.08, freq: 2800, q: 2, gain: 0.08, type: 'bandpass' });
+  }
+
+  loadRounds() {
+    for (let i = 0; i < 3; i++) this._burst({ duration: 0.025, freq: 3000 + i * 300, q: 4, gain: 0.12, type: 'bandpass', delay: i * 0.04 });
+    this._tone(2200, 0.05, 0.04, 'triangle', 0.1);
+  }
+
+  /** Cápsula batendo no chão: tilintar de latão. */
+  shellClink(pos) {
+    this._at(pos, () => {
+      this._tone(4200 + Math.random() * 1800, 0.12, 0.05, 'sine');
+      this._tone(6800 + Math.random() * 1500, 0.08, 0.025, 'sine', 0.06);
+    }, 1.2);
+  }
+
+  /** Bala acertando: cada material tem seu som; às vezes ricocheteia. */
+  bulletHit(surface, pos, ricochet = false) {
+    this._at(pos, () => {
+      switch (surface) {
+        case 'metal':
+          this._tone(2400 + Math.random() * 600, 0.3, 0.12, 'triangle');
+          this._burst({ duration: 0.05, freq: 4500, q: 2, gain: 0.35, type: 'bandpass' });
+          break;
+        case 'wood':
+          this._burst({ duration: 0.08, freq: 900, q: 2, gain: 0.55, type: 'bandpass' });
+          this._burst({ duration: 0.06, freq: 2500, q: 1.5, gain: 0.2, type: 'bandpass', delay: 0.01 }); // lascas
+          break;
+        case 'concrete':
+          this._burst({ duration: 0.06, freq: 3000, q: 1.2, gain: 0.5, type: 'bandpass' });
+          this._grains(6, 0.1, { fMin: 3000, fMax: 7000, gain: 0.05 });
+          break;
+        case 'water':
+          this._burst({ duration: 0.25, freq: 900, q: 0.8, gain: 0.3, attack: 0.01 });
+          break;
+        case 'sack':
+          this._burst({ duration: 0.1, freq: 220, gain: 0.45 });
+          this._grains(8, 0.12, { fMin: 2500, fMax: 6500, gain: 0.05 });
+          break;
+        default:
+          this._burst({ duration: 0.09, freq: 400, gain: 0.4 });
+          this._grains(5, 0.1, { fMin: 1500, fMax: 4000, gain: 0.05 });
+      }
+      if (ricochet) {
+        // zunido do ricochete: tom que cai rápido
+        this._tone(3800 + Math.random() * 1500, 0.35, 0.06, 'sine', 0.01, 0.45);
+      }
+    }, 3);
+  }
+
+  pickup() {
+    this._burst({ duration: 0.12, freq: 1400, q: 1, gain: 0.12, type: 'bandpass', attack: 0.02 });
+    for (let i = 0; i < 4; i++) this._tone(3000 + Math.random() * 1200, 0.05, 0.03, 'triangle', 0.08 + i * 0.03);
+  }
+
   /** Golpe acertando o boneco de estopa: baque abafado, palha e (faca) o pano rasgando. */
   sackHit(pos, knife, power = 4) {
     const k = Math.min(1, power / 8);

@@ -10,6 +10,7 @@ import { Flashlight } from './flashlight.js';
 import { PropSystem } from './physics.js';
 import { TrainingDummies } from './dummies.js';
 import { loadPlayerModel, loadKnifeModel } from './playerModel.js';
+import { CAPACITY } from './revolver.js';
 
 // ---------- renderizador ----------
 const container = document.getElementById('game');
@@ -68,7 +69,8 @@ const ui = {
   health: $('health-fill'), state: $('state-label'), fps: $('fps'),
   flash: $('damage-flash'), hurt: $('vignette-hurt'), crosshair: $('crosshair'),
   hint: $('hint'), compass: $('compass-strip'), underwater: $('underwater'), useBtn: $('btn-use'),
-  equip: $('equip-label'), attackBtn: $('btn-attack'),
+  equip: $('equip-label'), attackBtn: $('btn-attack'), swapBtn: $('btn-swap'), aimBtn: $('btn-aim'), reloadBtn: $('btn-reload'),
+  ammo: $('ammo'), ammoLoaded: $('ammo-loaded'), ammoReserve: $('ammo-reserve'), toast: $('toast'),
   btnSize: $('btn-size'), btnSizeVal: $('btn-size-val'), haptics: $('haptics'),
   death: $('death'), deathReason: $('death-reason'), respawn: $('respawn-btn'),
   sens: $('sens'), sensVal: $('sens-val'), fov: $('fov'), fovVal: $('fov-val'),
@@ -335,20 +337,201 @@ function handleActions() {
     audio.click();
   }
   if (input.wasPressed('use') && useTarget) {
-    const door = useTarget;
-    const what = door.toggle(player.feetPosition);
-    if (what === 'open') audio.doorOpen(door.center);
+    if (useTarget.isPickup) {
+      pickUp(useTarget);
+    } else {
+      const door = useTarget;
+      const what = door.toggle(player.feetPosition);
+      if (what === 'open') audio.doorOpen(door.center);
+    }
     haptic(10);
   }
-  // mãos livres / faca
+  // mãos livres / faca / revólver
   let wantEquip = null;
   if (input.wasPressed('equipHands')) wantEquip = 'hands';
   if (input.wasPressed('equipKnife')) wantEquip = 'knife';
-  if (input.wasPressed('swapItem')) wantEquip = character.equip === 'knife' ? 'hands' : 'knife';
+  if (input.wasPressed('equipGun')) wantEquip = 'gun';
+  if (input.wasPressed('swapItem')) wantEquip = { hands: 'knife', knife: 'gun', gun: 'hands' }[character.equip];
+  const from = character.equip;
   if (wantEquip && character.setEquip(wantEquip)) {
-    if (wantEquip === 'knife') setTimeout(() => audio.unsheath(), 180); else setTimeout(() => audio.sheathe(), 200);
+    if (wantEquip === 'gun' || from === 'gun') setTimeout(() => audio.holster(wantEquip === 'gun'), 150);
+    if (wantEquip === 'knife') setTimeout(() => audio.unsheath(), 180);
+    else if (from === 'knife') setTimeout(() => audio.sheathe(), 200);
+    if (wantEquip !== 'gun') input.clearTouchAim();
+  }
+  // revólver: mirar, atirar, recarregar
+  const gunOut = (character.swap >= 0 ? character.swapTo : character.equip) === 'gun';
+  input.gunMode = gunOut;
+  character.aiming = gunOut && input.aimHeld && !player.sprinting;
+  player.aiming = gunOut && character.b.aim > 0.4;
+  if (gunOut) {
+    attackHold = -1;
+    const busy = player.isClimbing || player.onLadder || player.swimming || player.isHanging || player.sliding || player.rolling || player.dead;
+    if (input.wasPressed('reload') && !busy) character.reload();
+    if (input.wasPressed('attack') && !busy) shoot();
+    return;
   }
   handleCombat();
+}
+
+// ---------- revólver ----------
+const _shotDir = new THREE.Vector3(), _hitN = new THREE.Vector3(), _tmp = new THREE.Vector3();
+const holes = [];
+let holeIdx = 0;
+const holeGeo = new THREE.CircleGeometry(0.012, 8);
+const holeMat = new THREE.MeshBasicMaterial({ color: 0x0c0a08, transparent: true, opacity: 0.9, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3 });
+/** Furo de bala numa superfície (os 50 mais recentes ficam). */
+function bulletHole(point, normal) {
+  let m = holes[holeIdx];
+  if (!m) { m = new THREE.Mesh(holeGeo, holeMat); holes.push(m); scene.add(m); }
+  holeIdx = (holeIdx + 1) % 50;
+  m.position.copy(point).addScaledVector(normal, 0.006);
+  m.lookAt(_tmp.copy(m.position).add(normal));
+  m.scale.setScalar(0.7 + Math.random() * 0.6);
+}
+let hitMarkerT = 0;
+function hitMarker() {
+  hitMarkerT = 0.18;
+  ui.crosshair.classList.add('hit');
+}
+
+function shoot() {
+  const r = character.fireGun();
+  if (r === 'dry') {
+    audio.dryFire();
+    // tambor vazio: recarrega sozinho se tiver munição
+    if (character.gun.reserve > 0) character.reload();
+    return;
+  }
+  if (r !== 'fired') return;
+  audio.gunshot(indoor);
+  haptic(45);
+  const aim = character.b.aim;
+  rig.kick(0.05 + Math.random() * 0.02 - aim * 0.015, (Math.random() - 0.5) * 0.02);
+  rig.shake = Math.max(rig.shake, 0.12);
+  player.pitch = Math.min(1.45, player.pitch + 0.012 + Math.random() * 0.008); // o cano sobe um pouco
+  // fumaça na boca do cano
+  const mz = character.gun.muzzleWorld;
+  for (let i = 0; i < 4; i++) {
+    effects.dust.emit(mz.x, mz.y, mz.z, (Math.random() - 0.5) * 0.3, 0.2 + Math.random() * 0.3, (Math.random() - 0.5) * 0.3,
+      { life: 1.2, size: 0.05, grow: 0.35, color: [0.75, 0.74, 0.72], alpha: 0.25, drag: 2.5, gravity: -0.3 });
+  }
+  // dispersão: precisa mirar para acertar longe
+  const spread = lerp(0.045, 0.0035, aim) + Math.min(player.horizontalSpeed, 6) * 0.006 * (1 - aim * 0.6) + (player.onFloor ? 0 : 0.05);
+  camera.getWorldDirection(_shotDir);
+  const u = Math.random() * Math.PI * 2, rr = Math.sqrt(Math.random()) * spread;
+  _tmp.set(Math.cos(u) * rr, Math.sin(u) * rr, 0).applyQuaternion(camera.quaternion);
+  _shotDir.add(_tmp).normalize();
+  bulletImpact(camera.position, _shotDir);
+}
+
+/** A bala acerta o que estiver primeiro no caminho: boneco, objeto, porta ou o mundo. */
+function bulletImpact(origin, dir) {
+  const RANGE = 160;
+  raycaster.set(origin, dir);
+  raycaster.far = RANGE;
+  // em 3ª pessoa a câmera fica atrás: ignora o que estiver entre ela e o personagem
+  const skip = rig.thirdPerson ? rig.currentTpDist * 0.9 : 0;
+  _ray.set(origin, dir);
+  const wall = world.octree.rayIntersect(_ray);
+  let best = wall && wall.distance < RANGE && wall.distance > skip ? { kind: 'world', d: wall.distance } : null;
+  const dm = dummies.raycast(raycaster);
+  if (dm && dm.distance > skip && (!best || dm.distance < best.d)) best = { kind: 'dummy', d: dm.distance };
+  const ph = raycaster.intersectObjects(props.meshes, true)[0];
+  if (ph && ph.distance > skip && (!best || ph.distance < best.d)) best = { kind: 'prop', d: ph.distance };
+  const dh = raycaster.intersectObjects(doorSlabs, false)[0];
+  if (dh && dh.distance > skip && (!best || dh.distance < best.d)) best = { kind: 'door', d: dh.distance };
+  if (!best) return;
+  if (best.kind === 'dummy') {
+    dummies.hit(dm, dir, 7, { bullet: true });
+    audio.bulletHit('sack', dm.point);
+    for (let i = 0; i < 10; i++) {
+      effects.dust.emit(dm.point.x, dm.point.y, dm.point.z, dir.x * 2 + (Math.random() - 0.5) * 2, Math.random() * 1.5, dir.z * 2 + (Math.random() - 0.5) * 2,
+        { life: 0.9, size: 0.022, grow: 0, color: STRAW, alpha: 0.95, drag: 1.5, gravity: 5 });
+    }
+    hitMarker();
+  } else if (best.kind === 'prop') {
+    const res = props.hit(raycaster, 9);
+    if (res) {
+      audio.impact(res.body.type.sound, 1, res.point);
+      effects.puff(res.point, 3, 0.4, [0.5, 0.48, 0.44]);
+      hitMarker();
+    }
+  } else if (best.kind === 'door') {
+    _hitN.copy(dh.face.normal).transformDirection(dh.object.matrixWorld);
+    if (_hitN.dot(dir) > 0) _hitN.negate();
+    bulletHole(dh.point, _hitN);
+    audio.bulletHit('wood', dh.point);
+    effects.puff(dh.point, 4, 0.5, DUST.wood);
+  } else {
+    wall.triangle.getNormal(_hitN);
+    if (_hitN.dot(dir) > 0) _hitN.negate();
+    const surfHit = raycaster.intersectObjects(world.surfaceMeshes, false)[0];
+    const surface = surfHit && surfHit.distance < wall.distance + 0.05 ? surfHit.object.userData.surface : 'grass';
+    const p = wall.position;
+    if (surface !== 'grass') bulletHole(p, _hitN);
+    const ric = (surface === 'metal' || surface === 'concrete') && Math.random() < 0.35;
+    audio.bulletHit(surface, p, ric);
+    if (surface === 'metal') {
+      for (let i = 0; i < 10; i++) {
+        effects.glow.emit(p.x, p.y, p.z, _hitN.x * 2 + (Math.random() - 0.5) * 4, _hitN.y * 2 + Math.random() * 3, _hitN.z * 2 + (Math.random() - 0.5) * 4,
+          { life: 0.3, size: 0.025, grow: -0.05, color: SPARK, alpha: 1, drag: 1, gravity: 9 });
+      }
+    } else {
+      // poeira/terra espirrando para fora da superfície
+      for (let i = 0; i < 6; i++) {
+        effects.dust.emit(p.x, p.y, p.z, _hitN.x * 1.5 + (Math.random() - 0.5), _hitN.y * 1.5 + Math.random(), _hitN.z * 1.5 + (Math.random() - 0.5),
+          { life: 0.8, size: 0.06, grow: 0.3, color: DUST[surface] ?? DUST.grass, alpha: 0.5, drag: 3, gravity: 1.5 });
+      }
+    }
+  }
+}
+
+// ---------- munição pelo mapa ----------
+const pickups = [];
+function ammoBoxTexture() {
+  const c = document.createElement('canvas');
+  c.width = 128; c.height = 64;
+  const g = c.getContext('2d');
+  g.fillStyle = '#6e1f15'; g.fillRect(0, 0, 128, 64);
+  g.fillStyle = '#d9c38a'; g.fillRect(0, 18, 128, 26);
+  g.fillStyle = '#2a1a10'; g.font = 'bold 20px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText('.357 MAG', 64, 32);
+  g.fillStyle = 'rgba(0,0,0,0.25)';
+  for (let i = 0; i < 30; i++) g.fillRect(Math.random() * 128, Math.random() * 64, 2 + Math.random() * 6, 1 + Math.random() * 2);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+{
+  const mat = new THREE.MeshStandardMaterial({ map: ammoBoxTexture(), roughness: 0.8 });
+  const side = new THREE.MeshStandardMaterial({ color: 0x6e1f15, roughness: 0.85 });
+  const geo = new THREE.BoxGeometry(0.11, 0.045, 0.075);
+  // espalhadas em alguns lugares onde já há objetos (mesas, prateleiras, chão das casas)
+  const spots = world.propSpots.filter((_, i) => i % 3 === 1).slice(0, 7);
+  spots.push({ x: 1.6, y: world.groundHeight(1.6, 11.2), z: 11.2 }); // uma perto do começo
+  for (const sp of spots) {
+    const m = new THREE.Mesh(geo, [side, side, mat, side, mat, mat]);
+    m.position.set(sp.x + 0.28, sp.y + 0.024, sp.z + 0.12);
+    m.rotation.y = Math.random() * Math.PI;
+    m.castShadow = true;
+    m.userData.pickup = { isPickup: true, amount: 12, mesh: m, center: m.position };
+    scene.add(m);
+    pickups.push(m);
+  }
+}
+function pickUp(p) {
+  character.gun.reserve += p.amount;
+  scene.remove(p.mesh);
+  pickups.splice(pickups.indexOf(p.mesh), 1);
+  audio.pickup();
+  showToast(`+${p.amount} BALAS .357`);
+}
+let toastT = 0;
+function showToast(text) {
+  ui.toast.textContent = text;
+  ui.toast.classList.add('show');
+  toastT = 1.8;
 }
 
 // ---------- combate ----------
@@ -411,6 +594,8 @@ function updateUseTarget() {
   if (rig.thirdPerson && !player.onFloor) return;
   const hit = cameraRay(rig.thirdPerson ? 2.4 + rig.currentTpDist : 2.4).intersectObjects(doorSlabs, false)[0];
   if (hit) useTarget = hit.object.userData.door;
+  const pk = raycaster.intersectObjects(pickups, false)[0];
+  if (pk && (!hit || pk.distance < hit.distance)) useTarget = pk.object.userData.pickup;
 }
 
 const SPARK = [1, 0.7, 0.3];
@@ -498,6 +683,7 @@ function strikeHit(m, name) {
 
 let breathTimer = 0, breathInhale = false;
 const lerpN = (a, b, t) => a + (b - a) * t;
+const lerp = THREE.MathUtils.lerp;
 const DUST = { grass: [0.45, 0.42, 0.3], concrete: [0.55, 0.53, 0.5], wood: [0.5, 0.42, 0.32], metal: [0.5, 0.48, 0.45], water: [0.8, 0.86, 0.88] };
 
 function footSurface() {
@@ -629,7 +815,7 @@ function updateHud() {
   }
   if (!hint && useTarget) {
     const key = input.pad.connected ? 'X' : isTouchDevice ? 'USAR' : 'F';
-    hint = `${key} — ${useTarget.isOpen ? 'FECHAR A PORTA' : 'ABRIR A PORTA'}`;
+    hint = `${key} — ${useTarget.isPickup ? `PEGAR MUNIÇÃO .357 (+${useTarget.amount})` : useTarget.isOpen ? 'FECHAR A PORTA' : 'ABRIR A PORTA'}`;
   } else if (!hint && player.swimming) {
     hint = isTouchDevice ? 'AGACHAR — MERGULHAR · PULAR — SUBIR' : 'CTRL — MERGULHAR · ESPAÇO — SUBIR';
   }
@@ -637,13 +823,33 @@ function updateHud() {
   ui.hint.classList.toggle('hidden', !hint);
   ui.useBtn?.classList.toggle('hidden', !useTarget);
   const eq = character.swap >= 0 ? character.swapTo : character.equip;
-  ui.equip.textContent = (eq === 'knife' ? 'FACA' : 'MÃOS LIVRES') + (player.walkMode ? ' · ANDANDO DEVAGAR' : '');
-  if (ui.attackBtn) ui.attackBtn.textContent = eq === 'knife' ? '🔪' : '👊';
+  const gunOut = eq === 'gun';
+  ui.equip.textContent = ({ knife: 'FACA', gun: 'REVÓLVER .357' }[eq] ?? 'MÃOS LIVRES') + (character.reloading ? ' · RECARREGANDO' : '') + (player.walkMode ? ' · ANDANDO DEVAGAR' : '');
+  if (ui.attackBtn) ui.attackBtn.textContent = { knife: '🔪', gun: '🔫' }[eq] ?? '👊';
+  ui.swapBtn.textContent = { hands: '⇄🔪', knife: '⇄🔫', gun: '⇄✊' }[eq];
+  ui.aimBtn?.classList.toggle('hidden', !gunOut);
+  ui.reloadBtn?.classList.toggle('hidden', !gunOut);
+  ui.ammo.classList.toggle('hidden', !gunOut);
+  if (gunOut) {
+    const g = character.gun;
+    ui.ammoLoaded.textContent = g.loaded;
+    ui.ammoReserve.textContent = g.reserve;
+    ui.ammo.classList.toggle('empty', g.loaded === 0);
+    if (g.loaded === 0 && g.reserve === 0 && !hint) hint = 'SEM MUNIÇÃO — PROCURE CAIXAS .357';
+    else if (g.loaded === 0 && !character.reloading && !hint) hint = (input.pad.connected ? '↓' : isTouchDevice ? '🔄' : 'R') + ' — RECARREGAR';
+    ui.hint.textContent = hint;
+    ui.hint.classList.toggle('hidden', !hint);
+  }
 
-  // mira se abre com o movimento e no ar
-  const spread = 4 + Math.min(player.horizontalSpeed, 8) * 1.3 + (player.onFloor ? 0 : 8);
+  // mira se abre com o movimento e no ar (e fecha quando mira com a arma)
+  const aim = character.b.aim;
+  let spread = 4 + Math.min(player.horizontalSpeed, 8) * 1.3 + (player.onFloor ? 0 : 8);
+  if (gunOut) spread = lerp(spread + 6, 2, aim);
   ui.crosshair.style.setProperty('--gap', spread.toFixed(1) + 'px');
-  ui.crosshair.classList.toggle('hide', player.onLadder || player.isClimbing || player.rolling || player.dead);
+  // mirando em 1ª pessoa usa a alça e massa do revólver (sem cruz)
+  ui.crosshair.classList.toggle('hide', player.onLadder || player.isClimbing || player.rolling || player.dead || (gunOut && aim > 0.6 && !rig.thirdPerson));
+  if (hitMarkerT > 0) { hitMarkerT -= frameDt; if (hitMarkerT <= 0) ui.crosshair.classList.remove('hit'); }
+  if (toastT > 0) { toastT -= frameDt; if (toastT <= 0) ui.toast.classList.remove('show'); }
   updateCompass();
 }
 
@@ -686,7 +892,19 @@ function frame() {
   for (const e of character.events) {
     if (e.type === 'swing') onSwing(e.move, e.name);
     else if (e.type === 'hit' && playing) strikeHit(e.move, e.name);
+    else if (e.type === 'cylOpen') audio.cylinderOpen();
+    else if (e.type === 'eject') audio.ejectShells(e.count);
+    else if (e.type === 'cylClose') audio.cylinderClose();
+    else if (e.type === 'loadRounds') {
+      // speedloader: completa o tambor com o que tiver
+      const g = character.gun, n = Math.min(CAPACITY - g.loaded, g.reserve);
+      g.reserve -= n;
+      g.setLoaded(g.loaded + n);
+      audio.loadRounds();
+    }
   }
+  character.gun.update(dt, (x, z) => world.groundHeight(x, z), (p) => audio.shellClink(p));
+  rig.aim = character.b.aim;
   character.events.length = 0;
   dummies.update(dt);
   character.getEyeWorldPosition(_head);

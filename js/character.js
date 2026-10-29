@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { makeFlashlightModel } from './flashlight.js';
+import { Revolver, SIGHT_Y, CAPACITY } from './revolver.js';
 
 // Corpo do personagem — o MESMO em 1ª e 3ª pessoa.
 // Em 1ª pessoa a câmera fica nos olhos dele. Cabeça e tronco somem da câmera (continuam fazendo
@@ -268,12 +269,19 @@ export class Character {
     this.legR = makeLeg(0.104);
     this.hips.add(this.legL.thigh, this.legR.thigh);
 
+    // revólver: no coldre da coxa direita ou na mão (posicionado a partir dos olhos)
+    this.gun = new Revolver(scene);
+    this.gunHolster = new THREE.Group();
+    this.gunHolster.position.set(0.15, -0.03, 0.055);
+    this.gunHolster.rotation.set(-Math.PI / 2 + 0.12, 0, 0.08);
+    this.legR.thigh.add(this.gunHolster);
+
     this.root.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
     scene.add(this.root);
     this.scene = scene;
     this.skinned = null;
 
-    this.b = { run: 0, move: 0, crouch: 0, air: 0, climb: 0, death: 0, ladder: 0, slide: 0, swim: 0, flash: 0, land: 0, hang: 0, knife: 0, obstruct: 0, guard: 0 };
+    this.b = { run: 0, move: 0, crouch: 0, air: 0, climb: 0, death: 0, ladder: 0, slide: 0, swim: 0, flash: 0, land: 0, hang: 0, knife: 0, obstruct: 0, guard: 0, gun: 0, aim: 0, point: 0 };
     this.t = 0;
     this.yaw = 0;
     this.prevYaw = 0;
@@ -296,6 +304,12 @@ export class Character {
     this.hitDone = false;
     this.events = [];        // { type: 'swing' | 'hit', move }
     this.recoil = 0;
+    this.aiming = false;     // botão de mirar (revólver)
+    this.gunPoint = 0;       // depois de atirar, a arma fica erguida um tempo
+    this.gunKick = 0;        // recuo do tiro
+    this.fireCooldown = 0;
+    this.reloadT = -1;       // recarga em andamento (s)
+    this.legYaw = 0;         // quadril virado para a direção do passo (andar de lado)
     this.obstructTarget = 0;
     this.firstPerson = true;
     this.setFirstPerson(true);
@@ -315,6 +329,16 @@ export class Character {
       this.sheath.add(this.knife);
       this.knife.position.set(0, 0.01, 0);
       this.knife.rotation.set(Math.PI, 0, 0);
+    }
+    // revólver: na mão (controlado no mundo, a partir dos olhos) ou no coldre
+    if (this.gun) {
+      if (equip === 'gun') {
+        this.scene.add(this.gun.model);
+      } else {
+        this.gunHolster.add(this.gun.model);
+        this.gun.model.position.set(0, 0, 0);
+        this.gun.model.quaternion.identity();
+      }
     }
     // lanterna: na mão esquerda (lente ao longo do antebraço) ou presa no peito, apontando para frente
     if (flashOn) {
@@ -336,7 +360,7 @@ export class Character {
    */
   useModel(meshes) {
     const keep = new Set();
-    for (const g of [this.knife, this.flash, this.sheath]) g.traverse((o) => keep.add(o));
+    for (const g of [this.knife, this.flash, this.sheath, this.gun.model]) g.traverse((o) => keep.add(o));
     this.root.traverse((o) => { if (o.isMesh && !keep.has(o)) o.visible = false; });
     this.skinned = meshes;
     for (const m of meshes) this.scene.add(m);
@@ -351,9 +375,39 @@ export class Character {
     this._flashLayer();
   }
 
-  /** Troca para 'hands' (mãos livres) ou 'knife'. Retorna true se começou a trocar. */
+  /** Tiro. Retorna 'fired', 'dry' (sem bala) ou null (não dá agora). */
+  fireGun() {
+    if (this.equip !== 'gun' || this.swap >= 0 || this.reloadT >= 0 || this.b.gun < 0.8 || this.fireCooldown > 0) return null;
+    if (this.gun.loaded <= 0) {
+      this.fireCooldown = 0.3;
+      this.gun.cock = 1;
+      return 'dry';
+    }
+    this.gun.fire();
+    this.fireCooldown = 0.32; // ação dupla: puxar o gatilho leva um tempinho
+    this.gunKick = 1;
+    this.gunPoint = 1.6;
+    this._kickSide = (Math.random() - 0.5) * 0.04;
+    return 'fired';
+  }
+
+  /** Começa a recarregar (se der). */
+  reload() {
+    const g = this.gun;
+    if (this.equip !== 'gun' || this.swap >= 0 || this.reloadT >= 0 || g.loaded >= CAPACITY || g.reserve <= 0 || this.b.gun < 0.5) return false;
+    this.reloadT = 0;
+    this._reloadDone = new Set();
+    this._spent = CAPACITY - g.loaded;
+    return true;
+  }
+
+  get reloading() { return this.reloadT >= 0; }
+
+  /** Troca para 'hands' (mãos livres), 'knife' ou 'gun'. Retorna true se começou a trocar. */
   setEquip(equip) {
     if (equip === this.equip || this.swap >= 0) return false;
+    this.reloadT = -1;
+    this.gun.open = 0;
     this.swap = 0;
     this.swapTo = equip;
     return true;
@@ -371,7 +425,7 @@ export class Character {
    * ou forte (heavy: depois de carregar). Se outro golpe ainda está no meio, fica na fila.
    */
   attack(heavy = false) {
-    if (this.swap >= 0) return false;
+    if (this.swap >= 0 || this.equip === 'gun') return false;
     const kind = this.attackKind;
     let name;
     if (heavy) name = HEAVY[kind];
@@ -485,7 +539,7 @@ export class Character {
     b.swim = damp(b.swim, player.swimming ? 1 : 0, 5, dt);
     b.death = damp(b.death, player.dead ? 1 : 0, player.dead ? 3 : 30, dt);
     const busyHands = player.onLadder || player.isClimbing || player.isHanging || player.swimming || player.dead;
-    b.flash = damp(b.flash, this.flashOn && !busyHands ? 1 : 0, 7, dt);
+    b.flash = damp(b.flash, this.flashOn && !busyHands && this.equip !== 'gun' ? 1 : 0, 7, dt);
     b.knife = damp(b.knife, this.equip === 'knife' && !busyHands && !player.sliding ? 1 : 0, 8, dt);
     b.obstruct = damp(b.obstruct, busyHands ? 0 : this.obstructTarget, 8, dt);
     this.accelLean = damp(this.accelLean, Math.max(-1, Math.min(1, accel / 8)), 5, dt);
@@ -549,7 +603,17 @@ export class Character {
       HIP_Y - crouchK * 0.4 + bob - b.air * 0.04 - b.land * 0.22 - Math.abs(shift) * 0.012,
       0
     );
-    this.hips.rotation.set(0, Math.sin(ph) * 0.1 * thighAmp, Math.sin(ph) * 0.05 * ww * b.move + shift * 0.04 - this.runLean);
+    // andando de lado/diagonal: o quadril e as pernas viram para a direção do passo, o tronco continua mirando
+    const mi = player.moveInput;
+    let legYawT = 0;
+    if (b.move > 0.05 && Math.hypot(mi.x, mi.y) > 0.2 && !player.sliding) {
+      let a = Math.atan2(mi.x, mi.y);
+      if (Math.abs(a) > Math.PI / 2 + 0.01) a -= Math.sign(a) * Math.PI; // de costas: espelha
+      legYawT = -a * 0.62;
+    }
+    this.legYaw = damp(this.legYaw, legYawT, 7, dt);
+    const hipSwing = Math.sin(ph) * 0.1 * thighAmp;
+    this.hips.rotation.set(0, hipSwing + this.legYaw, Math.sin(ph) * 0.05 * ww * b.move + shift * 0.04 - this.runLean);
     // pouso: amortece dobrando as pernas
     if (b.land > 0.01) {
       for (const leg of [L, R]) { leg.thigh.rotation.x += b.land * 0.7; leg.knee.rotation.x -= b.land * 1.3; leg.ankle.rotation.x += b.land * 0.5; }
@@ -564,7 +628,7 @@ export class Character {
     const look = player.pitch;
     this.torso.rotation.set(
       -(0.03 + wr * 0.12 + sprint * 0.14 + crouchK * 0.3) - this.accelLean * 0.08 * b.move + look * 0.25,
-      -this.hips.rotation.y * 1.4,
+      -hipSwing * 1.4 - this.legYaw,
       -player.lean * 0.35
     );
     const breath = Math.sin(this.t * (1.6 + player.exertion * 2.2)) * (0.008 + player.exertion * 0.012);
@@ -649,6 +713,7 @@ export class Character {
       let want = 0.35;
       if (arm === Bm && (this.equip === 'knife' || this.swap >= 0.45)) want = 1.45;
       if (arm === A && this._heldFlash) want = 1.35;
+      if (b.gun > 0.3) want = arm === Bm ? 1.3 : 1.2;
       if (b.guard > 0.3 || (this.move && this.move.hand === arm.side)) want = Math.max(want, 1.5);
       if (b.climb > 0.3 || b.hang > 0.3 || b.ladder > 0.3) want = 0.9;
       arm.fist = damp(arm.fist, want, 14, dt);
@@ -723,6 +788,8 @@ export class Character {
     // pegada da faca: normal (lâmina à frente) ou alinhada ao braço (estocada)
     if (this.knife.parent !== this.sheath) this.knife.rotation.x = lerp(KNIFE_REST, KNIFE_STAB, grip);
 
+    this._gunPose(dt, player, look, ph, sprint, yawRate, busyHands);
+
     // ================= 3) ações de corpo inteiro =================
     this._climbPose(dt, player);
     this._hangPose(player);
@@ -739,6 +806,120 @@ export class Character {
       A.upper.rotation.z -= d * 0.6;
       Bm.upper.rotation.z += d * 0.6;
     }
+  }
+
+  /**
+   * Revólver na mão: a arma é posicionada no espaço dos olhos (baixa, apontada, mirando pela
+   * alça e massa, correndo, recarregando) e as duas mãos vão até ela com IK — então em 1ª pessoa a
+   * mira fica exatamente no centro da tela e em 3ª pessoa o corpo faz o mesmo movimento.
+   */
+  _gunPose(dt, player, look, ph, sprint, yawRate, busyHands) {
+    const b = this.b, G = this.gun;
+    const out = this.equip === 'gun';
+    b.gun = damp(b.gun, out && !busyHands && !player.sliding && !player.rolling ? 1 : 0, 9, dt);
+    this.fireCooldown = Math.max(0, this.fireCooldown - dt);
+    this.gunPoint = Math.max(0, this.gunPoint - dt);
+    this.gunKick = damp(this.gunKick, 0, 11, dt);
+    const reloading = this.reloadT >= 0;
+    b.aim = damp(b.aim, out && this.aiming && !busyHands && !reloading && sprint < 0.5 ? 1 : 0, 13, dt);
+    b.point = damp(b.point, this.gunPoint > 0 ? 1 : 0, 14, dt);
+
+    // ----- recarga: abre o tambor, ejeta as cápsulas, põe as balas (speedloader), fecha -----
+    let rk = 0, rPitch = 0, rRoll = 0, open = 0;
+    if (reloading) {
+      const t = (this.reloadT += dt);
+      rk = smoothstep(0, 0.3, t) * (1 - smoothstep(2.15, 2.55, t));
+      open = smoothstep(0.28, 0.42, t) * (1 - smoothstep(1.82, 1.95, t));
+      rPitch = 0.95 * smoothstep(0.4, 0.55, t) * (1 - smoothstep(0.78, 0.95, t)) - 0.55 * smoothstep(0.85, 1.05, t) * (1 - smoothstep(1.8, 2.05, t));
+      rRoll = 0.55 * smoothstep(0.3, 0.5, t) * (1 - smoothstep(1.85, 2.1, t));
+      const done = this._reloadDone;
+      const mark = (at, type) => { if (t >= at && !done.has(type)) { done.add(type); this.events.push({ type, count: this._spent }); return true; } return false; };
+      mark(0.3, 'cylOpen');
+      if (mark(0.58, 'eject')) G.ejectShells(this._spent);
+      mark(1.5, 'loadRounds');
+      mark(1.86, 'cylClose');
+      if (t >= 2.55) this.reloadT = -1;
+    }
+    G.open = open;
+    if (b.gun < 0.001 && !out) return;
+
+    // ----- pose da arma no espaço do olhar: [direita, cima, frente, inclinação, giro] -----
+    const P = [0.1, -0.17, 0.42, -0.38, 0.1];                  // baixa, pronta
+    const mix = (Q, w) => { if (w > 0.001) for (let i = 0; i < 5; i++) P[i] = lerp(P[i], Q[i], w); };
+    mix([0.07, -0.12, 0.46, 0, 0], b.point);                    // apontada (depois de atirar)
+    mix([0.17, -0.42, 0.18, -1.15, 0.45], sprint * (1 - b.aim)); // correndo: arma para baixo, uma mão
+    mix([0, -SIGHT_Y, 0.43, 0, 0], b.aim);                       // mirando pela alça e massa
+    mix([0.03, -0.17, 0.3, rPitch, rRoll], rk);                  // recarga
+    // perto de parede: recolhe
+    P[2] -= 0.16 * b.obstruct * (1 - b.aim * 0.5);
+    P[3] -= 0.7 * b.obstruct;
+    // balanço: respiração, passos, atraso ao girar e recuo
+    const steady = 1 - b.aim * 0.65;
+    const t = this.t;
+    let yawOff = Math.sin(t * 0.9) * 0.006 * steady - Math.max(-0.08, Math.min(0.08, yawRate * 0.012));
+    P[3] += Math.sin(t * 1.3) * 0.007 * steady + this.gunKick * 0.32;
+    P[1] += Math.sin(ph * 2) * 0.011 * b.move * steady + this.gunKick * 0.012;
+    P[0] += Math.sin(ph) * 0.009 * b.move * steady;
+    P[2] -= this.gunKick * 0.04;
+    yawOff += (this.gunKick > 0.5 ? (this._kickSide ?? 0) : 0);
+
+    const eye = this.getEyeWorldPosition(this._t2);
+    const yaw = player.yaw, cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(look), sp = Math.sin(look);
+    const fx = -sy * cp, fy = sp, fz = -cy * cp;      // frente
+    const ux = sy * sp, uy = cp, uz = cy * sp;        // cima
+    const rx = cy, rz = -sy;                          // direita
+    const pos = this._gunPos ?? (this._gunPos = new THREE.Vector3());
+    pos.set(
+      eye.x + rx * P[0] + ux * P[1] + fx * P[2],
+      eye.y + uy * P[1] + fy * P[2],
+      eye.z + rz * P[0] + uz * P[1] + fz * P[2],
+    );
+    const e = this._gunEuler ?? (this._gunEuler = new THREE.Euler(0, 0, 0, 'YXZ'));
+    e.set(look + P[3], yaw + yawOff, -P[4]);
+    const q = this._gunQ ?? (this._gunQ = new THREE.Quaternion());
+    q.setFromEuler(e);
+    const M = G.model;
+    if (out) {
+      // saindo do coldre: parte da posição do coldre e vai até a mão
+      if (b.gun < 0.999) {
+        this.gunHolster.updateWorldMatrix(true, false);
+        const hp = this.gunHolster.getWorldPosition(this._t1);
+        const hq = this.gunHolster.getWorldQuaternion(this._hq ?? (this._hq = new THREE.Quaternion()));
+        const k = smoothstep(0, 1, b.gun);
+        pos.lerpVectors(hp, pos, k);
+        q.slerpQuaternions(hq, q, k);
+      }
+      M.position.copy(pos);
+      M.quaternion.copy(q);
+      M.updateMatrixWorld(true);
+    }
+    // ----- mãos: direita na empunhadura; esquerda apoiando por baixo (ou na recarga) -----
+    const wR = out ? b.gun : 0;
+    if (wR < 0.001) return;
+    const grip = M.localToWorld(this._t1.set(0.0, -0.004, 0.008));
+    solveArmIK(this.armR, grip, this._v.set(0.55, -0.85, 0.35), wR);
+    const oneHand = sprint * (1 - b.aim) * (1 - rk);
+    let wL = wR * (1 - oneHand);
+    let left = M.localToWorld(this._t1.set(-0.03, -0.014, 0.002));
+    if (reloading) {
+      // esquerda: empurra a vareta (ejeta) → vai ao cinto pegar o speedloader → põe no tambor → fecha
+      const tr = this.reloadT;
+      const cylP = G.cyl.getWorldPosition(this._t2.clone());
+      const rodP = M.localToWorld(new THREE.Vector3(0, 0.03, -0.1));
+      this.hips.updateWorldMatrix(true, false);
+      const pouch = this.hips.localToWorld(new THREE.Vector3(-0.17, 0.02, -0.08));
+      const sup = left.clone();
+      let tgt = sup;
+      if (tr < 0.35) tgt = sup.lerp(cylP, smoothstep(0.1, 0.35, tr));
+      else if (tr < 0.72) tgt = cylP.clone().lerp(rodP, smoothstep(0.42, 0.58, tr) * (1 - smoothstep(0.6, 0.72, tr)));
+      else if (tr < 1.15) tgt = cylP.clone().lerp(pouch, smoothstep(0.72, 0.95, tr));
+      else if (tr < 1.55) tgt = pouch.lerp(cylP, smoothstep(1.15, 1.45, tr));
+      else if (tr < 2.0) tgt = cylP;
+      else tgt = cylP.lerp(sup, smoothstep(2.0, 2.35, tr));
+      left = this._t1.copy(tgt);
+      wL = wR;
+    }
+    solveArmIK(this.armL, left, this._v.set(-0.6, -0.8, 0.3), wL);
   }
 
   /** Mãos apoiadas na borda (IK) durante as escaladas, pernas subindo. */

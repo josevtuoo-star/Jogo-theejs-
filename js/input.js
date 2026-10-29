@@ -11,7 +11,7 @@ const PAD_DEAD = 0.18;
 const PAD_LOOK_SPEED = 3.0; // rad/s com o analógico no máximo
 
 // mapeamento "standard" da Gamepad API (Xbox / PlayStation / genéricos no Android)
-const PAD = { A: 0, B: 1, X: 2, Y: 3, LB: 4, RB: 5, LT: 6, RT: 7, START: 9, L3: 10, UP: 12, LEFT: 14, RIGHT: 15 };
+const PAD = { A: 0, B: 1, X: 2, Y: 3, LB: 4, RB: 5, LT: 6, RT: 7, START: 9, L3: 10, UP: 12, DOWN: 13, LEFT: 14, RIGHT: 15 };
 
 function deadzone(v) {
   const a = Math.abs(v);
@@ -34,6 +34,9 @@ export class Input {
     this.invertY = false;
 
     this.mouseDown = false;
+    this.mouseRight = false;
+    this.gunMode = false;            // com o revólver na mão, o LT do controle mira em vez de correr
+    this.touchAim = false;           // botão MIRAR (alternar)
     this.pointerLockFailed = false;
     this.dragLook = false;
 
@@ -64,6 +67,8 @@ export class Input {
       KeyL: 'light',
       Digit1: 'equipHands',
       Digit2: 'equipKnife',
+      Digit3: 'equipGun',
+      KeyR: 'reload',
       KeyX: 'walkToggle',
     };
 
@@ -94,9 +99,12 @@ export class Input {
         this.dragLook = true;
       }
       if (e.button === 0) { this.mouseDown = true; this.pressed.add('attack'); }
+      if (e.button === 2) this.mouseRight = true;
     });
+    this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     window.addEventListener('mouseup', (e) => {
       if (e.button === 0) this.mouseDown = false;
+      if (e.button === 2) this.mouseRight = false;
       this.dragLook = false;
     });
   }
@@ -126,6 +134,9 @@ export class Input {
             break;
           case 'pause':
             this.onPauseRequest?.();
+            break;
+          case 'aim':
+            this.touchAim = !this.touchAim;
             break;
           default:
             this.pressed.add(action);
@@ -200,6 +211,7 @@ export class Input {
   _refreshButtons() {
     document.getElementById('btn-sprint')?.classList.toggle('on', this.touchSprint);
     document.getElementById('btn-crouch')?.classList.toggle('on', this.touchCrouch);
+    document.getElementById('btn-aim')?.classList.toggle('on', this.touchAim);
   }
 
   // ---------------- API usada pelo jogo ----------------
@@ -233,7 +245,7 @@ export class Input {
   get sprint() {
     const joyFull = this.joy.id !== null && Math.hypot(this.joy.x, this.joy.y) > 0.95 && this.joy.y < -0.5;
     return this.keys.has('ShiftLeft') || this.keys.has('ShiftRight') || this.touchSprint || joyFull ||
-      this.pad.sprintToggle || this._padHeld(PAD.LT);
+      this.pad.sprintToggle || (!this.gunMode && this._padHeld(PAD.LT));
   }
 
   /** -1 inclina para a esquerda, 1 para a direita (Q/E, LB/RB). */
@@ -242,6 +254,16 @@ export class Input {
     if (this.keys.has('KeyQ') || this._padHeld(PAD.LB)) l -= 1;
     if (this.keys.has('KeyE') || this._padHeld(PAD.RB)) l += 1;
     return l;
+  }
+
+  /** Mirar (botão direito, MIRAR no celular, LT no controle com a arma). */
+  get aimHeld() {
+    return this.mouseRight || this.touchAim || (this.gunMode && this._padHeld(PAD.LT));
+  }
+
+  /** Desliga o MIRAR do celular (ao guardar a arma). */
+  clearTouchAim() {
+    if (this.touchAim) { this.touchAim = false; this._refreshButtons(); }
   }
 
   /** Botão de golpe segurado (carrega o golpe forte). */
@@ -312,6 +334,7 @@ export class Input {
     if (down(PAD.UP)) this.pressed.add('light');
     if (down(PAD.LEFT)) this.pressed.add('swapItem');
     if (down(PAD.RIGHT)) this.pressed.add('walkToggle');
+    if (down(PAD.DOWN)) this.pressed.add('reload');
     if (down(PAD.Y)) this.pressed.add('view');
     if (down(PAD.RT)) this.pressed.add('attack');
     if (down(PAD.START)) this.onPauseRequest?.();
@@ -324,5 +347,6 @@ export class Input {
     this.pressed.clear();
     this.lookDX = this.lookDY = 0;
     this.mouseDown = false;
+    this.mouseRight = false;
   }
 }

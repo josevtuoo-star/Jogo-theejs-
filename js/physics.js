@@ -164,7 +164,7 @@ export class PropSystem {
     const b = hit.object.userData.body;
     _v.copy(raycaster.ray.direction).multiplyScalar(strength).add(_n.set(0, strength * 0.35, 0));
     this.push(b, _v);
-    return { body: b, point: hit.point };
+    return { body: b, point: hit.point, distance: hit.distance };
   }
 
   _collideOctree(b, octree) {

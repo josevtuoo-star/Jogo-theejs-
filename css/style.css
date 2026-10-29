@@ -210,3 +210,24 @@ body.touch #equip-label { right: auto; left: 50%; transform: translateX(-50%); b
   text-align: center; width: max-content; max-width: calc(100% - 32px); pointer-events: none; z-index: 30;
 }
 body.playing #credits { display: none; }
+
+/* revólver: munição, aviso, botões */
+#ammo {
+  position: absolute; right: max(18px, env(safe-area-inset-right)); bottom: 46px;
+  font-family: inherit; color: #efe6cf; text-shadow: 0 1px 3px rgba(0,0,0,0.9); letter-spacing: 0.06em;
+  font-size: 26px; font-weight: 600; text-align: right;
+}
+#ammo small { font-size: 15px; opacity: 0.75; }
+#ammo em { display: block; font-style: normal; font-size: 10px; letter-spacing: 0.2em; opacity: 0.6; }
+#ammo.empty #ammo-loaded { color: #e05a3a; }
+body.touch #ammo { bottom: auto; top: 64px; right: max(110px, env(safe-area-inset-right)); font-size: 20px; }
+#toast {
+  position: absolute; left: 50%; top: 30%; transform: translate(-50%, 8px); opacity: 0;
+  color: #f2e7c4; font-size: 15px; letter-spacing: 0.14em; text-shadow: 0 1px 4px rgba(0,0,0,0.9);
+  transition: opacity 0.25s, transform 0.25s; pointer-events: none;
+}
+#toast.show { opacity: 1; transform: translate(-50%, 0); }
+#crosshair.hit i { background: #ffdf9a; }
+#crosshair.hit { transform: rotate(45deg); }
+#btn-aim { right: calc(max(24px, env(safe-area-inset-right)) + 8px); bottom: 225px; width: 66px; height: 66px; font-size: 12px; }
+#btn-reload { right: calc(max(24px, env(safe-area-inset-right)) + 200px); bottom: 150px; width: 58px; height: 58px; font-size: 22px; }

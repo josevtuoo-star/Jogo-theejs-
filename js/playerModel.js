@@ -62,7 +62,6 @@ function joint(name, side) {
 /** Partes que pertencem 100% à cabeça (e somem da câmera em 1ª pessoa). */
 const HEAD_ONLY = /hat|carl_head|eyeball|hair/;
 const FP_HIDE = /hat|carl_head|eyeball|hair|mechanic_head_color/;
-const DROP = /holster/; // coldre de revólver: no lugar dele fica a bainha da faca
 
 function closestOnSegment(p, a, b, out) {
   const ab = _ab.subVectors(b, a);
@@ -128,7 +127,6 @@ export async function loadPlayerModel(character, url) {
   const p = new THREE.Vector3();
   for (const src of meshes) {
     const name = src.material.name || src.name;
-    if (DROP.test(name)) continue;
     const geo = src.geometry.clone();
     geo.applyMatrix4(new THREE.Matrix4().multiplyMatrices(toChar, src.matrixWorld));
     const pos = geo.attributes.position;

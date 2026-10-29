@@ -88,7 +88,10 @@ export class CameraRig {
 
     // FOV
     const sprintActive = (player.sprinting && player.horizontalSpeed > 4) || player.sliding;
-    this.fov = damp(this.fov, this.baseFov + (sprintActive ? SPRINT_FOV_BONUS : 0) + this.slideBlend * 3, 4, dt);
+    // mirando com a arma: aproxima (zoom leve, mais forte pela alça e massa em 1ª pessoa)
+    const aim = this.aim ?? 0;
+    const fovT = this.baseFov + (sprintActive ? SPRINT_FOV_BONUS : 0) + this.slideBlend * 3 - aim * (this.thirdPerson ? 12 : 22);
+    this.fov = damp(this.fov, fovT, aim > 0.02 || Math.abs(this.fov - fovT) < 6 ? 12 : 4, dt);
     if (Math.abs(this.camera.fov - this.fov) > 0.01) {
       this.camera.fov = this.fov;
       this.camera.updateProjectionMatrix();
@@ -128,7 +131,7 @@ export class CameraRig {
       _pivot.copy(_eye).add(_shoulder);
       _ray.set(_pivot, _dir);
       const hit = this.octree.rayIntersect(_ray);
-      let dist = this.tpDistance + this.deathBlend * 1.5;
+      let dist = this.tpDistance * (1 - 0.4 * (this.aim ?? 0)) + this.deathBlend * 1.5;
       if (hit && hit.distance < dist + 0.3) dist = Math.max(0.3, hit.distance - 0.3);
       // aproxima rápido, afasta devagar
       this.currentTpDist = dist < this.currentTpDist ? dist : damp(this.currentTpDist, dist, 4, dt);

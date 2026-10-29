@@ -30,6 +30,12 @@ Jogo de sobrevivência em primeira pessoa (estilo DayZ / Minecraft / The Walking
 - **Golpe forte**: segurar o botão carrega (o braço vai para trás) e soltar desfere — soco giratório ou facada de cima para baixo, com passo à frente
 - Guarda alta com os punhos durante a briga, punho fechado segurando a faca
 - Impacto com peso: congelamento rápido no acerto, tranco da câmera, vibração, partículas e som por material
+- **Revólver .357** (`3`), guardado no coldre da coxa: sacar/guardar animado, arma baixa e pronta, **mirar pela alça e massa** (`botão direito` / **MIRAR** / `LT`) com zoom, recuo com o cano subindo, tambor que gira a cada tiro, cão que arma, clarão e fumaça
+- **Recarga animada** (`R` / 🔄 / `↓`): abre o tambor, ejeta as cápsulas (que caem e tilintam no chão), pega o speedloader no cinto, carrega e fecha
+- Munição limitada (6 no tambor + reserva); **caixas de munição .357** espalhadas pelo mapa (`F` para pegar)
+- Bala com dispersão (precisa mirar para acertar longe), furos nas superfícies, faíscas no metal, ricochete, acerto nos bonecos e nos objetos (latas voam); marcador de acerto na mira
+- Mirando, o personagem anda devagar e não corre; em 3ª pessoa a câmera aproxima
+- **Andar de lado/diagonal** com o quadril e as pernas virando para a direção do passo e o tronco mirando para frente
 - **Bonecos de treino** de estopa: balançam conforme a força e direção do golpe, guardam as marcas de corte e soltam palha
 - **Lanterna** (`L`): presa no peito quando desligada; ligada, vai para a mão esquerda e a luz sai da lente
 
@@ -64,6 +70,8 @@ Jogo de sobrevivência em primeira pessoa (estilo DayZ / Minecraft / The Walking
 | Inclinar (espiar) | `Q` / `E` | — | `LB` / `RB` |
 | Soco / golpe de faca (combo) | Clique esquerdo | 👊 / 🔪 | `RT` |
 | Golpe forte | Segurar e soltar o clique | Segurar 👊 / 🔪 | Segurar `RT` |
+| Revólver | `3` | **⇄** (mãos → faca → revólver) | `←` |
+| Mirar / atirar / recarregar | Botão direito / clique / `R` | **MIRAR** / 🔫 / 🔄 | `LT` / `RT` / `↓` |
 | Usar / porta | `F` | **USAR** (aparece perto da porta) | `X` |
 | Lanterna | `L` | 🔦 | `↑` (direcional) |
 | Nadar: mergulhar / subir | `Ctrl` / `Espaço` | **AGACHAR** / **PULAR** | `B` / `A` |
@@ -102,7 +110,8 @@ js/effects.js       partículas: poeira, fumaça, brasas, folhas caindo, fogueir
 js/flashlight.js    lanterna: modelo, luz que sai da lente, feixe e brilho
 js/physics.js       objetos soltos com física (latas, garrafas, baldes...)
 js/playerModel.js   carrega os modelos 3D (personagem com pesos automáticos no esqueleto, faca)
-js/dummies.js       bonecos de treino (balanço com mola, marcas de corte)
+js/dummies.js       bonecos de treino (balanço com mola, marcas de corte e furos)
+js/revolver.js      revólver: modelo, tambor, cão, clarão, cápsulas
 js/textures.js      texturas procedurais (canvas)
 models/             carl.glb (personagem) e faca.glb
 js/audio.js         sons procedurais (Web Audio)

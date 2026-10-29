@@ -36,6 +36,8 @@
     </div>
     <div id="state-label">PARADO</div>
     <div id="equip-label">MÃOS LIVRES</div>
+    <div id="ammo" class="hidden"><span id="ammo-loaded">6</span><small> / <span id="ammo-reserve">12</span></small><em>.357</em></div>
+    <div id="toast"></div>
     <div id="fps"></div>
   </div>
 
@@ -58,7 +60,9 @@
     <button class="tbtn" id="btn-crouch" data-action="crouch">AGACHAR</button>
     <button class="tbtn" id="btn-attack" data-action="attack" aria-label="Atacar">👊</button>
     <button class="tbtn hidden" id="btn-use" data-action="use">USAR</button>
-    <button class="tbtn" id="btn-swap" data-action="swapItem" aria-label="Trocar item">✊⇄🔪</button>
+    <button class="tbtn" id="btn-swap" data-action="swapItem" aria-label="Trocar item">⇄🔪</button>
+    <button class="tbtn hidden" id="btn-aim" data-action="aim">MIRAR</button>
+    <button class="tbtn hidden" id="btn-reload" data-action="reload" aria-label="Recarregar">🔄</button>
     <button class="tbtn big" id="btn-jump" data-action="jump">PULAR</button>
   </div>
 
@@ -96,7 +100,9 @@
           <ul>
             <li><b>W A S D</b> mover (trotar) · <b>Mouse</b> olhar</li>
             <li><b>Shift</b> correr · <b>X</b> andar devagar · <b>Espaço</b> pular</li>
-            <li><b>1</b> mãos livres · <b>2</b> faca</li>
+            <li><b>1</b> mãos livres · <b>2</b> faca · <b>3</b> revólver</li>
+            <li>Revólver: <b>botão direito</b> mirar · <b>clique</b> atirar · <b>R</b> recarregar</li>
+            <li><b>F</b> perto de caixas .357: pegar munição</li>
             <li><b>Espaço</b> perto de obstáculo: passar por cima / subir / escalar</li>
             <li>Pulando contra uma borda alta: agarra e fica pendurado</li>
             <li><b>W</b> na escada de mão: subir</li>
@@ -115,7 +121,8 @@
           <h3>Android</h3>
           <ul>
             <li><b>Lado esquerdo</b> joystick (pouco = andar, mais = trotar)</li>
-            <li><b>✊⇄🔪</b> trocar mãos livres / faca</li>
+            <li><b>⇄</b> trocar mãos livres → faca → revólver</li>
+            <li>Revólver: <b>MIRAR</b> (liga/desliga) · <b>🔫</b> atirar · <b>🔄</b> recarregar</li>
             <li><b>Lado direito</b> arrastar para olhar</li>
             <li>Joystick no limite = correr</li>
             <li><b>PULAR</b> perto de obstáculo: escalar</li>
@@ -130,9 +137,10 @@
             <li><b>Analógicos</b> mover / olhar</li>
             <li><b>A</b> pular/escalar · <b>B</b> agachar/deslizar</li>
             <li><b>L3</b> ou <b>LT</b> correr · <b>RT</b> atacar (segurar = forte)</li>
+            <li>Revólver: <b>LT</b> mirar · <b>RT</b> atirar · <b>↓</b> recarregar</li>
             <li><b>LB</b> / <b>RB</b> inclinar</li>
             <li><b>X</b> usar/porta · <b>↑</b> lanterna · <b>Y</b> câmera</li>
-            <li><b>←</b> mãos/faca · <b>→</b> andar devagar</li>
+            <li><b>←</b> mãos/faca/revólver · <b>→</b> andar devagar</li>
           </ul>
         </div>
       </div>

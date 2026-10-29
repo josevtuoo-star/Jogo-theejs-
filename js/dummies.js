@@ -63,6 +63,7 @@ export class TrainingDummies {
     const ropeMat = new THREE.MeshStandardMaterial({ color: 0x9a8458, roughness: 1 });
     this.cutMat = new THREE.MeshBasicMaterial({ color: 0x1e140a, transparent: true, opacity: 0.85, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
     this.cutGeo = new THREE.PlaneGeometry(0.13, 0.014);
+    this.holeGeo = new THREE.CircleGeometry(0.009, 8);
     const sackGeo = new THREE.CylinderGeometry(0.19, 0.17, 0.62, 14, 3);
     // estopa estufada: o meio é mais largo
     const sp = sackGeo.attributes.position;
@@ -170,8 +171,19 @@ export class TrainingDummies {
     return best;
   }
 
-  /** Aplica o golpe: balanço (mola) e, com faca, deixa o corte marcado. */
-  hit(res, dir, power, { knife = false, slashAngle = 0 } = {}) {
+  /** Tiro: acha o boneco atravessado pelo raio. Retorna { dummy, point, normal, part, distance } ou null. */
+  raycast(raycaster) {
+    const parts = [];
+    for (const d of this.list) { d.pivot.updateWorldMatrix(true, true); parts.push(d.sack, d.head); }
+    const h = raycaster.intersectObjects(parts, false)[0];
+    if (!h) return null;
+    const d = this.list.find((x) => x.sack === h.object || x.head === h.object);
+    const normal = h.face ? h.face.normal.clone().transformDirection(h.object.matrixWorld) : raycaster.ray.direction.clone().negate();
+    return { dummy: d, part: h.object === d.head ? 'head' : 'body', point: h.point.clone(), normal, distance: h.distance };
+  }
+
+  /** Aplica o golpe: balanço (mola) e, com faca, deixa o corte marcado; bala deixa furo. */
+  hit(res, dir, power, { knife = false, slashAngle = 0, bullet = false } = {}) {
     const d = res.dummy;
     // impulso angular: tomba na direção do golpe (no espaço do boneco)
     _v.set(dir.x, 0, dir.z).normalize().applyAxisAngle(_w.set(0, 1, 0), -d.base.rotation.y);
@@ -180,11 +192,13 @@ export class TrainingDummies {
     d.tiltV.y += -_v.x * k;
     d.twistV += (Math.random() - 0.5) * power * 0.8 + slashAngle * power * 0.3;
     if (knife) this._cut(d, res, slashAngle);
+    if (bullet) this._cut(d, res, 0, true);
   }
 
-  _cut(d, res, angle) {
+  _cut(d, res, angle, hole = false) {
     let m = d.cuts[d.nextCut];
     if (!m) { m = new THREE.Mesh(this.cutGeo, this.cutMat); d.cuts.push(m); }
+    m.geometry = hole ? this.holeGeo : this.cutGeo;
     d.nextCut = (d.nextCut + 1) % 24;
     const part = res.part === 'head' ? d.head : d.sack;
     part.add(m);
@@ -195,7 +209,8 @@ export class TrainingDummies {
     const nLocal = _w.copy(res.normal).transformDirection(_inv.copy(part.matrixWorld).invert());
     m.lookAt(_n.copy(p).add(nLocal));
     m.rotateZ(angle + (Math.random() - 0.5) * 0.3);
-    m.scale.set(0.7 + Math.random() * 0.6, 1, 1);
+    if (hole) m.scale.setScalar(0.8 + Math.random() * 0.4);
+    else m.scale.set(0.7 + Math.random() * 0.6, 1, 1);
   }
 
   update(dt) {

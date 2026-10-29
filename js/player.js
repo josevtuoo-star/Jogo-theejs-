@@ -115,6 +115,7 @@ export class Player {
 
     this.sprinting = false;
     this.walkMode = false;    // andar devagar (tecla X)
+    this.aiming = false;      // mirando com a arma: anda devagar e não corre
     this.exertion = 0;        // cansaço (só som e respiração; não limita a corrida)
     this.stumble = 0;         // recuperação depois de um pouso forte
     this.floorNormal = new THREE.Vector3(0, 1, 0);
@@ -264,7 +265,7 @@ export class Player {
     } else if (input.wasPressed('crouchToggle')) {
       this.crouchToggle = !this.crouchToggle;
     }
-    const wantSprint = input.sprint && move.y > 0.3;
+    const wantSprint = input.sprint && move.y > 0.3 && !this.aiming;
     if (input.wasPressed('walkToggle')) this.walkMode = !this.walkMode;
 
     if (this.slide) {
@@ -307,6 +308,7 @@ export class Player {
     else if (this.sprinting) speed = RUN_SPEED;
     else if (this.walkMode) speed = WALK_SPEED * Math.min(1, mag / 0.6);
     else speed = mag < 0.65 ? WALK_SPEED * (mag / 0.65) : WALK_SPEED + (JOG_SPEED - WALK_SPEED) * ((mag - 0.65) / 0.35);
+    if (this.aiming) speed = Math.min(speed, WALK_SPEED * 1.05);
     if (move.y < -0.1) speed *= BACKWARD_MULT;
     else if (Math.abs(move.x) > Math.abs(move.y)) speed *= STRAFE_MULT;
     // andando na água rasa fica mais lento
