@@ -3,7 +3,6 @@ import { World } from './world.js';
 import { Player, STAND_HEIGHT } from './player.js';
 import { Input, isTouchDevice } from './input.js';
 import { CameraRig } from './cameraRig.js';
-import { ViewModel } from './viewmodel.js';
 import { Character, FP_HIDDEN_LAYER } from './character.js';
 import { GameAudio } from './audio.js';
 import { Effects } from './effects.js';
@@ -21,7 +20,7 @@ renderer.autoClear = false;
 container.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.05, 600);
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.04, 600);
 camera.rotation.order = 'YXZ';
 scene.add(camera);
 
@@ -32,6 +31,9 @@ const world = new World(scene, renderer, { quality });
 world.sun.shadow.camera.layers.enable(FP_HIDDEN_LAYER);
 const effects = new Effects(scene, quality);
 world.firePositions.forEach((p) => effects.addFire(p));
+// cidades queimando no horizonte
+effects.addPlume(new THREE.Vector3(260, 10, -230), 1.6);
+effects.addPlume(new THREE.Vector3(-300, 0, 180), 2.2);
 const input = new Input(renderer.domElement);
 const player = new Player(world.octree, world.spawn, world.ladders, {
   waterAt: (x, z) => world.waterAt(x, z),
@@ -44,12 +46,10 @@ const props = new PropSystem(scene, world.octree);
 props.extraColliders = world.doors;
 for (const p of world.propSpots) props.add(p.type, p.x, p.y, p.z);
 const rig = new CameraRig(camera, world.octree);
-const viewModel = new ViewModel();
 const character = new Character(scene);
 const audio = new GameAudio();
 props.onImpact = (kind, strength, pos) => audio.impact(kind, strength, pos);
 
-viewModel.setAspect(camera.aspect);
 
 // ---------- UI ----------
 const $ = (id) => document.getElementById(id);
@@ -58,6 +58,7 @@ const ui = {
   health: $('health-fill'), state: $('state-label'), fps: $('fps'),
   flash: $('damage-flash'), hurt: $('vignette-hurt'), crosshair: $('crosshair'),
   hint: $('hint'), compass: $('compass-strip'), underwater: $('underwater'), useBtn: $('btn-use'),
+  equip: $('equip-label'), attackBtn: $('btn-attack'),
   btnSize: $('btn-size'), btnSizeVal: $('btn-size-val'), haptics: $('haptics'),
   death: $('death'), deathReason: $('death-reason'), respawn: $('respawn-btn'),
   sens: $('sens'), sensVal: $('sens-val'), fov: $('fov'), fovVal: $('fov-val'),
@@ -296,7 +297,6 @@ function onResize() {
   const w = window.innerWidth, h = window.innerHeight;
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
-  viewModel.setAspect(w / h);
   renderer.setSize(w, h);
 }
 window.addEventListener('resize', onResize);
@@ -330,12 +330,22 @@ function handleActions() {
     if (what === 'open') audio.doorOpen(door.center);
     haptic(10);
   }
-  if (input.wasPressed('attack') && !player.sprinting && !player.isClimbing && !player.onLadder && !player.swimming) {
-    if (!viewModel.isAttacking) pendingHit = 0.12; // a lâmina chega ao alvo no meio do golpe
-    viewModel.attack();
-    audio.swing();
+  // mãos livres / faca
+  let wantEquip = null;
+  if (input.wasPressed('equipHands')) wantEquip = 'hands';
+  if (input.wasPressed('equipKnife')) wantEquip = 'knife';
+  if (input.wasPressed('swapItem')) wantEquip = character.equip === 'knife' ? 'hands' : 'knife';
+  if (wantEquip && character.setEquip(wantEquip)) {
+    if (wantEquip === 'knife') setTimeout(() => audio.unsheath(), 180); else setTimeout(() => audio.sheathe(), 200);
+  }
+  const busy = player.isClimbing || player.onLadder || player.swimming || player.isHanging || player.sliding;
+  if (input.wasPressed('attack') && !busy && character.attack()) {
+    hitKind = character.attackKind;
+    pendingHit = hitKind === 'knife' ? 0.15 : 0.1; // o golpe chega ao alvo no meio do movimento
+    if (hitKind === 'knife') audio.swing(); else audio.punch();
   }
 }
+let hitKind = 'knife';
 
 // ---------- interação e golpes ----------
 const raycaster = new THREE.Raycaster();
@@ -343,6 +353,7 @@ const _fwd = new THREE.Vector3();
 const _camUp = new THREE.Vector3();
 const _lens = new THREE.Vector3();
 const _aim = new THREE.Vector3();
+const _head = new THREE.Vector3();
 const _ray = new THREE.Ray();
 let useTarget = null;
 let pendingHit = -1;
@@ -364,21 +375,33 @@ function updateUseTarget() {
 }
 
 const SPARK = [1, 0.7, 0.3];
-/** Golpe da faca acerta o que estiver na frente: objetos, portas ou paredes/chão. */
+/** Golpe (faca ou soco) acerta o que estiver na frente: objetos, portas ou paredes/chão. */
 function knifeHit() {
-  const reach = 1.9 + (rig.thirdPerson ? rig.currentTpDist : 0);
+  const knife = hitKind === 'knife';
+  const reach = (knife ? 1.8 : 1.3) + (rig.thirdPerson ? rig.currentTpDist : 0);
   const rc = cameraRay(reach);
-  const prop = props.hit(rc);
+  const prop = props.hit(rc, knife ? 4.5 : 3);
   if (prop) {
     audio.impact(prop.body.type.sound, 0.9, prop.point);
+    if (!knife) audio.punchHit(prop.point);
     effects.puff(prop.point, 3, 0.4, [0.5, 0.48, 0.44]);
-    viewModel.hitRecoil();
+    character.hitRecoil();
     haptic(15);
     return;
   }
   const door = rc.intersectObjects(doorSlabs, false)[0];
   _ray.set(camera.position, _fwd);
   const wall = world.octree.rayIntersect(_ray);
+  if (!knife) {
+    // soco: só um baque seco na parede/porta
+    const p = door && (!wall || door.distance < wall.distance) ? door.point : wall && wall.distance < reach ? wall.position : null;
+    if (!p) return;
+    audio.punchHit(p);
+    character.hitRecoil();
+    rig.shake = Math.max(rig.shake, 0.1);
+    haptic(20);
+    return;
+  }
   if (door && (!wall || door.distance < wall.distance)) {
     audio.knifeHit('wood', door.point);
     effects.puff(door.point, 4, 0.5, DUST.wood);
@@ -398,11 +421,13 @@ function knifeHit() {
   } else {
     return; // golpe no ar
   }
-  viewModel.hitRecoil();
+  character.hitRecoil();
   rig.shake = Math.max(rig.shake, 0.08);
   haptic(15);
 }
 
+let breathTimer = 0, breathInhale = false;
+const lerpN = (a, b, t) => a + (b - a) * t;
 const DUST = { grass: [0.45, 0.42, 0.3], concrete: [0.55, 0.53, 0.5], wood: [0.5, 0.42, 0.32], metal: [0.5, 0.48, 0.45], water: [0.8, 0.86, 0.88] };
 
 function footSurface() {
@@ -421,13 +446,13 @@ function splashAt(x, z, amount, strength) {
   }
 }
 
-function handleEvents() {
+function handleEvents(dt) {
   const feet = player.feetPosition;
   for (const e of player.events) {
     switch (e.type) {
       case 'step': {
         const surface = footSurface();
-        audio.step(surface, e.run, e.crouch);
+        audio.step(surface, e.run, e.crouch, e.speed);
         if (surface === 'water') splashAt(feet.x, feet.z, 3, 0.4);
         else if (e.run) effects.puff(feet, 2, 0.5, DUST[surface]);
         break;
@@ -449,7 +474,10 @@ function handleEvents() {
         if (e.speed > 6) { effects.puff(feet, Math.min(16, Math.round(e.speed)), Math.min(2, e.speed / 8), DUST[surface]); haptic(25); }
         break;
       }
-      case 'climb': case 'vault': audio.climb(); effects.puff(feet, 5, 0.6); haptic(12); break;
+      case 'stepover': case 'speedvault': case 'mantle': audio.climb(false); effects.puff(feet, 4, 0.5); haptic(12); break;
+      case 'climb': case 'pullup': audio.climb(true); effects.puff(feet, 5, 0.6); haptic(15); break;
+      case 'grab': audio.grab(); haptic(25); break;
+      case 'drop': audio.step(footSurface(), false, true); break;
       case 'slide': audio.slide(); effects.puff(feet, 10, 1.2, DUST[world.surfaceAt(feet)]); haptic(20); break;
       case 'roll': audio.roll(); effects.puff(feet, 8, 1); break;
       case 'ladder': audio.ladderStep(); break;
@@ -457,6 +485,13 @@ function handleEvents() {
       case 'damage': audio.hurt(); haptic(80); deathReason = 'A queda foi alta demais.'; break;
       case 'death': showDeath(); haptic(250); break;
     }
+  }
+  // respiração ofegante depois de correr bastante (só som; não há barra de fôlego)
+  breathTimer -= dt;
+  if (player.exertion > 0.2 && breathTimer <= 0 && !player.underwater) {
+    breathInhale = !breathInhale;
+    audio.breathEffort(player.exertion, breathInhale);
+    breathTimer = lerpN(0.95, 0.36, player.exertion) * (breathInhale ? 0.8 : 1.2);
   }
   // poeira contínua enquanto desliza
   if (player.sliding && Math.random() < 0.5) effects.puff(feet, 1, 0.6, DUST[world.surfaceAt(feet)]);
@@ -510,14 +545,17 @@ function updateHud() {
 
   const ledge = player.ledgeAhead, ladder = player.ladderAhead;
   let hint = '';
-  if (player.onLadder) {
+  if (player.isHanging) {
+    hint = isTouchDevice ? 'JOYSTICK ↑ / PULAR — SUBIR · ↓ / AGACHAR — SOLTAR' : 'W / ESPAÇO — SUBIR · A D — DE LADO · S / CTRL — SOLTAR';
+  } else if (player.onLadder) {
     hint = `${input.pad.connected ? 'ANALÓGICO' : isTouchDevice ? 'JOYSTICK' : 'W / S'} — SUBIR/DESCER · ${input.pad.connected ? 'A' : isTouchDevice ? 'PULAR' : 'ESPAÇO'} — SOLTAR`;
   } else if (ladder && !player.isClimbing) {
     const key = input.pad.connected ? 'ANALÓGICO ↑' : isTouchDevice ? 'JOYSTICK ↑' : 'W';
     hint = `${key} — ${ladder.fromTop ? 'DESCER A ESCADA' : 'SUBIR A ESCADA'}`;
   } else if (ledge && !player.isClimbing) {
     const key = input.pad.connected ? 'A' : isTouchDevice ? 'PULAR' : 'ESPAÇO';
-    hint = `${key} — ${ledge.kind === 'vault' ? 'PULAR OBSTÁCULO' : 'ESCALAR'}`;
+    const what = { stepover: 'PASSAR POR CIMA', speedvault: 'SALTAR POR CIMA', mantle: 'SUBIR', climb: 'ESCALAR' }[ledge.kind] ?? 'ESCALAR';
+    hint = `${key} — ${what}`;
   }
   if (!hint && useTarget) {
     const key = input.pad.connected ? 'X' : isTouchDevice ? 'USAR' : 'F';
@@ -528,6 +566,9 @@ function updateHud() {
   ui.hint.textContent = hint;
   ui.hint.classList.toggle('hidden', !hint);
   ui.useBtn?.classList.toggle('hidden', !useTarget);
+  const eq = character.swap >= 0 ? character.swapTo : character.equip;
+  ui.equip.textContent = (eq === 'knife' ? 'FACA' : 'MÃOS LIVRES') + (player.walkMode ? ' · ANDANDO DEVAGAR' : '');
+  if (ui.attackBtn) ui.attackBtn.textContent = eq === 'knife' ? '🔪' : '👊';
 
   // mira se abre com o movimento e no ar
   const spread = 4 + Math.min(player.horizontalSpeed, 8) * 1.3 + (player.onFloor ? 0 : 8);
@@ -546,7 +587,7 @@ function frame() {
     updateUseTarget();
     handleActions();
     player.update(dt, input);
-    handleEvents();
+    handleEvents(dt);
     input.endFrame();
     if (pendingHit >= 0) { pendingHit -= dt; if (pendingHit < 0) knifeHit(); }
     updateHud();
@@ -562,22 +603,24 @@ function frame() {
   for (const d of world.doors) if (d.update(dt, player.collider)) audio.doorClose(d.center);
   props.update(dt, player);
 
-  rig.update(dt, player);
+  // braços recolhem perto de paredes (mira do quadro anterior)
+  camera.getWorldDirection(_fwd);
+  _ray.set(camera.position, _fwd);
+  let wallAhead = world.octree.rayIntersect(_ray);
+  character.setObstruction(wallAhead && !rig.thirdPerson ? wallAhead.distance : 99);
+  // o corpo anima primeiro; a câmera de 1ª pessoa vai nos olhos dele
+  character.update(dt, player);
+  character.getEyeWorldPosition(_head);
+  rig.update(dt, player, _head);
   camera.updateMatrixWorld();
   camera.getWorldDirection(_fwd);
-  // braços recolhem perto de paredes
   _ray.set(camera.position, _fwd);
-  const wallAhead = world.octree.rayIntersect(_ray);
-  viewModel.setObstruction(wallAhead ? wallAhead.distance : 99);
-  viewModel.update(dt, player);
-  character.update(dt, player, viewModel.isAttacking);
+  wallAhead = world.octree.rayIntersect(_ray);
 
-  // lanterna: sai da lente (braços em 1ª pessoa, mão do corpo em 3ª) e mira no centro da tela
-  if (rig.thirdPerson) character.getLensWorldPosition(_lens);
-  else viewModel.getLensWorldPosition(_lens, camera);
+  // lanterna: a luz sai da lente da lanterna na mão do corpo e mira no centro da tela
+  character.getLensWorldPosition(_lens);
   _aim.copy(camera.position).addScaledVector(_fwd, wallAhead ? Math.max(1.5, Math.min(25, wallAhead.distance)) : 25);
   const lightK = flashlight.update(dt, _lens, _aim, { thirdPerson: rig.thirdPerson });
-  viewModel.setFlashlight(flashOn, lightK);
   character.setFlashlight(flashOn, lightK);
 
   world.update(player.feetPosition, elapsed);
@@ -586,11 +629,9 @@ function frame() {
   _camUp.set(0, 1, 0).applyQuaternion(camera.quaternion);
   audio.setListener(camera.position, _fwd, _camUp);
 
-  viewModel.visible = !rig.thirdPerson;
 
   renderer.clear();
   renderer.render(scene, camera);
-  viewModel.render(renderer, camera);
 
   updateAutoQuality(dt);
   fpsFrames++;

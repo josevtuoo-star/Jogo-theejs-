@@ -100,6 +100,9 @@ export class Effects {
     this.scene = scene;
     this.dust = new ParticlePool(scene, quality === 'low' ? 120 : 260);
     this.glow = new ParticlePool(scene, 80, { additive: true });
+    this.smoke = new ParticlePool(scene, 140);
+    this.smoke.points.material.fog = false;
+    this.plumes = [];
     this.fires = [];
     this._buildLeaves(quality === 'low' ? 70 : 160);
     this.t = 0;
@@ -141,7 +144,26 @@ export class Effects {
     this.fires.push({ pos: pos.clone(), light, flames, smokeTimer: 0, emberTimer: 0 });
   }
 
+  /** Coluna de fumaça escura bem longe (cidade queimando no horizonte). */
+  addPlume(pos, scale = 1) {
+    this.plumes.push({ pos: pos.clone(), scale, timer: 0 });
+    // já começa com a coluna formada
+    for (let i = 0; i < 40; i++) this._emitPlume(this.plumes[this.plumes.length - 1], Math.random() * 30);
+  }
+
+  _emitPlume(p, age = 0) {
+    const s = p.scale;
+    const life = 32;
+    this.smoke.emit(p.pos.x + (Math.random() - 0.5) * 6 * s, p.pos.y + age * 2.2 * s, p.pos.z + (Math.random() - 0.5) * 6 * s,
+      0.9 * s, 2.2 * s, 0.3 * s,
+      { life: life - age, size: (6 + age * 0.9) * s, grow: 0.9 * s, color: [0.16, 0.15, 0.14], alpha: 0.35, drag: 0.02 });
+  }
+
   _updateFires(dt) {
+    for (const p of this.plumes) {
+      p.timer -= dt;
+      if (p.timer <= 0) { p.timer = 0.75; this._emitPlume(p); }
+    }
     for (const f of this.fires) {
       const flick = Math.sin(this.t * 13) * 0.3 + Math.sin(this.t * 7.3 + 1) * 0.4 + Math.random() * 0.4;
       f.light.intensity = 5 + flick * 1.6;
@@ -215,6 +237,7 @@ export class Effects {
     this._updateLeaves(dt, playerPos, groundAt);
     this.dust.update(dt, viewportHeight);
     this.glow.update(dt, viewportHeight);
+    this.smoke.update(dt, viewportHeight);
   }
 }
 

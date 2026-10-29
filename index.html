@@ -35,6 +35,7 @@
       <div class="bar"><span class="bar-label">VIDA</span><div class="bar-track"><div id="health-fill" class="bar-fill health"></div></div></div>
     </div>
     <div id="state-label">PARADO</div>
+    <div id="equip-label">MÃOS LIVRES</div>
     <div id="fps"></div>
   </div>
 
@@ -55,8 +56,9 @@
     <button class="tbtn" id="btn-light" data-action="light" aria-label="Lanterna">🔦</button>
     <button class="tbtn" id="btn-sprint" data-action="sprint">CORRER</button>
     <button class="tbtn" id="btn-crouch" data-action="crouch">AGACHAR</button>
-    <button class="tbtn" id="btn-attack" data-action="attack" aria-label="Atacar">🔪</button>
+    <button class="tbtn" id="btn-attack" data-action="attack" aria-label="Atacar">👊</button>
     <button class="tbtn hidden" id="btn-use" data-action="use">USAR</button>
+    <button class="tbtn" id="btn-swap" data-action="swapItem" aria-label="Trocar item">✊⇄🔪</button>
     <button class="tbtn big" id="btn-jump" data-action="jump">PULAR</button>
   </div>
 
@@ -92,14 +94,16 @@
         <div class="col pc-only">
           <h3>PC</h3>
           <ul>
-            <li><b>W A S D</b> mover · <b>Mouse</b> olhar</li>
-            <li><b>Shift</b> correr · <b>Espaço</b> pular</li>
-            <li><b>Espaço</b> perto de obstáculo: escalar</li>
+            <li><b>W A S D</b> mover (trotar) · <b>Mouse</b> olhar</li>
+            <li><b>Shift</b> correr · <b>X</b> andar devagar · <b>Espaço</b> pular</li>
+            <li><b>1</b> mãos livres · <b>2</b> faca</li>
+            <li><b>Espaço</b> perto de obstáculo: passar por cima / subir / escalar</li>
+            <li>Pulando contra uma borda alta: agarra e fica pendurado</li>
             <li><b>W</b> na escada de mão: subir</li>
             <li><b>C</b> / <b>Ctrl</b> agachar (correndo: deslizar)</li>
             <li><b>C</b> antes de cair no chão: rolar</li>
             <li><b>Q</b> / <b>E</b> inclinar (espiar)</li>
-            <li><b>Clique</b> atacar (acerta objetos e paredes)</li>
+            <li><b>Clique</b> soco ou golpe de faca</li>
             <li><b>F</b> abrir/fechar porta</li>
             <li><b>L</b> lanterna · <b>V</b> câmera</li>
             <li>Na água: <b>Ctrl</b> mergulha, <b>Espaço</b> sobe</li>
@@ -109,7 +113,8 @@
         <div class="col touch-only">
           <h3>Android</h3>
           <ul>
-            <li><b>Lado esquerdo</b> joystick</li>
+            <li><b>Lado esquerdo</b> joystick (pouco = andar, mais = trotar)</li>
+            <li><b>✊⇄🔪</b> trocar mãos livres / faca</li>
             <li><b>Lado direito</b> arrastar para olhar</li>
             <li>Joystick no limite = correr</li>
             <li><b>PULAR</b> perto de obstáculo: escalar</li>
@@ -125,6 +130,7 @@
             <li><b>L3</b> ou <b>LT</b> correr · <b>RT</b> atacar</li>
             <li><b>LB</b> / <b>RB</b> inclinar</li>
             <li><b>X</b> usar/porta · <b>↑</b> lanterna · <b>Y</b> câmera</li>
+            <li><b>←</b> mãos/faca · <b>→</b> andar devagar</li>
           </ul>
         </div>
       </div>

@@ -62,6 +62,9 @@ export class Input {
       KeyV: 'view',
       KeyF: 'use',
       KeyL: 'light',
+      Digit1: 'equipHands',
+      Digit2: 'equipKnife',
+      KeyX: 'walkToggle',
     };
 
     window.addEventListener('keydown', (e) => {
@@ -302,6 +305,8 @@ export class Input {
     if (down(PAD.B)) this.pressed.add('crouchToggle');
     if (down(PAD.X)) this.pressed.add('use');
     if (down(PAD.UP)) this.pressed.add('light');
+    if (down(PAD.LEFT)) this.pressed.add('swapItem');
+    if (down(PAD.RIGHT)) this.pressed.add('walkToggle');
     if (down(PAD.Y)) this.pressed.add('view');
     if (down(PAD.RT)) this.pressed.add('attack');
     if (down(PAD.START)) this.onPauseRequest?.();

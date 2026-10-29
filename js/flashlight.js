@@ -162,6 +162,8 @@ export class Flashlight {
 
     const k = this.on ? this.flicker : 0;
     this.light.intensity = 42 * k;
+    // desligada: não redesenha o mapa de sombra (economiza uma renderização inteira da cena)
+    this.light.shadow.autoUpdate = this.on;
     this.light.position.copy(origin);
     this.light.target.position.copy(aim);
     this.light.target.updateMatrixWorld();

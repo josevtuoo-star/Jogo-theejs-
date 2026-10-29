@@ -225,3 +225,161 @@ export function waterNormalTexture() {
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   return t;
 }
+
+/** Pintura de carro abandonado: tinta desbotada, ferrugem, sujeira escorrida e arranhões. */
+export function carPaintTexture(hex, seed = 1) {
+  return makeCanvas(256, (g, s) => {
+    const r = rng(500 + seed);
+    const c = new THREE.Color(hex);
+    // tinta desbotada pelo sol
+    c.lerp(new THREE.Color(0x8a8a80), 0.25);
+    g.fillStyle = `#${c.getHexString()}`;
+    g.fillRect(0, 0, s, s);
+    speckle(g, s, r, 2500, ['#00000022', '#ffffff18', '#55443322'], 1, 3, 0.5);
+    // manchas de ferrugem
+    for (let i = 0; i < 26; i++) {
+      const x = r() * s, y = r() * s, rad = 4 + r() * 22;
+      const grad = g.createRadialGradient(x, y, 0, x, y, rad);
+      grad.addColorStop(0, 'rgba(110,52,24,0.95)');
+      grad.addColorStop(0.6, 'rgba(140,72,34,0.6)');
+      grad.addColorStop(1, 'rgba(140,72,34,0)');
+      g.fillStyle = grad;
+      g.beginPath();
+      g.ellipse(x, y, rad, rad * (0.5 + r() * 0.6), r() * 3, 0, Math.PI * 2);
+      g.fill();
+    }
+    // sujeira escorrida de baixo para cima
+    const dirt = g.createLinearGradient(0, s, 0, s * 0.45);
+    dirt.addColorStop(0, 'rgba(60,48,32,0.75)');
+    dirt.addColorStop(1, 'rgba(60,48,32,0)');
+    g.fillStyle = dirt;
+    g.fillRect(0, 0, s, s);
+    for (let i = 0; i < 40; i++) {
+      g.fillStyle = `rgba(70,55,35,${0.15 + r() * 0.25})`;
+      g.fillRect(r() * s, s * (0.4 + r() * 0.3), 1 + r() * 2, s);
+    }
+    // arranhões
+    g.strokeStyle = 'rgba(200,200,190,0.35)';
+    for (let i = 0; i < 14; i++) {
+      g.beginPath();
+      const x = r() * s, y = r() * s;
+      g.moveTo(x, y);
+      g.lineTo(x + (r() - 0.5) * 70, y + (r() - 0.5) * 18);
+      g.stroke();
+    }
+  });
+}
+
+/** Lataria queimada: preto fosco, cinza de fuligem e ferrugem por baixo. */
+export function burntTexture() {
+  return makeCanvas(256, (g, s) => {
+    const r = rng(612);
+    g.fillStyle = '#1c1a18';
+    g.fillRect(0, 0, s, s);
+    speckle(g, s, r, 4000, ['#2a2622', '#3a3026', '#0e0d0c', '#5a3a22'], 1, 4, 0.8);
+    for (let i = 0; i < 30; i++) {
+      const x = r() * s, y = r() * s, rad = 6 + r() * 30;
+      const grad = g.createRadialGradient(x, y, 0, x, y, rad);
+      grad.addColorStop(0, r() < 0.5 ? 'rgba(120,60,28,0.7)' : 'rgba(110,105,95,0.45)');
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = grad;
+      g.fillRect(x - rad, y - rad, rad * 2, rad * 2);
+    }
+  });
+}
+
+/**
+ * Decalques (pichação, sangue, marcas) com fundo transparente.
+ * kind: 'text' (usa `text`), 'blood', 'hand', 'tally', 'arrow', 'moss'.
+ */
+export function decalTexture(kind, text = '', color = '#b01e18', seed = 1) {
+  const w = kind === 'text' || kind === 'arrow' ? 512 : 256, h = 256;
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const g = c.getContext('2d');
+  const r = rng(700 + seed);
+  g.clearRect(0, 0, w, h);
+  if (kind === 'text' || kind === 'arrow') {
+    // tinta spray: letras grossas com escorridos
+    const lines0 = (kind === 'arrow' ? text + ' →' : text).split('\n');
+    // fonte do maior tamanho que ainda cabe na largura e na altura
+    let size = 150;
+    const fit = () => { g.font = `bold ${size}px Impact, "Arial Black", sans-serif`; };
+    fit();
+    while (size > 20 && (Math.max(...lines0.map((l) => g.measureText(l).width)) > w * 0.9 || size * lines0.length * 1.05 > h * 0.92)) { size -= 6; fit(); }
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillStyle = color;
+    g.shadowColor = color;
+    g.shadowBlur = 6;
+    lines0.forEach((ln, i) => g.fillText(ln, w / 2 + (r() - 0.5) * 10, h / 2 + (i - (lines0.length - 1) / 2) * size * 1.02 + (r() - 0.5) * 8));
+    g.shadowBlur = 0;
+    for (let i = 0; i < 18; i++) { // escorridos de tinta
+      const x = w * 0.15 + r() * w * 0.7, y = h * 0.45 + r() * 50;
+      g.fillRect(x, y, 2 + r() * 3, 20 + r() * 70);
+    }
+  } else if (kind === 'blood') {
+    for (let i = 0; i < 9; i++) {
+      g.fillStyle = `rgba(${90 + r() * 40},${10 + r() * 10},${8},${0.5 + r() * 0.4})`;
+      g.beginPath();
+      g.ellipse(w / 2 + (r() - 0.5) * 120, h / 2 + (r() - 0.5) * 80, 10 + r() * 50, 6 + r() * 30, r() * 3, 0, Math.PI * 2);
+      g.fill();
+    }
+    for (let i = 0; i < 40; i++) {
+      g.fillStyle = `rgba(100,14,10,${0.4 + r() * 0.5})`;
+      g.beginPath();
+      g.arc(r() * w, r() * h, 1 + r() * 5, 0, Math.PI * 2);
+      g.fill();
+    }
+    for (let i = 0; i < 7; i++) { g.fillStyle = 'rgba(90,10,8,0.6)'; g.fillRect(w * 0.3 + r() * w * 0.4, h / 2, 3 + r() * 3, 40 + r() * 80); }
+  } else if (kind === 'hand') {
+    g.fillStyle = 'rgba(105,14,10,0.85)';
+    for (let k = 0; k < 2; k++) {
+      const ox = 70 + k * 110, oy = 140 + k * 20;
+      g.beginPath(); g.ellipse(ox, oy, 34, 40, 0, 0, Math.PI * 2); g.fill();
+      for (let f = 0; f < 5; f++) {
+        const a = -2.4 + f * 0.42;
+        g.save(); g.translate(ox + Math.cos(a) * 34, oy + Math.sin(a) * 40); g.rotate(a + Math.PI / 2);
+        g.fillRect(-7, -(f === 0 ? 34 : 50), 14, f === 0 ? 34 : 50);
+        g.restore();
+      }
+      g.fillRect(ox - 4, oy + 30, 6, 70 + r() * 40); // escorrido
+    }
+  } else if (kind === 'tally') {
+    g.strokeStyle = color; g.lineWidth = 7; g.lineCap = 'round';
+    for (let grp = 0; grp < 3; grp++) {
+      for (let i = 0; i < 4; i++) { g.beginPath(); g.moveTo(30 + grp * 75 + i * 14, 70); g.lineTo(32 + grp * 75 + i * 14, 180); g.stroke(); }
+      g.beginPath(); g.moveTo(20 + grp * 75, 160); g.lineTo(80 + grp * 75, 85); g.stroke();
+    }
+  } else if (kind === 'moss') {
+    for (let i = 0; i < 260; i++) {
+      g.fillStyle = `rgba(${50 + r() * 30},${70 + r() * 40},${30 + r() * 20},${0.2 + r() * 0.5})`;
+      const y = h - Math.pow(r(), 1.8) * h;
+      g.beginPath(); g.arc(r() * w, y, 2 + r() * 7, 0, Math.PI * 2); g.fill();
+    }
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  return t;
+}
+
+/** Vidro trincado (transparente com rachaduras). */
+export function crackedGlassTexture() {
+  return makeCanvas(256, (g, s) => {
+    const r = rng(808);
+    g.clearRect(0, 0, s, s);
+    g.fillStyle = 'rgba(40,52,50,0.55)';
+    g.fillRect(0, 0, s, s);
+    g.strokeStyle = 'rgba(230,235,230,0.8)';
+    g.lineWidth = 1.2;
+    const cx = s * (0.3 + r() * 0.4), cy = s * (0.3 + r() * 0.4);
+    for (let i = 0; i < 16; i++) {
+      g.beginPath(); g.moveTo(cx, cy);
+      let x = cx, y = cy; const a = r() * Math.PI * 2;
+      for (let j = 0; j < 6; j++) { x += Math.cos(a + (r() - 0.5)) * 22; y += Math.sin(a + (r() - 0.5)) * 22; g.lineTo(x, y); }
+      g.stroke();
+    }
+    for (let k = 1; k < 4; k++) { g.beginPath(); g.arc(cx, cy, k * 18 + r() * 6, 0, Math.PI * 2); g.stroke(); }
+  });
+}

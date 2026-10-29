@@ -251,7 +251,15 @@ export class World {
       headlight: new THREE.MeshStandardMaterial({ color: 0xdedcc8, roughness: 0.2, metalness: 0.5, emissive: 0x222018 }),
       taillight: new THREE.MeshStandardMaterial({ color: 0x8a1a12, roughness: 0.3, emissive: 0x200404 }),
       seat: new THREE.MeshStandardMaterial({ color: 0x2a2622, roughness: 0.95 }),
-      chrome: new THREE.MeshStandardMaterial({ color: 0xa0a4a8, roughness: 0.25, metalness: 0.9 }),
+      chrome: new THREE.MeshStandardMaterial({ color: 0x8a8e90, roughness: 0.45, metalness: 0.8 }),
+      burnt: new THREE.MeshStandardMaterial({ map: TEX.burntTexture(), roughness: 0.95, metalness: 0.3 }),
+      burntSeat: new THREE.MeshStandardMaterial({ color: 0x141210, roughness: 1 }),
+      crackedGlass: new THREE.MeshStandardMaterial({ map: TEX.crackedGlassTexture(), transparent: true, roughness: 0.1, metalness: 0.5 }),
+      trashBag: new THREE.MeshStandardMaterial({ color: 0x141618, roughness: 0.35, metalness: 0.1 }),
+      paper: new THREE.MeshStandardMaterial({ color: 0xcfc8b4, roughness: 1, side: THREE.DoubleSide }),
+      pothole: new THREE.MeshStandardMaterial({ color: 0x1c1b19, roughness: 0.6, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }),
+      tentGreen: new THREE.MeshStandardMaterial({ color: 0x4a5636, roughness: 1, side: THREE.DoubleSide }),
+      tentOrange: new THREE.MeshStandardMaterial({ color: 0x9a5a26, roughness: 1, side: THREE.DoubleSide }),
     };
     for (const m of Object.values(this.mat)) m.envMapIntensity = 0.65;
     this.colliderMat = new THREE.MeshBasicMaterial();
@@ -263,7 +271,7 @@ export class World {
       [M.asphalt, 'concrete'], [M.paint, 'concrete'], [M.sandbag, 'grass'],
       [M.wood, 'wood'], [M.plank, 'wood'], [M.bark, 'wood'],
       [M.rust, 'metal'], [M.metal, 'metal'], [M.carBody, 'metal'], [M.carRed, 'metal'], [M.barrel, 'metal'],
-      [M.glass, 'metal'], [M.redPaint, 'metal'], [M.chrome, 'metal'], [M.door, 'wood'],
+      [M.glass, 'metal'], [M.redPaint, 'metal'], [M.chrome, 'metal'], [M.door, 'wood'], [M.burnt, 'metal'],
     ]);
     this.surfaceMeshes = [];
     this._raycaster = new THREE.Raycaster();
@@ -392,10 +400,10 @@ export class World {
     this.sunDir = new THREE.Vector3(-0.55, 0.42, -0.72).normalize();
     const uniforms = {
       uSunDir: { value: this.sunDir },
-      uZenith: { value: new THREE.Color(0x56708c) },
-      uHorizon: { value: new THREE.Color(0xc2bba8) },
+      uZenith: { value: new THREE.Color(0x5a6874) },
+      uHorizon: { value: new THREE.Color(0xb3aa94) },
       uGround: { value: new THREE.Color(0x6e6858) },
-      uSunColor: { value: new THREE.Color(0xffc488) },
+      uSunColor: { value: new THREE.Color(0xffbf8a) },
       uTime: { value: 0 },
     };
     const mat = new THREE.ShaderMaterial({
@@ -448,14 +456,14 @@ export class World {
     this.sky = sky;
     this.scene.add(sky);
     this.scene.background = new THREE.Color(0xb8b3a2);
-    this.scene.fog = new THREE.Fog(0xaaa79a, 35, 230);
+    this.scene.fog = new THREE.Fog(0x9f9a8a, 28, 200);
   }
 
   _buildLights() {
     const hemi = new THREE.HemisphereLight(0xa6b8c8, 0x4b4232, 0.55);
     this.scene.add(hemi);
 
-    const sun = new THREE.DirectionalLight(0xffd6a6, 2.6);
+    const sun = new THREE.DirectionalLight(0xffd0a0, 2.3);
     sun.castShadow = true;
     const sm = this.quality === 'low' ? 1024 : 2048;
     sun.shadow.mapSize.set(sm, sm);
@@ -781,11 +789,15 @@ export class World {
     this.ladder(-23.1, -12.7, -1, 0, 0, 5.2);
 
     // ===== Carros abandonados =====
-    this.car(-6, 8, 0.2, M.carBody);
-    this.car(-2.5, -18, Math.PI + 0.35, M.carRed);
-    this.car(4, 26, Math.PI / 2 - 0.2, M.carBody);
-    this.car(-1.5, 52, 0.05, M.carRed);
-    this.car(-6.5, -60, Math.PI - 0.25, M.carBody, true); // capotado
+    this.car(-6, 8, 0.2, { color: 0x4f6670, seed: 1, flat: ['fl'], doorOpen: true, cracked: true });
+    this.car(-2.5, -18, Math.PI + 0.35, { color: 0x7a2a22, seed: 2, hoodOpen: true, cracked: true, flat: ['rl', 'rr'] });
+    this.car(4, 26, Math.PI / 2 - 0.2, { burnt: true });
+    this.car(-1.5, 52, 0.05, { color: 0x6a6a3a, seed: 3, doorOpen: true, missingGlass: true });
+    this.car(-6.5, -60, Math.PI - 0.25, { burnt: true, flipped: true }); // capotado
+    this._buildRoadblock();
+    this._buildDebris();
+    this._buildCamp();
+    this._buildDecals();
 
     // ===== Caixotes, barris, pneus, sacos de areia =====
     const crates = [[3, 3], [3.6, 4.2], [-12, 2], [-12, 3.1], [24, 6], [24.6, 7.2], [8, -20], [-30, -2], [-15.5, 21.5]];
@@ -809,11 +821,12 @@ export class World {
     const R = 36, posts = 56;
     for (let i = 0; i < posts; i++) {
       const a0 = (i / posts) * Math.PI * 2, a1 = ((i + 1) / posts) * Math.PI * 2;
-      const skip = (i % 14 === 0) || (i % 14 === 1) || i === 23 || i === 38; // 4 entradas + 2 partes quebradas
+      // 4 entradas + partes quebradas/derrubadas
+      const skip = (i % 14 === 0) || (i % 14 === 1) || i === 23 || i === 38 || i === 9 || i === 31 || i === 46 || i === 52;
       if (skip) continue;
       const xa = Math.cos(a0) * R, za = Math.sin(a0) * R;
       const xb = Math.cos(a1) * R, zb = Math.sin(a1) * R;
-      const tilt = (hash(i, 3) - 0.5) * 0.12;
+      const tilt = (hash(i, 3) - 0.5) * 0.3;
       const post = new THREE.Mesh(boxGeo(0.15, 1.3, 0.15, 1), M.wood);
       post.position.set(xa, 0.65, za);
       post.rotation.set(tilt, 0, tilt * 0.5);
@@ -918,9 +931,20 @@ export class World {
     }
   }
 
-  car(x, z, rotY, paint, flipped = false) {
+  /**
+   * Carro abandonado. opts: color, seed, burnt (queimado, sem vidros e pneus), flipped (capotado),
+   * flat: ['fl','fr','rl','rr'] pneus murchos, doorOpen, hoodOpen, cracked (para-brisa trincado),
+   * missingGlass (vidros quebrados).
+   */
+  car(x, z, rotY, opts = {}) {
     const g = new THREE.Group();
     const M = this.mat;
+    const burnt = !!opts.burnt;
+    const paint = burnt ? M.burnt : new THREE.MeshStandardMaterial({
+      map: TEX.carPaintTexture(opts.color ?? 0x5d6e76, opts.seed ?? 1), roughness: 0.75, metalness: 0.25, envMapIntensity: 0.5,
+    });
+    this.surfaceOf.set(paint, 'metal');
+    const seat = burnt ? M.burntSeat : M.seat;
     const add = (geo, mat, px, py, pz, rx = 0, ry = 0, rz = 0) => {
       const m = new THREE.Mesh(geo, mat);
       m.position.set(px, py, pz);
@@ -930,37 +954,67 @@ export class World {
     };
     // carroceria
     const body = add(boxGeo(4.2, 0.62, 1.8), paint, 0, 0.74, 0);
-    add(boxGeo(1.25, 0.1, 1.72), paint, 1.45, 1.08, 0, 0, 0, -0.06);       // capô
-    add(boxGeo(0.8, 0.1, 1.72), paint, -1.75, 1.08, 0);                    // porta-malas
-    // cabine: teto, colunas e vidros (dá para ver os bancos lá dentro)
+    if (opts.hoodOpen) {
+      const hood = add(boxGeo(1.25, 0.06, 1.72), paint, 0, 0, 0);
+      hood.geometry.translate(0.62, 0, 0); // dobradiça na parte de trás do capô
+      hood.position.set(0.82, 1.1, 0);
+      hood.rotation.z = 0.95; // capô levantado
+      add(boxGeo(0.9, 0.35, 1.2), M.burnt, 1.5, 0.95, 0); // motor exposto
+    } else {
+      add(boxGeo(1.25, 0.1, 1.72), paint, 1.45, 1.08, 0, 0, 0, -0.06);
+    }
+    add(boxGeo(0.8, 0.1, 1.72), paint, -1.75, 1.08, 0);
+    // cabine: teto, colunas, vidros (trincados/quebrados) e bancos
     add(boxGeo(1.9, 0.07, 1.6), paint, -0.3, 1.66, 0);
     for (const [px, pz] of [[0.62, 0.77], [0.62, -0.77], [-1.22, 0.77], [-1.22, -0.77]]) {
       add(boxGeo(0.07, 0.6, 0.06), paint, px, 1.36, pz, 0, 0, px > 0 ? 0.35 : -0.25);
     }
-    add(boxGeo(0.04, 0.55, 1.5), M.glass, 0.72, 1.36, 0, 0, 0, 0.42);       // para-brisa
-    add(boxGeo(0.04, 0.5, 1.5), M.glass, -1.3, 1.36, 0, 0, 0, -0.3);        // vidro traseiro
-    for (const s of [-1, 1]) add(boxGeo(1.75, 0.5, 0.03), M.glass, -0.3, 1.36, s * 0.79);
-    for (const sx of [0.05, -0.85]) {                                      // bancos
-      add(boxGeo(0.5, 0.15, 1.4), M.seat, sx, 1.1, 0);
-      add(boxGeo(0.12, 0.55, 1.4), M.seat, sx - 0.25, 1.35, 0, 0, 0, -0.15);
+    if (!burnt) {
+      add(boxGeo(0.04, 0.55, 1.5), opts.cracked ? M.crackedGlass : M.glass, 0.72, 1.36, 0, 0, 0, 0.42);
+      if (!opts.missingGlass) add(boxGeo(0.04, 0.5, 1.5), M.glass, -1.3, 1.36, 0, 0, 0, -0.3);
+      add(boxGeo(1.75, 0.5, 0.03), M.glass, -0.3, 1.36, -0.79);
+      if (!opts.missingGlass && !opts.doorOpen) add(boxGeo(1.75, 0.5, 0.03), M.glass, -0.3, 1.36, 0.79);
     }
-    add(new THREE.TorusGeometry(0.15, 0.025, 6, 16), M.seat, 0.4, 1.32, 0.38, 0, Math.PI / 2, 0.5); // volante
-    // faróis, lanternas, para-choques, placa e retrovisores
+    for (const sx of [0.05, -0.85]) {
+      add(boxGeo(0.5, 0.15, 1.4), seat, sx, 1.1, 0);
+      add(boxGeo(0.12, 0.55, 1.4), seat, sx - 0.25, 1.35, 0, 0, 0, -0.15);
+    }
+    add(new THREE.TorusGeometry(0.15, 0.025, 6, 16), seat, 0.4, 1.32, 0.38, 0, Math.PI / 2, 0.5);
+    if (opts.doorOpen) {
+      // porta do motorista aberta, pendurada na dobradiça
+      const door = add(boxGeo(1.0, 0.6, 0.05), paint, 0, 0, 0);
+      door.geometry.translate(-0.5, 0, 0);
+      door.position.set(0.55, 0.95, 0.92);
+      door.rotation.y = 0.9;
+    }
     for (const s of [-1, 1]) {
-      add(boxGeo(0.06, 0.16, 0.34), M.headlight, 2.11, 0.86, s * 0.62);
-      add(boxGeo(0.06, 0.14, 0.3), M.taillight, -2.11, 0.86, s * 0.65);
+      if (!burnt) {
+        add(boxGeo(0.06, 0.16, 0.34), M.headlight, 2.11, 0.86, s * 0.62);
+        add(boxGeo(0.06, 0.14, 0.3), M.taillight, -2.11, 0.86, s * 0.65);
+      }
       add(boxGeo(0.18, 0.1, 0.06), paint, 0.55, 1.2, s * 0.94);
     }
-    add(boxGeo(0.15, 0.18, 1.86), M.chrome, 2.17, 0.52, 0);
-    add(boxGeo(0.15, 0.18, 1.86), M.chrome, -2.17, 0.52, 0);
+    add(boxGeo(0.15, 0.18, 1.86), burnt ? M.burnt : M.chrome, 2.17, 0.52, 0);
+    add(boxGeo(0.15, 0.18, 1.86), burnt ? M.burnt : M.chrome, -2.17, 0.52, 0, 0, 0, 0.12); // para-choque torto
     add(boxGeo(0.03, 0.14, 0.42), M.paint, -2.25, 0.72, 0);
-    // rodas com calota
-    for (const [wx, wz] of [[1.3, 0.85], [1.3, -0.85], [-1.3, 0.85], [-1.3, -0.85]]) {
-      add(new THREE.CylinderGeometry(0.38, 0.38, 0.26, 16), M.tire, wx, 0.38, wz, Math.PI / 2);
-      add(new THREE.CylinderGeometry(0.2, 0.2, 0.27, 10), M.chrome, wx, 0.38, wz, Math.PI / 2);
+    // rodas: pneus (murchos ou queimados até o aro)
+    const flat = new Set(opts.flat ?? []);
+    const wheels = { fl: [1.3, 0.85], fr: [1.3, -0.85], rl: [-1.3, 0.85], rr: [-1.3, -0.85] };
+    for (const [k, [wx, wz]] of Object.entries(wheels)) {
+      if (!burnt) {
+        const tire = add(new THREE.CylinderGeometry(0.38, 0.38, 0.26, 16), M.tire, wx, flat.has(k) ? 0.3 : 0.38, wz, Math.PI / 2);
+        if (flat.has(k)) tire.scale.z = 0.72;
+      }
+      add(new THREE.CylinderGeometry(0.22, 0.22, 0.24, 10), burnt ? M.rust : M.chrome, wx, burnt ? 0.22 : (flat.has(k) ? 0.3 : 0.38), wz, Math.PI / 2);
     }
-    g.position.set(x, flipped ? 1.72 : 0, z);
-    g.rotation.set(flipped ? Math.PI : 0, rotY, flipped ? 0 : 0.03, 'YXZ');
+    // carro inclinado para o lado dos pneus murchos / queimado sentado no aro
+    let roll = 0, pitch = 0;
+    if (flat.has('fl') || flat.has('rl')) roll += 0.035;
+    if (flat.has('fr') || flat.has('rr')) roll -= 0.035;
+    if (flat.has('fl') || flat.has('fr')) pitch -= 0.03;
+    if (flat.has('rl') || flat.has('rr')) pitch += 0.03;
+    g.position.set(x, opts.flipped ? 1.72 : burnt ? -0.15 : 0, z);
+    g.rotation.set(opts.flipped ? Math.PI : roll, rotY, opts.flipped ? 0 : pitch, 'YXZ');
     this.scene.add(g);
     g.updateMatrixWorld(true);
     for (const m of [...g.children]) this.solid(m, m === body);
@@ -975,6 +1029,167 @@ export class World {
     this.colliders.add(c);
     cabin.removeFromParent();
     this.noGrass.push([x - 2.4, z - 2.4, x + 2.4, z + 2.4]);
+  }
+
+  // ---------- barricada na estrada ----------
+  _buildRoadblock() {
+    const z = -44;
+    this.car(-6.2, z, 1.25, { color: 0x6a5a48, seed: 5, flat: ['fl', 'rl'], cracked: true });
+    this.car(-1.2, z - 2.5, 1.95, { burnt: true });
+    this.sandbags(-4, z + 3.2, 0.05);
+    this.barrel(-8.6, z + 2, this.mat.rust);
+    // barril com fogo
+    this.barrel(0.8, z + 2.6, this.mat.burnt);
+    this.firePositions.push(new THREE.Vector3(0.8, 1.0, z + 2.6));
+    // placa de aviso
+    this.cylinder(0.05, 0.05, 2.2, this.mat.metal, -4.5, 1.1, z + 4.2, { seg: 6, collide: false });
+    const sign = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.8), new THREE.MeshStandardMaterial({
+      map: TEX.decalTexture('text', 'ZONA\nINFECTADA', '#d8d0c0', 9), color: 0x7a1a14, roughness: 0.8, side: THREE.DoubleSide,
+    }));
+    sign.position.set(-4.5, 2.0, z + 4.23);
+    sign.rotation.z = 0.08;
+    sign.castShadow = true;
+    this.scene.add(sign);
+  }
+
+  // ---------- lixo e entulho ----------
+  _buildDebris() {
+    const rand = makeRng(4242);
+    const M = this.mat;
+    // sacos de lixo
+    const bagGeo = lumpy(new THREE.IcosahedronGeometry(0.3, 1), 0.35, 8);
+    bagGeo.scale(1, 0.75, 1);
+    const spots = [[9.4, -3.3], [9.9, -3.1], [9.6, -2.6], [-18.6, 20.3], [-18.2, 20.8], [-11, 6], [21.8, 16.6], [-14, -9], [5, -14]];
+    for (const [x, z] of spots) {
+      const m = new THREE.Mesh(bagGeo, M.trashBag);
+      m.position.set(x + (rand() - 0.5) * 0.3, 0.2, z + (rand() - 0.5) * 0.3);
+      m.rotation.y = rand() * 6;
+      m.scale.setScalar(0.8 + rand() * 0.5);
+      this.solid(m, false);
+    }
+    // tábuas soltas e pneus jogados
+    for (let i = 0; i < 10; i++) {
+      const x = (rand() - 0.5) * 60, z = (rand() - 0.5) * 60;
+      if (!this._isFree(x, z, 1)) { i--; continue; }
+      const plank = new THREE.Mesh(boxGeo(1.6 + rand(), 0.04, 0.18, 1), M.plank);
+      plank.position.set(x, 0.03, z);
+      plank.rotation.set(0, rand() * 6, (rand() - 0.5) * 0.1);
+      this.solid(plank, false);
+    }
+    for (const [x, z] of [[-9.5, -1], [2.5, 31], [-7.5, -38]]) {
+      const t = new THREE.Mesh(new THREE.TorusGeometry(0.33, 0.14, 8, 14), M.tire);
+      t.rotation.set(Math.PI / 2 + (rand() - 0.5) * 0.4, 0, rand());
+      t.position.set(x, 0.15, z);
+      this.solid(t, false);
+    }
+    // papéis e folhas de jornal espalhados
+    const paperGeo = new THREE.PlaneGeometry(0.28, 0.2);
+    paperGeo.rotateX(-Math.PI / 2);
+    const papers = new THREE.InstancedMesh(paperGeo, M.paper, 160);
+    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(1, 1, 1), p = new THREE.Vector3();
+    for (let i = 0; i < 160; i++) {
+      const a = rand() * Math.PI * 2, r = Math.sqrt(rand()) * 40;
+      const x = Math.cos(a) * r, z = Math.sin(a) * r;
+      q.setFromEuler(new THREE.Euler((rand() - 0.5) * 0.2, rand() * 6, (rand() - 0.5) * 0.2));
+      m4.compose(p.set(x, terrainHeight(x, z) + 0.06, z), q, sc.setScalar(0.6 + rand() * 0.7));
+      papers.setMatrixAt(i, m4);
+    }
+    papers.receiveShadow = true;
+    this.scene.add(papers);
+    // buracos e manchas de óleo no asfalto
+    for (let i = 0; i < 14; i++) {
+      const z = (rand() - 0.5) * 220, x = ROAD_X + (rand() - 0.5) * 6;
+      const d = new THREE.Mesh(new THREE.CircleGeometry(0.4 + rand() * 0.8, 10), M.pothole);
+      d.rotation.set(-Math.PI / 2, 0, rand() * 6);
+      d.scale.set(1, 0.6 + rand() * 0.6, 1);
+      d.position.set(x, terrainHeight(x, z) + 0.065, z);
+      d.receiveShadow = true;
+      this.scene.add(d);
+    }
+  }
+
+  // ---------- acampamento abandonado ----------
+  _buildCamp() {
+    const cx = 48, cz = -8;
+    this.noGrass.push([cx - 5, cz - 5, cx + 5, cz + 5]);
+    const y0 = terrainHeight(cx, cz);
+    const tri = new THREE.Shape();
+    tri.moveTo(-1.1, 0); tri.lineTo(1.1, 0); tri.lineTo(0, 1.3); tri.lineTo(-1.1, 0);
+    const tentGeo = new THREE.ExtrudeGeometry(tri, { depth: 2.2, bevelEnabled: false });
+    tentGeo.translate(0, 0, -1.1);
+    for (const [dx, dz, rot, mat, sag] of [[-1.5, 0, 0.3, this.mat.tentGreen, 0], [2, 1, -0.5, this.mat.tentOrange, 0.35]]) {
+      const t = new THREE.Mesh(tentGeo, mat);
+      t.position.set(cx + dx, terrainHeight(cx + dx, cz + dz) - 0.02, cz + dz);
+      t.rotation.set(0, rot, sag); // a laranja está meio desabada
+      this.solid(t, true);
+    }
+    // fogueira apagada, saco de dormir e mochila largada
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      const r = new THREE.Mesh(lumpy(new THREE.DodecahedronGeometry(0.14, 0), 0.4, i + 30), this.mat.rock);
+      r.position.set(cx + 0.5 + Math.cos(a) * 0.45, y0 + 0.06, cz + 3 + Math.sin(a) * 0.45);
+      this.solid(r, false);
+    }
+    const ash = new THREE.Mesh(new THREE.CircleGeometry(0.4, 10), this.mat.burnt);
+    ash.rotation.x = -Math.PI / 2;
+    ash.position.set(cx + 0.5, y0 + 0.03, cz + 3);
+    this.scene.add(ash);
+    this.box(0.7, 0.12, 1.9, this.mat.tentOrange, cx - 2.6, y0 + 0.06, cz + 2.4, 0.4, 1, false);
+    this.box(0.35, 0.45, 0.22, this.mat.fabric, cx + 1.6, y0 + 0.22, cz + 3.2, 0.9, 1, false);
+    this.propSpots.push({ type: 'pot', x: cx + 0.9, y: y0, z: cz + 3.3 }, { type: 'can', x: cx + 0.1, y: y0, z: cz + 2.5 });
+  }
+
+  // ---------- pichações, sangue e musgo ----------
+  decal(kind, text, x, y, z, rotY, w, h, color, { ground = false } = {}) {
+    const mat = new THREE.MeshStandardMaterial({
+      map: TEX.decalTexture(kind, text, color, Math.round(x * 7 + z)),
+      transparent: true, depthWrite: false, roughness: 0.9,
+      polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
+    });
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
+    m.position.set(x, y, z);
+    if (ground) m.rotation.set(-Math.PI / 2, 0, rotY);
+    else m.rotation.y = rotY;
+    m.receiveShadow = true;
+    this.scene.add(m);
+    return m;
+  }
+
+  _buildDecals() {
+    // casa de tijolos (frente em z = -4, olhando para +z)
+    this.decal('text', 'SOCORRO', 10.15, 1.7, -3.86, 0, 1.9, 0.95, '#c8c2b0');
+    this.decal('hand', '', 13.1, 1.25, -3.86, 0, 0.7, 0.7);
+    this.decal('blood', '', 12.4, 0.215, -6.2, 0.4, 1.8, 1.3, undefined, { ground: true });
+    this.decal('moss', '', 14, 0.6, -12.14, Math.PI, 10, 1.2);
+    // cabana (frente em z = 17, olhando para -z)
+    this.decal('tally', '', 15.6, 1.6, 16.88, Math.PI, 0.9, 0.8, '#e8e2d0');
+    this.decal('text', 'NÃO ABRA\nMORTOS DENTRO', 20.2, 1.5, 16.88, Math.PI, 1.6, 0.8, '#a01812');
+    // loja do posto (fundos em z = 24.5)
+    this.decal('text', 'SEM COMIDA\nSEM ÁGUA', -21, 1.5, 24.62, 0, 3.2, 1.6, '#d6cfc0');
+    // muro em ruínas e contêiner
+    this.decal('text', 'ELES OUVEM', -31.1, 1.25, -24.77, 0.32, 2.6, 1.0, '#9a1a12');
+    this.decal('arrow', 'ABRIGO', -20, 1.5, -15.22, Math.PI, 2.6, 1.3, '#e0d8c4');
+    this.decal('blood', '', -3.5, 0.07, -16.5, 1.2, 2.2, 1.4, undefined, { ground: true });
+    // janelas fechadas com tábuas
+    this.boards(14, 1.6, -12.17, 0, 2.0, 1.2);
+    this.boards(8.83, 1.6, -8, Math.PI / 2, 1.4, 1.2);
+    this.boards(18, 1.5, 23.13, 0, 1.0, 1.0);
+    this.boards(-21, 1.5, 20.87, 0, 1.4, 1.0);
+  }
+
+  /** Tábuas pregadas sobre uma janela (bloqueiam a passagem). */
+  boards(x, y, z, rotY, w, h) {
+    const rand = makeRng(Math.round(x * 13 + z * 7));
+    const c = Math.cos(rotY), s = Math.sin(rotY);
+    for (let i = 0; i < 4; i++) {
+      const plank = new THREE.Mesh(boxGeo(w + 0.25, 0.16, 0.04, 1), this.mat.plank);
+      const oy = (i - 1.5) * (h / 4.2);
+      plank.position.set(x, y + oy, z);
+      plank.rotation.set(0, rotY, (rand() - 0.5) * 0.35);
+      this.solid(plank, false);
+    }
+    this.invisibleCollider(new THREE.BoxGeometry(w, h, 0.1), new THREE.Vector3(x, y, z), new THREE.Euler(0, rotY, 0));
+    return [c, s];
   }
 
   barrel(x, z, mat, lying = false) {
@@ -1295,6 +1510,26 @@ export class World {
     }
     this.grassDensity = 1;
     this.grassDistance = 75;
+
+    // mato crescendo nas rachaduras da estrada abandonada
+    const nW = this.quality === 'low' ? 500 : 1100;
+    const weeds = new THREE.InstancedMesh(geo, mat, nW);
+    const rw = makeRng(77);
+    for (let i = 0; i < nW; i++) {
+      // em linhas (rachaduras) e nas bordas
+      const edge = rw() < 0.5;
+      const x = ROAD_X + (edge ? (rw() < 0.5 ? -1 : 1) * (ROAD_HALF - 0.3 - rw() * 0.6) : (Math.round(rw() * 4 - 2) * 1.3 + (rw() - 0.5) * 0.3));
+      const z = (rw() - 0.5) * WORLD_HALF * 2;
+      const k = 0.5 + rw() * 0.9;
+      q.setFromAxisAngle(up, rw() * 6);
+      m.compose(p.set(x, terrainHeight(x, z) + 0.04, z), q, sc.set(k, k * (0.6 + rw() * 0.8), k));
+      weeds.setMatrixAt(i, m);
+      color.setHSL(0.13 + rw() * 0.08, 0.3, 0.16 + rw() * 0.1);
+      weeds.setColorAt(i, color);
+    }
+    weeds.receiveShadow = true;
+    weeds.computeBoundingSphere();
+    this.scene.add(weeds);
   }
 
   /** Fração da grama desenhada (qualidade gráfica). */

@@ -7,37 +7,43 @@ import { Capsule } from 'three/addons/math/Capsule.js';
 // de mão, inclinar (espiar), rolamento ao cair, subir degraus baixos sozinho, andar na água
 // rasa, nadar e mergulhar. Portas têm colisão própria (Octree de cada porta).
 
-const GRAVITY = 26;
+// valores próximos do real (um pouco mais de gravidade que 9,8 para o corpo não "flutuar")
+const GRAVITY = 17;
 const RADIUS = 0.35;
 export const STAND_HEIGHT = 1.8;
 export const CROUCH_HEIGHT = 1.15;
 const EYE_BELOW_TOP = 0.14;
 
-const WALK_SPEED = 4.2;
-const RUN_SPEED = 7.4;
-const CROUCH_SPEED = 2.0;
-const BACKWARD_MULT = 0.7;
-const JUMP_VELOCITY = 8.6;
+const WALK_SPEED = 1.7;     // andar (modo andar / joystick pouco empurrado)
+const JOG_SPEED = 3.6;      // trote, o padrão
+const RUN_SPEED = 6.2;      // correr
+const CROUCH_SPEED = 1.3;
+const CROUCH_RUN_SPEED = 2.4;
+const BACKWARD_MULT = 0.6;
+const STRAFE_MULT = 0.85;
+const JUMP_VELOCITY = 4.8;  // ~0,7 m de altura
 
-const GROUND_ACCEL = 14;
-const AIR_ACCEL = 2.2;
+const GROUND_ACCEL = 6;     // ganha velocidade aos poucos (inércia do corpo)
+const SPRINT_ACCEL = 3.2;
+const GROUND_DECEL = 9;
+const AIR_ACCEL = 0.7;      // quase nenhum controle no ar
 const MIN_FLOOR_NORMAL_Y = 0.55;  // ~56° — acima disso é parede
 const SUBSTEPS = 5;
 const COYOTE_TIME = 0.12;
 const JUMP_BUFFER = 0.15;
 const SNAP_DISTANCE = 0.35;
 
-const FALL_DAMAGE_SPEED = 13; // m/s de impacto a partir do qual causa dano
+const FALL_DAMAGE_SPEED = 10; // m/s de impacto (~3 m de queda) a partir do qual causa dano
 const ROLL_WINDOW = 0.35;     // agachar até esse tempo antes do impacto = rolamento
-const ROLL_MIN_SPEED = 9;
+const ROLL_MIN_SPEED = 7.5;
 
 // deslizar (agachar correndo)
-const SLIDE_SPEED = 9.5;
-const SLIDE_FRICTION = 1.7;
-const SLIDE_MAX_TIME = 1.1;
+const SLIDE_SPEED = 7;
+const SLIDE_FRICTION = 2.2;
+const SLIDE_MAX_TIME = 0.9;
 
 // escadas de mão
-const LADDER_SPEED = 2.6;
+const LADDER_SPEED = 1.7;
 const LADDER_STEP = 0.45;
 
 // degraus baixos (meio-fio, varanda, raízes) são subidos sem pular
@@ -50,10 +56,13 @@ const SWIM_SPEED = 2.5;
 const SWIM_FAST = 3.6;
 const FLOAT_DEPTH = 1.5;    // pés abaixo da superfície ao boiar (olhos logo acima d'água)
 
-// escalar / pular obstáculos (estilo DayZ)
-const LEDGE_MIN = 0.45;       // abaixo disso é só pular
-const LEDGE_MAX = 2.3;        // altura máxima que dá para escalar
-const VAULT_OVER_MAX = 1.45;  // obstáculos finos até essa altura são pulados por cima
+// parkour
+const LEDGE_MIN = 0.42;       // abaixo disso o degrau é subido andando
+const LEDGE_MAX = 2.15;       // altura máxima que dá para escalar partindo do chão
+const VAULT_OVER_MAX = 1.25;  // obstáculos finos até essa altura são pulados por cima
+const MANTLE_MAX = 1.35;      // até aqui: apoia as mãos e sobe; acima: escalada completa
+const HANG_MAX = 2.75;        // no ar, agarra bordas até essa altura acima dos pés
+const HANG_DROP = 1.95;       // pés abaixo da borda quando pendurado (braços esticados)
 
 const LEAN_DISTANCE = 0.45;
 
@@ -105,6 +114,12 @@ export class Player {
     this.crouchToggle = false;
 
     this.sprinting = false;
+    this.walkMode = false;    // andar devagar (tecla X)
+    this.exertion = 0;        // cansaço (só som e respiração; não limita a corrida)
+    this.stumble = 0;         // recuperação depois de um pouso forte
+    this.floorNormal = new THREE.Vector3(0, 1, 0);
+    this.hang = null;         // pendurado numa borda
+    this.speedTarget = 0;
     this.slide = null;        // deslize em andamento
     this.ladder = null;       // escada de mão em uso
     this.ladderAhead = null;  // escada perto (para a dica na tela)
@@ -146,10 +161,15 @@ export class Player {
     this.climb = null;
     this.slide = null;
     this.ladder = null;
+    this.hang = null;
     this.rollTime = -1;
     this.lean = 0;
     this.swimming = false;
+    this.stumble = 0;
+    this.exertion = 0;
   }
+
+  get isHanging() { return this.hang !== null; }
 
   get sliding() { return this.slide !== null; }
   get onLadder() { return this.ladder !== null; }
@@ -206,6 +226,7 @@ export class Player {
     if (this.rollTime >= 0) { this.rollTime += dt; if (this.rollTime > 0.65) this.rollTime = -1; }
 
     if (this.climb) { this._updateClimb(dt); this._updateLean(dt, 0); return; }
+    if (this.hang) { this._updateHang(dt, input, move); this._updateLean(dt, 0); return; }
     if (this.ladder) { this._updateLadder(dt, input, move); this._updateLean(dt, 0); return; }
 
     // portas próximas também colidem
@@ -244,6 +265,7 @@ export class Player {
       this.crouchToggle = !this.crouchToggle;
     }
     const wantSprint = input.sprint && move.y > 0.3;
+    if (input.wasPressed('walkToggle')) this.walkMode = !this.walkMode;
 
     if (this.slide) {
       this.crouched = true;
@@ -274,19 +296,37 @@ export class Player {
     this.height = newHeight;
 
     // ---------- corrida (sem limite de fôlego) ----------
-    const canSprint = wantSprint && !this.crouched;
+    const canSprint = wantSprint && !this.crouched && this.stumble <= 0;
     this.sprinting = canSprint && (this.onFloor || this.sprinting);
 
     // ---------- velocidade horizontal desejada ----------
-    let speed = this.crouched ? CROUCH_SPEED : this.sprinting ? RUN_SPEED : WALK_SPEED;
-    if (move.y < 0) speed *= BACKWARD_MULT;
+    // joystick: pouco empurrado = andar, mais = trotar; teclado: trotar (ou andar no modo andar)
+    const mag = Math.min(1, Math.hypot(move.x, move.y));
+    let speed;
+    if (this.crouched) speed = (input.sprint ? CROUCH_RUN_SPEED : CROUCH_SPEED) * Math.min(1, mag / 0.6);
+    else if (this.sprinting) speed = RUN_SPEED;
+    else if (this.walkMode) speed = WALK_SPEED * Math.min(1, mag / 0.6);
+    else speed = mag < 0.65 ? WALK_SPEED * (mag / 0.65) : WALK_SPEED + (JOG_SPEED - WALK_SPEED) * ((mag - 0.65) / 0.35);
+    if (move.y < -0.1) speed *= BACKWARD_MULT;
+    else if (Math.abs(move.x) > Math.abs(move.y)) speed *= STRAFE_MULT;
     // andando na água rasa fica mais lento
     if (this.waterDepth > 0.3) speed *= Math.max(0.45, 1 - this.waterDepth * 0.45);
+    // depois de um pouso forte o corpo demora a se recuperar
+    if (this.stumble > 0) { speed *= 0.35; this.stumble -= dt; }
     this.forwardVector(_forward);
     _right.set(-_forward.z, 0, _forward.x);
     _wish.set(0, 0, 0).addScaledVector(_forward, move.y).addScaledVector(_right, move.x);
-    if (_wish.lengthSq() > 1) _wish.normalize();
+    if (_wish.lengthSq() > 1e-6) _wish.normalize();
+    // ladeira: subir é mais lento, descer um pouco mais rápido
+    if (this.onFloor && this.floorNormal.y < 0.995) {
+      const grade = -(this.floorNormal.x * _wish.x + this.floorNormal.z * _wish.z) / this.floorNormal.y;
+      speed *= Math.max(0.5, Math.min(1.12, 1 - grade * 0.9));
+    }
     _wish.multiplyScalar(speed);
+    this.speedTarget = speed;
+
+    // cansaço só para a respiração ficar ofegante (não há barra de fôlego)
+    this.exertion = Math.max(0, Math.min(1, this.exertion + (this.sprinting && this.horizontalSpeed > 4 ? 0.07 : -0.05) * dt));
 
     if (this.slide) {
       // deslizando: perde velocidade aos poucos, dá para mirar um pouco com o movimento lateral
@@ -297,7 +337,9 @@ export class Player {
       const hs = Math.hypot(this.velocity.x, this.velocity.z);
       if (hs < 2.6 || this.slide.t > SLIDE_MAX_TIME) this.slide = null;
     } else {
-      const accel = this.onFloor ? GROUND_ACCEL : AIR_ACCEL;
+      // inércia: acelera devagar, freia mais rápido, no ar quase não muda de direção
+      const cur = Math.hypot(this.velocity.x, this.velocity.z);
+      const accel = !this.onFloor ? AIR_ACCEL : speed > cur + 0.05 ? (this.sprinting ? SPRINT_ACCEL : GROUND_ACCEL) : GROUND_DECEL;
       this.velocity.x = damp(this.velocity.x, _wish.x, accel, dt);
       this.velocity.z = damp(this.velocity.z, _wish.z, accel, dt);
     }
@@ -308,15 +350,21 @@ export class Player {
     else this.jumpBuffer -= dt;
 
     // escalar tem prioridade sobre o pulo quando há um obstáculo na frente
-    if (this.jumpBuffer > 0 && this.timeSinceGround < 0.6 && !this.slide) {
+    if (this.jumpBuffer > 0 && this.timeSinceGround < 0.6 && !this.slide && this.stumble <= 0) {
       const ledge = this.findLedge(this.onFloor ? LEDGE_MIN : 0.1);
       if (ledge) {
         this._startClimb(ledge, input);
         return;
       }
     }
+    // no ar, indo para frente contra uma borda alta: agarra e fica pendurado
+    if (!this.onFloor && this.timeSinceGround > 0.08 && move.y > 0.3 && this.velocity.y < 2.5) {
+      const grab = this.findLedge(1.0, HANG_MAX);
+      if (grab && grab.height > 1.55 && this._startHang(grab)) return;
+      if (grab && this.jumpBuffer > 0) { this._startClimb(grab, input); return; }
+    }
 
-    if (this.jumpBuffer > 0 && this.timeSinceGround < COYOTE_TIME) {
+    if (this.jumpBuffer > 0 && this.timeSinceGround < COYOTE_TIME && this.stumble <= 0) {
       if (this.slide) this.slide = null; // pulo no fim do deslize mantém o embalo
       if (this.crouched) {
         // pular estando agachado: levanta primeiro, se houver espaço
@@ -366,6 +414,12 @@ export class Player {
       // rolamento: agachar logo antes de tocar o chão reduz o dano da queda
       const roll = fallSpeed > ROLL_MIN_SPEED && (this._clock - this._crouchPressedAt < ROLL_WINDOW) && this.horizontalSpeed > 0.5;
       this.events.push({ type: 'land', speed: fallSpeed, roll });
+      // pouso pesado: o corpo amortece e perde velocidade por um instante
+      if (!roll && fallSpeed > 6.5 && this.waterDepth < 0.5) {
+        this.stumble = Math.min(0.9, (fallSpeed - 6) * 0.12);
+        this.velocity.x *= 0.4;
+        this.velocity.z *= 0.4;
+      }
       if (roll) {
         this.rollTime = 0;
         this.forwardVector(_lf);
@@ -376,7 +430,7 @@ export class Player {
         this.events.push({ type: 'roll' });
       }
       if (fallSpeed > FALL_DAMAGE_SPEED) {
-        const dmg = (fallSpeed - FALL_DAMAGE_SPEED) * 7 * (roll ? 0.3 : 1) * (this.waterDepth > 0.5 ? 0.3 : 1);
+        const dmg = (fallSpeed - FALL_DAMAGE_SPEED) * 9 * (roll ? 0.3 : 1) * (this.waterDepth > 0.5 ? 0.3 : 1);
         this.health = Math.max(0, this.health - dmg);
         this.events.push({ type: 'damage', amount: dmg });
       }
@@ -386,11 +440,12 @@ export class Player {
     const moved = Math.hypot(this.collider.start.x - startX, this.collider.start.z - startZ);
     this.horizontalSpeed = dt > 0 ? moved / dt : 0;
     if (this.onFloor && this.horizontalSpeed > 0.4) {
-      const stride = this.sprinting ? 1.25 : this.crouched ? 0.6 : 0.85;
+      // passada cresce com a velocidade (como de verdade): ~0,75 m andando, ~1,5 m correndo
+      const stride = this.crouched ? 0.5 : 0.45 + this.horizontalSpeed * 0.17;
       const before = Math.floor(this.stepPhase / Math.PI);
       this.stepPhase += (this.horizontalSpeed * dt / stride) * Math.PI;
       if (Math.floor(this.stepPhase / Math.PI) !== before) {
-        this.events.push({ type: 'step', run: this.sprinting, crouch: this.crouched });
+        this.events.push({ type: 'step', run: this.sprinting, crouch: this.crouched, speed: this.horizontalSpeed });
       }
     }
 
@@ -455,16 +510,19 @@ export class Player {
 
   /**
    * Procura um obstáculo escalável logo à frente.
-   * Retorna { kind: 'climb' | 'vault', height, path: [pontos dos pés] } ou null.
+   * Retorna { kind, height, path (pontos dos pés), durations, edge (borda), normal, topY } ou null.
+   * kind: 'stepover' (passa por cima), 'speedvault' (salto rápido correndo), 'mantle' (apoia as
+   * mãos e sobe), 'climb' (escalada alta, com impulso).
    */
-  findLedge(minHeight) {
+  findLedge(minHeight, maxHeight = LEDGE_MAX) {
     const feet = this.collider.start.y - RADIUS;
     const x = this.collider.start.x, z = this.collider.start.z;
     const f = this.forwardVector(_lf);
 
-    // 1) tem parede na frente? (joelho, cintura, peito)
+    // 1) tem parede na frente? (do joelho até a altura máxima)
     let wall = Infinity;
-    for (const h of [0.35, 0.9, 1.5, 2.0]) {
+    for (const h of [0.35, 0.9, 1.5, 1.8, 2.1, 2.5]) {
+      if (h > maxHeight + 0.1) break;
       const hit = this._rayHit(x, feet + h, z, f.x, 0, f.z);
       if (hit && hit.distance < wall) wall = hit.distance;
     }
@@ -473,11 +531,11 @@ export class Player {
     // 2) topo do obstáculo: raio de cima para baixo, logo depois da face da parede
     // (bem perto da face, para acertar também cercas e muretas finas)
     const reach = wall + 0.08;
-    const top = this._rayHit(x + f.x * reach, feet + LEDGE_MAX + 0.3, z + f.z * reach, 0, -1, 0);
+    const top = this._rayHit(x + f.x * reach, feet + maxHeight + 0.3, z + f.z * reach, 0, -1, 0);
     if (!top) return null;
     const topY = top.position.y;
     const height = topY - feet;
-    if (height < minHeight || height > LEDGE_MAX) return null;
+    if (height < minHeight || height > maxHeight) return null;
     top.triangle.getNormal(_n);
     if (_n.y < 0.7) return null;
 
@@ -487,27 +545,31 @@ export class Player {
     if (ceil && ceil.distance < Math.max(0, topY + 0.2 + CROUCH_HEIGHT - headY) + 0.05) return null;
 
     const start = new THREE.Vector3(x, feet, z);
+    const edge = new THREE.Vector3(x + f.x * wall, topY, z + f.z * wall);
+    const info = { height, edge, normal: f.clone(), topY };
 
-    // 3) obstáculo fino (cerca, mureta, caixote)? pula por cima
+    // 3) obstáculo fino (cerca, mureta, caixote)? passa por cima
     const far = reach + 0.75;
     const beyond = this._rayHit(x + f.x * far, topY + 0.3, z + f.z * far, 0, -1, 0);
     const thin = !beyond || beyond.position.y < topY - 0.4;
     // (não salta por cima se do outro lado houver uma queda alta, ex.: mureta do terraço)
     const safeDrop = !beyond || beyond.position.y > feet - 0.6;
-    if (thin && height <= VAULT_OVER_MAX && safeDrop) {
+    if (thin && height <= VAULT_OVER_MAX && safeDrop && this.onFloor) {
       const lx = x + f.x * (far + 0.15), lz = z + f.z * (far + 0.15);
       const groundY = beyond ? beyond.position.y : topY - 1;
       if (this._fits(lx, Math.max(groundY, topY - 1.2), lz, STAND_HEIGHT) &&
           this._fits(x + f.x * reach, topY + 0.15, z + f.z * reach, CROUCH_HEIGHT)) {
+        const fast = this.sprinting && this.horizontalSpeed > 4;
         return {
-          kind: 'vault', height, crouch: false,
+          ...info, kind: fast ? 'speedvault' : 'stepover', crouch: false,
           path: [
             start,
             new THREE.Vector3(x + f.x * Math.max(0, wall - RADIUS - 0.05), topY + 0.15, z + f.z * Math.max(0, wall - RADIUS - 0.05)),
-            new THREE.Vector3(x + f.x * reach, topY + 0.18, z + f.z * reach),
+            new THREE.Vector3(x + f.x * reach, topY + 0.2, z + f.z * reach),
             new THREE.Vector3(lx, Math.max(groundY, topY - 1.2) + 0.02, lz),
           ],
-          durations: [0.16 + height * 0.06, 0.16, 0.18],
+          // correndo: um salto rápido com uma mão; andando: passa a perna com calma
+          durations: fast ? [0.13, 0.14, 0.22] : [0.28 + height * 0.12, 0.3, 0.32],
         };
       }
     }
@@ -523,15 +585,86 @@ export class Player {
       if (!this._fits(dx, topY, dz, CROUCH_HEIGHT)) return null;
       crouch = true;
     }
+    if (height <= MANTLE_MAX) {
+      // apoia as mãos na borda, empurra o corpo para cima e passa um joelho
+      return {
+        ...info, kind: 'mantle', crouch,
+        path: [start, new THREE.Vector3(x, topY + 0.08, z), new THREE.Vector3(dx, topY + 0.02, dz)],
+        durations: [0.3 + height * 0.22, 0.34],
+      };
+    }
+    // escalada alta: impulso, mãos na borda, puxa o peito acima dela, sobe o joelho e levanta
     return {
-      kind: 'climb', height, crouch,
+      ...info, kind: 'climb', crouch,
       path: [
         start,
+        new THREE.Vector3(x, feet + 0.3, z),
+        new THREE.Vector3(x, topY - 0.55, z),
         new THREE.Vector3(x, topY + 0.08, z),
         new THREE.Vector3(dx, topY + 0.02, dz),
       ],
-      durations: [0.22 + height * 0.2, 0.2],
+      durations: [0.16, 0.3 + height * 0.18, 0.32, 0.38],
     };
+  }
+
+  // ---------- pendurado na borda ----------
+  _startHang(ledge) {
+    const f = ledge.normal;
+    const x = ledge.edge.x - f.x * (RADIUS + 0.06), z = ledge.edge.z - f.z * (RADIUS + 0.06);
+    const feet = ledge.topY - HANG_DROP;
+    if (!this._fits(x, feet, z, STAND_HEIGHT)) return false;
+    this.hang = { edge: ledge.edge.clone(), normal: f.clone(), topY: ledge.topY, t: 0, x, z, feet };
+    this.velocity.set(0, 0, 0);
+    this.height = STAND_HEIGHT;
+    this.crouched = false;
+    this.sprinting = false;
+    this.slide = null;
+    this.events.push({ type: 'grab' });
+    return true;
+  }
+
+  _updateHang(dt, input, move) {
+    const h = this.hang;
+    h.t += dt;
+    // desliza de lado ao longo da borda (se ela continuar)
+    if (Math.abs(move.x) > 0.3) {
+      const rx = -h.normal.z, rz = h.normal.x;
+      const step = move.x * 0.7 * dt;
+      const ex = h.edge.x + rx * step, ez = h.edge.z + rz * step;
+      const top = this._rayHit(ex + h.normal.x * 0.1, h.topY + 0.3, ez + h.normal.z * 0.1, 0, -1, 0);
+      if (top && Math.abs(top.position.y - h.topY) < 0.12 && this._fits(h.x + rx * step, h.feet, h.z + rz * step, STAND_HEIGHT)) {
+        h.edge.x = ex; h.edge.z = ez; h.x += rx * step; h.z += rz * step;
+        h.shimmy = (h.shimmy || 0) + Math.abs(step) * 6;
+      }
+    }
+    this.collider.start.set(h.x, h.feet + RADIUS, h.z);
+    this.collider.end.set(h.x, h.feet + STAND_HEIGHT - RADIUS, h.z);
+    this.horizontalSpeed = 0;
+    this.onFloor = false;
+
+    if ((input.wasPressed('jump') || move.y > 0.5) && h.t > 0.3) {
+      // puxa o corpo para cima da borda
+      const f = h.normal;
+      const dx = h.edge.x + f.x * (RADIUS + 0.12), dz = h.edge.z + f.z * (RADIUS + 0.12);
+      let crouch = false;
+      if (!this._fits(dx, h.topY, dz, STAND_HEIGHT)) {
+        if (!this._fits(dx, h.topY, dz, CROUCH_HEIGHT)) return;
+        crouch = true;
+      }
+      this.hang = null;
+      this._startClimb({
+        kind: 'pullup', height: HANG_DROP, crouch, edge: h.edge, normal: f, topY: h.topY,
+        path: [new THREE.Vector3(h.x, h.feet, h.z), new THREE.Vector3(h.x, h.topY - 0.55, h.z),
+          new THREE.Vector3(h.x, h.topY + 0.08, h.z), new THREE.Vector3(dx, h.topY + 0.02, dz)],
+        durations: [0.6, 0.35, 0.4],
+      }, input);
+    } else if ((move.y < -0.5 || input.crouchHeld || input.wasPressed('crouchToggle')) && h.t > 0.2) {
+      // solta
+      this.hang = null;
+      this.velocity.set(-h.normal.x * 0.8, 0, -h.normal.z * 0.8);
+      this.timeSinceGround = 1;
+      this.events.push({ type: 'drop' });
+    }
   }
 
   _startClimb(ledge, input) {
@@ -574,12 +707,12 @@ export class Player {
     } else if (c.seg >= c.durations.length) {
       // terminou: mantém um pouco de impulso para frente
       this.forwardVector(_lf);
-      const keep = c.kind === 'vault' ? 3.5 : 1;
+      const keep = c.kind === 'speedvault' ? 4.5 : c.kind === 'stepover' ? 1.6 : 0.6;
       this.velocity.set(_lf.x * keep, 0, _lf.z * keep);
       this.climb = null;
       this.onFloor = true;
       this._collide();
-      this.events.push({ type: 'land', speed: c.kind === 'vault' ? 4 : 2 });
+      this.events.push({ type: 'land', speed: c.kind === 'speedvault' ? 4 : 2 });
     }
   }
 
@@ -602,6 +735,7 @@ export class Player {
       if (n.y >= MIN_FLOOR_NORMAL_Y) {
         // chão caminhável: empurra só para cima (não escorrega em rampas)
         this.onFloor = true;
+        this.floorNormal.copy(n);
         this.collider.translate(_push.set(0, r.depth / n.y, 0));
         if (this.velocity.y < 0) this.velocity.y = 0;
       } else {
@@ -837,10 +971,12 @@ export class Player {
     if (this.ladder || this.climb?.toLadder) return 'NA ESCADA';
     if (this.slide) return 'DESLIZANDO';
     if (this.rollTime >= 0) return 'ROLANDO';
-    if (this.climb) return this.climb.kind === 'vault' ? 'PULANDO OBSTÁCULO' : 'ESCALANDO';
+    if (this.hang) return 'PENDURADO';
+    if (this.climb) return { speedvault: 'SALTANDO OBSTÁCULO', stepover: 'PASSANDO POR CIMA', mantle: 'SUBINDO', climb: 'ESCALANDO', pullup: 'SUBINDO NA BORDA' }[this.climb.kind] ?? 'ESCALANDO';
     if (!this.onFloor) return this.velocity.y > 0 ? 'PULANDO' : 'CAINDO';
     if (this.crouched) return this.horizontalSpeed > 0.4 ? 'AGACHADO • ANDANDO' : 'AGACHADO';
     if (this.horizontalSpeed < 0.4) return 'PARADO';
-    return this.sprinting ? 'CORRENDO' : 'ANDANDO';
+    if (this.sprinting) return 'CORRENDO';
+    return this.horizontalSpeed > 2.4 ? 'TROTANDO' : 'ANDANDO';
   }
 }

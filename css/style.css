@@ -196,3 +196,10 @@ body:not(.touch) .touch-only { display: none; }
 @keyframes sway { from { transform: scale(1.02) translateX(-4px); } to { transform: scale(1.04) translateX(4px); } }
 
 #btn-use { right: calc(max(24px, env(safe-area-inset-right)) + 200px); bottom: 60px; width: 72px; height: 72px; font-size: 12px; border-color: #e6dcc0; background: rgba(120,100,50,0.5); }
+
+#equip-label {
+  position: absolute; right: max(16px, env(safe-area-inset-right)); bottom: 18px;
+  font-size: 11px; letter-spacing: 2px; opacity: 0.6; text-shadow: 0 1px 2px #000;
+}
+body.touch #equip-label { right: auto; left: 50%; transform: translateX(-50%); bottom: 40px; }
+#btn-swap { right: calc(max(24px, env(safe-area-inset-right)) + 108px); bottom: 180px; width: 56px; height: 56px; font-size: 13px; }

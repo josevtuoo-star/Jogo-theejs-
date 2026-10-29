@@ -157,47 +157,154 @@ export class GameAudio {
   }
 
   // ---------- jogador ----------
-  step(surface = 'grass', run = false, crouch = false) {
-    const k = crouch ? 0.35 : run ? 1.3 : 1;
-    switch (surface) {
-      case 'concrete':
-        this._burst({ duration: 0.05, freq: 1400 + Math.random() * 400, q: 0.9, gain: 0.22 * k, type: 'bandpass' });
-        this._burst({ duration: 0.06, freq: 260, gain: 0.18 * k });
-        break;
-      case 'wood':
-        this._burst({ duration: 0.1, freq: 320 + Math.random() * 80, q: 5, gain: 0.5 * k, type: 'bandpass' });
-        this._tone(140 + Math.random() * 30, 0.08, 0.12 * k, 'triangle');
-        if (Math.random() < 0.15) this._tone(380 + Math.random() * 120, 0.3, 0.02, 'sawtooth', 0.02, 0.85, 0, 700); // rangido
-        break;
-      case 'metal':
-        this._burst({ duration: 0.05, freq: 2500, q: 2, gain: 0.15 * k, type: 'bandpass' });
-        this._tone(480 + Math.random() * 60, 0.25, 0.05 * k, 'sine');
-        this._tone(1270 + Math.random() * 90, 0.18, 0.025 * k, 'sine');
-        break;
-      case 'water':
-        this.splash(0.25 * k);
-        break;
-      default: // grama / terra / folhas secas
-        this._burst({ duration: run ? 0.14 : 0.11, freq: 380 + Math.random() * 220, q: 0.8, gain: 0.2 * k });
-        this._burst({ duration: 0.09, freq: 3600, q: 0.8, gain: 0.07 * k, type: 'bandpass', delay: 0.01 });
+  /** Muitos "grãos" curtíssimos de ruído: estalos de folha seca, cascalho, areia. */
+  _grains(n, span, { fMin = 2000, fMax = 6000, q = 1.2, gain = 0.06, dur = 0.012, delay = 0 } = {}) {
+    for (let i = 0; i < n; i++) {
+      this._burst({
+        duration: dur * (0.5 + Math.random()), freq: fMin + Math.random() * (fMax - fMin), q,
+        gain: gain * (0.4 + Math.random() * 0.8), type: 'bandpass', attack: 0.001,
+        delay: delay + Math.pow(Math.random(), 1.6) * span,
+      });
     }
   }
 
+  /** Passo: calcanhar + rolagem do pé + ponta, com textura de cada piso. */
+  step(surface = 'grass', run = false, crouch = false, speed = 3) {
+    const k = crouch ? 0.4 : run ? 1.35 : Math.min(1.1, 0.55 + speed * 0.15);
+    const toe = run ? 0.05 : 0.09; // tempo entre calcanhar e ponta
+    switch (surface) {
+      case 'concrete':
+        this._burst({ duration: 0.025, freq: 2400 + Math.random() * 600, q: 2, gain: 0.22 * k, type: 'bandpass' });
+        this._burst({ duration: 0.05, freq: 160, gain: 0.22 * k });
+        this._grains(7, 0.05, { fMin: 3500, fMax: 8000, gain: 0.035 * k, dur: 0.008 });
+        this._burst({ duration: 0.05, freq: 1700, q: 1.3, gain: 0.1 * k, type: 'bandpass', delay: toe, attack: 0.01 }); // arrasto da ponta
+        break;
+      case 'wood':
+        this._burst({ duration: 0.13, freq: 260 + Math.random() * 60, q: 6, gain: 0.55 * k, type: 'bandpass' });
+        this._tone(120 + Math.random() * 25, 0.11, 0.14 * k, 'triangle');
+        this._burst({ duration: 0.06, freq: 900, q: 3, gain: 0.12 * k, type: 'bandpass', delay: toe });
+        if (Math.random() < 0.2) this._tone(330 + Math.random() * 120, 0.35, 0.018, 'sawtooth', 0.03, 0.82, 0, 650); // rangido da tábua
+        break;
+      case 'metal':
+        this._burst({ duration: 0.03, freq: 3000, q: 2, gain: 0.16 * k, type: 'bandpass' });
+        for (const [f, g] of [[430, 0.045], [1170, 0.025], [2310, 0.012]]) this._tone(f * (0.95 + Math.random() * 0.1), 0.3, g * k, 'sine');
+        this._burst({ duration: 0.04, freq: 140, gain: 0.15 * k });
+        break;
+      case 'water':
+        this.splash(0.22 * k);
+        break;
+      default: // grama alta, terra e folhas secas
+        this._burst({ duration: 0.06, freq: 170, gain: 0.2 * k });                                   // pé no chão
+        this._grains(run ? 26 : 18, run ? 0.07 : 0.1, { fMin: 1800, fMax: 7000, gain: 0.05 * k, dur: 0.014 }); // folhas estalando
+        this._burst({ duration: 0.14, freq: 1100, q: 0.7, gain: 0.05 * k, type: 'bandpass', attack: 0.02 }); // grama roçando
+    }
+    this._foley(k, run, speed);
+  }
+
+  /** Roupa roçando e equipamento balançando a cada passo. */
+  _foley(k, run, speed) {
+    this._burst({ duration: 0.16, freq: 1300 + Math.random() * 500, q: 0.6, gain: 0.03 * k, type: 'bandpass', attack: 0.05, delay: 0.02 });
+    if (speed > 3) {
+      // fivelas e alças da mochila
+      for (let i = 0; i < (run ? 3 : 1); i++) this._tone(3200 + Math.random() * 2500, 0.05, 0.008 * k, 'sine', 0.03 + Math.random() * 0.06);
+      this._burst({ duration: 0.09, freq: 420, q: 2, gain: 0.04 * k, type: 'bandpass', delay: 0.04 }); // mochila batendo nas costas
+    }
+  }
+
+  /** Esforço curto (pulo, escalada): som de garganta com formantes. */
+  grunt(strength = 1) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    const o = this.ctx.createOscillator();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(115 + Math.random() * 20, t);
+    o.frequency.linearRampToValueAtTime(95, t + 0.18);
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.035 * strength, t + 0.03);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+    const f1 = this.ctx.createBiquadFilter(); f1.type = 'bandpass'; f1.frequency.value = 550; f1.Q.value = 4;
+    const f2 = this.ctx.createBiquadFilter(); f2.type = 'bandpass'; f2.frequency.value = 1050; f2.Q.value = 5;
+    o.connect(f1).connect(g);
+    o.connect(f2).connect(g);
+    g.connect(this.sfx);
+    o.start(t);
+    o.stop(t + 0.25);
+    this._burst({ duration: 0.18, freq: 900, q: 1, gain: 0.05 * strength, type: 'bandpass', attack: 0.02 }); // ar saindo
+  }
+
+  /** Respiração com formantes; intensity 0..1 (ofegante depois de correr). */
+  breathEffort(intensity, inhale) {
+    const k = 0.25 + intensity * 0.75;
+    this._burst({
+      duration: inhale ? 0.32 : 0.42, freq: inhale ? 1500 : 900, q: 1.2,
+      gain: 0.06 * k, type: 'bandpass', attack: inhale ? 0.1 : 0.05,
+    });
+    this._burst({ duration: inhale ? 0.3 : 0.4, freq: inhale ? 2600 : 1700, q: 2, gain: 0.025 * k, type: 'bandpass', attack: 0.08 });
+  }
+
+  unsheath() {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    const src = this.ctx.createBufferSource();
+    src.buffer = this.noise;
+    const f = this.ctx.createBiquadFilter();
+    f.type = 'bandpass'; f.Q.value = 6;
+    f.frequency.setValueAtTime(2500, t);
+    f.frequency.exponentialRampToValueAtTime(6500, t + 0.3);
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.12, t + 0.05);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.32);
+    src.connect(f).connect(g).connect(this.sfx);
+    src.start(t, Math.random());
+    src.stop(t + 0.35);
+    this._tone(4200, 0.25, 0.02, 'sine', 0.22);
+  }
+
+  sheathe() {
+    this._burst({ duration: 0.18, freq: 3000, q: 3, gain: 0.08, type: 'bandpass', attack: 0.03 });
+    this._burst({ duration: 0.05, freq: 600, q: 2, gain: 0.12, type: 'bandpass', delay: 0.16 });
+  }
+
+  punch() {
+    this._burst({ duration: 0.12, freq: 900, q: 1, gain: 0.08, type: 'bandpass', attack: 0.03 });
+  }
+
+  punchHit(pos) {
+    this._at(pos, () => {
+      this._burst({ duration: 0.09, freq: 220, gain: 0.5 });
+      this._burst({ duration: 0.04, freq: 1500, q: 1.5, gain: 0.15, type: 'bandpass' });
+    });
+  }
+
+  grab() {
+    this._burst({ duration: 0.05, freq: 700, q: 2, gain: 0.25, type: 'bandpass' });
+    this._burst({ duration: 0.05, freq: 900, q: 2, gain: 0.2, type: 'bandpass', delay: 0.07 });
+    this.grunt(0.8);
+  }
+
   jump() {
-    this._burst({ duration: 0.08, freq: 500, gain: 0.15 });
+    this._burst({ duration: 0.08, freq: 300, gain: 0.18 });
     this._burst({ duration: 0.18, freq: 1200, q: 0.8, gain: 0.05, type: 'bandpass', attack: 0.03 }); // roupa
+    if (Math.random() < 0.5) this.grunt(0.5);
   }
 
   land(speed, surface = 'grass') {
-    const k = Math.min(speed / 15, 1);
-    this._burst({ duration: 0.18 + k * 0.15, freq: 220 + k * 120, q: 0.7, gain: 0.25 + k * 0.4 });
-    if (surface !== 'grass') this.step(surface, true);
+    const k = Math.min(speed / 12, 1);
+    this._burst({ duration: 0.16 + k * 0.15, freq: 160 + k * 100, q: 0.7, gain: 0.25 + k * 0.45 }); // corpo
+    this.step(surface, true, false, 6);
+    this.step(surface, true, false, 6);
+    // equipamento chacoalhando
+    for (let i = 0; i < 2 + k * 4; i++) this._tone(2800 + Math.random() * 3000, 0.05, 0.012, 'sine', 0.03 + Math.random() * 0.12);
+    if (speed > 8) this.grunt(0.8);
   }
 
-  climb() {
-    this._burst({ duration: 0.35, freq: 1300, q: 0.7, gain: 0.12, type: 'bandpass', attack: 0.08 });
-    this._burst({ duration: 0.07, freq: 400, gain: 0.25, delay: 0.05 });
-    this.breath(0.6);
+  climb(heavy = false) {
+    this._burst({ duration: 0.35, freq: 1300, q: 0.7, gain: 0.12, type: 'bandpass', attack: 0.08 }); // roupa raspando
+    this._burst({ duration: 0.06, freq: 700, q: 2, gain: 0.22, type: 'bandpass', delay: 0.04 });     // mãos na borda
+    this._burst({ duration: 0.06, freq: 650, q: 2, gain: 0.18, type: 'bandpass', delay: 0.1 });
+    this.grunt(heavy ? 1 : 0.6);
   }
 
   ladderStep() {
@@ -216,7 +323,22 @@ export class GameAudio {
   }
 
   swing() {
-    this._burst({ duration: 0.18, freq: 1800, q: 2.5, gain: 0.12, type: 'bandpass', attack: 0.06 });
+    // corte no ar: o tom do vento cai conforme a lâmina passa
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    const src = this.ctx.createBufferSource();
+    src.buffer = this.noise;
+    const f = this.ctx.createBiquadFilter();
+    f.type = 'bandpass'; f.Q.value = 3;
+    f.frequency.setValueAtTime(3200, t);
+    f.frequency.exponentialRampToValueAtTime(800, t + 0.2);
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.14, t + 0.07);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+    src.connect(f).connect(g).connect(this.sfx);
+    src.start(t, Math.random());
+    src.stop(t + 0.25);
   }
 
   /** Faca acertando uma superfície. */
