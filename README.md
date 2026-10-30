@@ -20,12 +20,13 @@ Jogo de sobrevivência em primeira pessoa (estilo DayZ / Minecraft / The Walking
 - **1ª pessoa de verdade**: a câmera fica nos olhos do próprio corpo. Braços, mãos, faca e lanterna que aparecem em 1ª pessoa são os mesmos da 3ª pessoa, fazendo o mesmo movimento
 - **Captura de movimento real** (CMU Graphics Lab Motion Capture Database): andar, trotar, correr e andar agachado vêm de gravações de pessoas de verdade, adaptadas ao esqueleto do personagem (quadril, tronco, coxas, joelhos, tornozelos e braços) e tocadas no ritmo do passo do jogo — o som da pisada cai na pisada; os clipes se misturam pela velocidade
 - Ciclo de passo procedural por baixo (de lado, de costas, transições): joelhos, tornozelos, quadril subindo/descendo e girando, ombros em contrarrotação, braços com cotovelo, inclinação com a velocidade
-- **IK de braço**: as mãos se apoiam de verdade na borda ao escalar e nos degraus da escada
+- **IK de braço e perna**: as mãos se apoiam de verdade na borda ao escalar e nos degraus da escada; na escada os pés também pisam nos degraus, alternando com as mãos
 - Parado muda o peso de perna, dá passinhos ao girar; inclina nas curvas; amortece pousos
 - 3ª pessoa (`V`) com colisão da câmera
 
 ### Itens e combate
-- **Personagem e faca em modelos 3D** (`models/`): o personagem é preso no esqueleto procedural do jogo com pesos automáticos, então anima igual em 1ª e 3ª pessoa
+- **Personagem realista com esqueleto próprio** (`models/sobrevivente.glb`, CC0): jaqueta de couro e jeans, malha suavizada, pesos de pele de verdade (ombro, cotovelo e dedos deformam certo). O esqueleto do jogo (captura de movimento + IK) dirige os ossos do modelo a cada quadro: coluna em três vértebras, pescoço, clavículas que sobem/avançam com o braço e dedos que fecham na pegada; em 1ª pessoa só a cabeça some (você vê seu próprio corpo e as mangas da jaqueta)
+- **Interação com o cenário**: ao abrir/fechar uma porta a mão vai até a maçaneta, gira (trinco) e acompanha a porta empurrando; para pegar munição/virotes ele se abaixa e a mão vai até o objeto
 - **Mãos livres** ou **faca** (`1` / `2`): a faca fica guardada na bainha no quadril e é sacada com animação e som
 - **Combos**: mãos livres = jab → direto → gancho; faca = corte → corte de volta → estocada
 - **Golpe forte**: segurar o botão carrega (o braço vai para trás) e soltar desfere — soco giratório ou facada de cima para baixo, com passo à frente
@@ -56,7 +57,7 @@ Jogo de sobrevivência em primeira pessoa (estilo DayZ / Minecraft / The Walking
 - Mirando, o personagem anda devagar e não corre; em 3ª pessoa a câmera aproxima
 - **Andar de lado/diagonal** com o quadril e as pernas virando para a direção do passo e o tronco mirando para frente
 - **Bonecos de treino** de estopa: balançam conforme a força e direção do golpe, guardam as marcas de corte e soltam palha
-- **Lanterna** (`L`): presa no peito quando desligada; ligada, vai para a mão esquerda e a luz sai da lente
+- **Lanterna** (`L`): presa no peito quando desligada; ligada, vai para a mão esquerda e a luz sai da lente (corpo serrilhado, clipe de bolso, refletor cromado e vidro)
 
 ### Mundo pós-apocalíptico
 - Carros abandonados enferrujados, queimados (só a carcaça), capotado, com pneus murchos, portas e capô abertos, vidros trincados
@@ -138,7 +139,7 @@ js/photoAssets.js   texturas fotográficas, material do terreno (mistura por alt
 js/icons.js         ícones SVG dos botões touch
 js/trees.js         copas de árvore com cartões de galhos/folhas (texturas desenhadas em canvas)
 assets/             sons gravados (sfx/), texturas (tex/), céu HDRI (env/), animações de captura de movimento (anim/) e CREDITS.md
-models/             carl.glb (personagem) e faca.glb
+models/             sobrevivente.glb (personagem com esqueleto) e faca.glb
 js/audio.js         sons procedurais (Web Audio)
 ```
 
@@ -162,5 +163,5 @@ Poly Haven (CC0) e captura de movimento da CMU Graphics Lab Motion Capture Datab
 
 ## Créditos dos modelos 3D
 
-- “TWD Carl Grimes (Season 4)” por **floh** — https://sketchfab.com/3d-models/twd-carl-grimes-season-4-77f91796c09d431a9de30f6fdeb0a748 — licença CC BY-NC 4.0 (uso não comercial). Convertido (materiais e texturas comprimidas) para uso no jogo.
+- Personagem “Male 15” por **elbolilloduro**, do projeto [Mesh2Motion](https://github.com/Mesh2Motion/mesh2motion-app) (esqueleto humano do Mesh2Motion) — CC0. No jogo a malha foi suavizada (subdivisão com triângulos curvos, 920 → 14.720 triângulos) mantendo textura e pesos de pele.
 - “Faca de Ação” por **Wesley Pontes** — https://sketchfab.com/3d-models/faca-de-acao-07d233fb3a124bf8baf276e2f0fb730b — licença CC BY 4.0.

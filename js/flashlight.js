@@ -5,12 +5,33 @@ import * as THREE from 'three';
 // projetada), um feixe levemente visível no ar e, de vez em quando, uma piscada de mau contato.
 
 /** Modelo da lanterna, apontando para -Z. A lente fica em userData.lens. */
+let knurlTex = null;
+/** Serrilhado em losango da empunhadura (relevo). */
+function knurl() {
+  if (knurlTex) return knurlTex;
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d');
+  g.fillStyle = '#808080';
+  g.fillRect(0, 0, 64, 64);
+  g.strokeStyle = '#202020';
+  g.lineWidth = 2;
+  for (let i = -64; i < 128; i += 8) {
+    g.beginPath(); g.moveTo(i, 0); g.lineTo(i + 64, 64); g.stroke();
+    g.beginPath(); g.moveTo(i + 64, 0); g.lineTo(i, 64); g.stroke();
+  }
+  knurlTex = new THREE.CanvasTexture(c);
+  knurlTex.wrapS = knurlTex.wrapT = THREE.RepeatWrapping;
+  knurlTex.repeat.set(4, 2);
+  return knurlTex;
+}
+
 export function makeFlashlightModel(scale = 1) {
   const g = new THREE.Group();
   const body = new THREE.MeshStandardMaterial({ color: 0x23262a, roughness: 0.45, metalness: 0.7 });
-  const grip = new THREE.MeshStandardMaterial({ color: 0x15171a, roughness: 0.9 });
+  const grip = new THREE.MeshStandardMaterial({ color: 0x1b1d20, roughness: 0.6, metalness: 0.6, bumpMap: knurl(), bumpScale: 1.5 });
   const chrome = new THREE.MeshStandardMaterial({ color: 0x9a9ea4, roughness: 0.25, metalness: 0.95 });
-  const lensMat = new THREE.MeshBasicMaterial({ color: 0x3a3a34 });
+  const lensMat = new THREE.MeshBasicMaterial({ color: 0x3a3a34, transparent: true, opacity: 0.35, depthWrite: false }); // vidro: apagada, vê-se o refletor
 
   const add = (geo, mat, z, rx = Math.PI / 2) => {
     const m = new THREE.Mesh(geo, mat);
@@ -28,6 +49,11 @@ export function makeFlashlightModel(scale = 1) {
   const button = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.006, 0.014), chrome);
   button.position.set(0, 0.018, 0.0);
   g.add(button);
+  // clipe de bolso e refletor cromado atrás da lente
+  const clip = new THREE.Mesh(new THREE.BoxGeometry(0.006, 0.002, 0.07), chrome);
+  clip.position.set(0, -0.0195, 0.045);
+  g.add(clip);
+  add(new THREE.CylinderGeometry(0.006, 0.0215, 0.02, 14, 1, true), new THREE.MeshStandardMaterial({ color: 0xdfe3e8, roughness: 0.12, metalness: 1, side: THREE.BackSide }), -0.062);
   const lens = add(new THREE.CircleGeometry(0.022, 16), lensMat, -0.0735, 0);
   lens.rotation.y = Math.PI; // a face do círculo olha para -Z
   g.userData.lens = lens;

@@ -35,6 +35,12 @@ sintetizados (Web Audio).
 | --- | --- | --- |
 | `walk`, `jog`, `run`, `crouch`, `sneak`, `zombie` | Captura de movimento da [CMU Graphics Lab Motion Capture Database](http://mocap.cs.cmu.edu/) — sujeitos/tomadas 08_01 (andar), 02_03 (trotar), 09_11 (correr), 136_09 (agachado), 77_29 (andar furtivo) e 104_41 (andar de zumbi), na conversão BVH de Bruce Hahne (cgspeed) via [Shriinivas/cmubvh](https://github.com/Shriinivas/cmubvh). Cortados num ciclo de passada (pisada a pisada), adaptados ao esqueleto do personagem, reamostrados em 48 poses e com a altura do quadril corrigida para o pé tocar o chão | Uso livre — "The data used in this project was obtained from mocap.cs.cmu.edu. The database was created with funding from NSF EIA-0196217." |
 
+## Personagem (`../models/sobrevivente.glb`)
+
+| Arquivo | Origem | Licença |
+| --- | --- | --- |
+| `sobrevivente.glb` | “Male 15” por elbolilloduro, com o esqueleto humano do [Mesh2Motion](https://github.com/Mesh2Motion/mesh2motion-app) (`static/models-variation/human/male_15.glb`). Suavizado para o jogo (subdivisão com triângulos curvos, dois níveis), mantendo textura e pesos de pele | CC0 |
+
 ## Céu (`env/`)
 
 | Arquivo | Origem | Licença |

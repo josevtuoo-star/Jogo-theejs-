@@ -19,11 +19,13 @@ import { makePose, blendPose } from './mocap.js';
 
 export const FP_HIDDEN_LAYER = 1;
 
-const HIP_Y = 0.9;
-// medidas iguais às do modelo 3D do personagem (ver playerModel.js)
-const UPPER_ARM = 0.286;
-const FOREARM_PALM = 0.32; // até o centro da mão
-const WRIST = 0.244;  // cotovelo → punho
+// medidas do esqueleto: as do corpo procedural; com um modelo 3D com esqueleto próprio elas
+// passam a ser as do modelo (Character.adaptRig, chamado por playerModel.js)
+let HIP_Y = 0.9;
+let HS = 1;                 // escala das alturas do quadril (pernas mais longas → agacha mais)
+let UPPER_ARM = 0.286;
+let FOREARM_PALM = 0.32; // até o centro da mão
+let WRIST = 0.244;  // cotovelo → punho
 
 function damp(a, b, lambda, dt) {
   return a + (b - a) * (1 - Math.exp(-lambda * dt));
@@ -96,6 +98,34 @@ function solveArmIK(arm, target, pole, weight, FOREARM = FOREARM_PALM) {
   _q.setFromRotationMatrix(_m);
   upper.quaternion.slerp(_q, weight);
   elbow.rotation.x = lerp(elbow.rotation.x, Math.acos(Math.max(-1, Math.min(1, _u.dot(_w)))), weight);
+}
+
+/**
+ * IK de perna (quadril → joelho → tornozelo): coxa e joelho para o tornozelo chegar em `target`
+ * (mundo); `pole` (espaço do quadril) é para onde o joelho aponta. O joelho dobra para trás
+ * (rotação x negativa), ao contrário do cotovelo.
+ */
+function solveLegIK(leg, target, pole, weight) {
+  if (weight <= 0.001) return;
+  const L1 = -leg.knee.position.y, L2 = -leg.ankle.position.y;
+  leg.thigh.parent.updateWorldMatrix(true, false);
+  _d.copy(target);
+  leg.thigh.parent.worldToLocal(_d).sub(leg.thigh.position);
+  const D = Math.min(Math.max(_d.length(), 0.1), L1 + L2 - 0.002);
+  _dn.copy(_d).normalize();
+  const a1 = (L1 * L1 - L2 * L2 + D * D) / (2 * D);
+  const b = Math.sqrt(Math.max(0, L1 * L1 - a1 * a1));
+  _p.copy(pole).addScaledVector(_dn, -pole.dot(_dn)).normalize();
+  _u.copy(_dn).multiplyScalar(a1).addScaledVector(_p, b);
+  _w.copy(_dn).multiplyScalar(D).sub(_u).normalize();
+  _u.normalize();
+  _y.copy(_u).negate();
+  _z.copy(_w).addScaledVector(_u, -_w.dot(_u)).normalize();
+  _x.crossVectors(_y, _z);
+  _m.makeBasis(_x, _y, _z);
+  _q.setFromRotationMatrix(_m);
+  leg.thigh.quaternion.slerp(_q, weight);
+  leg.knee.rotation.x = lerp(leg.knee.rotation.x, -Math.acos(Math.max(-1, Math.min(1, _u.dot(_w)))), weight);
 }
 
 /** Orienta a mão no mundo (a partir do antebraço já posicionado). */
@@ -517,6 +547,52 @@ export class Character {
     this._stowLayers();
   }
 
+  /**
+   * Ajusta o esqueleto às medidas de um modelo 3D com esqueleto próprio (posições das juntas no
+   * espaço do personagem, em pé, metros, frente -Z). As animações e a IK passam a usar essas
+   * medidas, então a mão do modelo cai exatamente onde a IK manda.
+   */
+  adaptRig(d) {
+    const v = (a) => new THREE.Vector3(...a);
+    HIP_Y = d.pelvis[1];
+    const legLen = v(d.thigh).distanceTo(v(d.knee)) + v(d.knee).distanceTo(v(d.ankle));
+    HS = legLen / 0.766;
+    this._hipZ = d.pelvis[2];
+    this.hips.position.set(0, HIP_Y, this._hipZ);
+    const P = v(d.pelvis), S = v(d.spine);
+    for (const leg of [this.legL, this.legR]) {
+      const s = leg === this.legR ? 1 : -1;
+      leg.thigh.position.set(s * Math.abs(d.thigh[0]), d.thigh[1] - P.y, d.thigh[2] - P.z);
+      leg.knee.position.set(0, -v(d.thigh).distanceTo(v(d.knee)), 0);
+      leg.ankle.position.set(0, -v(d.knee).distanceTo(v(d.ankle)), 0);
+    }
+    this.torso.position.set(0, S.y - P.y, S.z - P.z);
+    UPPER_ARM = v(d.shoulder).distanceTo(v(d.elbow));
+    WRIST = v(d.elbow).distanceTo(v(d.wrist));
+    FOREARM_PALM = WRIST + d.palm;
+    for (const arm of [this.armL, this.armR]) {
+      arm.shoulder.position.set(arm.side * Math.abs(d.shoulder[0]), d.shoulder[1] - S.y, d.shoulder[2] - S.z);
+      arm.elbow.position.set(0, -UPPER_ARM, 0);
+      arm.hand.position.set(0, -WRIST, 0);
+    }
+    this._shoulderZ = d.shoulder[2] - S.z;
+    this.head.position.set(0, d.head[1] - S.y, d.head[2] - S.z);
+    this.eyeLocal.set(...d.eye);
+    // armas nas costas: para fora das costas do modelo (mais largo que o corpo procedural)
+    for (const k of ['shotgun', 'crossbow']) this.mounts[k].position.z += d.back ?? 0.07;
+    this.root.updateMatrixWorld(true);
+  }
+
+  /** Usa um modelo com esqueleto próprio (o "motorista" copia a pose deste esqueleto para ele). */
+  useRig(driver) {
+    const keep = new Set();
+    for (const g of [this.knife, this.flash, this.sheath, this.bat, ...Object.values(this.guns).map((G) => G.model), driver.root]) g.traverse((o) => keep.add(o));
+    this.root.traverse((o) => { if (o.isMesh && !keep.has(o)) o.visible = false; });
+    this.rigDriver = driver;
+    this.fpHidden = [];
+    this.setFirstPerson(this.firstPerson);
+  }
+
   /** Troca o modelo da faca (mesma convenção: cabo na origem, lâmina em +Y). */
   setKnifeModel(model) {
     this.knife.clear();
@@ -570,7 +646,9 @@ export class Character {
 
   setFlashlight(on, intensity = 1) {
     this.flashOn = on;
-    this.flash.userData.lensMat.color.setHex(on && intensity > 0.5 ? 0xfff6dc : 0x3a3a34);
+    const lit = on && intensity > 0.5;
+    this.flash.userData.lensMat.color.setHex(lit ? 0xfff6dc : 0x3a3a34);
+    this.flash.userData.lensMat.opacity = lit ? 1 : 0.35;
   }
 
   get attackKind() { return { knife: 'knife', bat: 'bat' }[this.equip] ?? 'punch'; }
@@ -636,6 +714,7 @@ export class Character {
   /** Em 1ª pessoa, só a cabeça some da câmera (continua projetando sombra). */
   setFirstPerson(fp) {
     this.firstPerson = fp;
+    this.rigDriver?.setFirstPerson(fp);
     for (const m of this.fpHidden) m.layers.set(fp ? FP_HIDDEN_LAYER : 0);
     this._flashLayer();
     this._stowLayers();
@@ -678,6 +757,7 @@ export class Character {
   // ---------- animação ----------
   update(dt, player) {
     this.t += dt;
+    this._dt = dt;
     const b = this.b;
     this.root.position.copy(player.feetPosition);
     for (const e of player.events) if (e.type === 'land' && e.speed > 3.5) b.land = Math.min(1, e.speed / 11);
@@ -779,8 +859,8 @@ export class Character {
     const bob = -Math.cos(ph * 2) * lerp(0.018, 0.04, wr) * b.move;
     this.hips.position.set(
       player.lean * 0.05 + shift * 0.025,
-      HIP_Y - crouchK * 0.4 + bob - b.air * 0.04 - b.land * 0.22 - Math.abs(shift) * 0.012,
-      0
+      HIP_Y + (-crouchK * 0.4 + bob - b.air * 0.04 - b.land * 0.22 - Math.abs(shift) * 0.012) * HS,
+      this._hipZ ?? 0
     );
     // andando de lado/diagonal: o quadril e as pernas viram para a direção do passo, o tronco continua mirando
     const mi = player.moveInput;
@@ -858,7 +938,7 @@ export class Character {
       const hipsT = _mq2.copy(yq).multiply(P.hips);
       this.hips.quaternion.slerp(hipsT, w);
       this.hips.position.x = lerp(this.hips.position.x, P.hipsPos[0] + player.lean * 0.05, w);
-      this.hips.position.y = lerp(this.hips.position.y, HIP_Y + P.hipsPos[1] - b.land * 0.22, w);
+      this.hips.position.y = lerp(this.hips.position.y, HIP_Y + (P.hipsPos[1] - b.land * 0.22) * HS, w);
       // tronco: postura da captura, sem o giro das pernas (continua mirando) + olhar e inclinação
       const torsoT = _mq3.copy(hipsT).invert().multiply(P.hips).multiply(P.torso);
       _me.set(look * 0.25 - this.accelLean * 0.06, 0, -player.lean * 0.35);
@@ -877,7 +957,7 @@ export class Character {
       // andando agachado: mais baixo que a gravação (os olhos ficam na altura da câmera agachada)
       const deep = crouchK * w;
       if (deep > 0.001) {
-        this.hips.position.y -= 0.13 * deep;
+        this.hips.position.y -= 0.13 * deep * HS;
         for (const leg of [L, R]) { leg.thigh.rotateX(0.35 * deep); leg.knee.rotation.x -= 0.6 * deep; leg.ankle.rotation.x += 0.25 * deep; }
       }
       // cabeça continua estável olhando para a mira
@@ -898,11 +978,19 @@ export class Character {
       this.root.position.x += sh.x;
       this.root.position.z += sh.z;
     }
+    // alcançando algo baixo (pegar do chão/da mesa): curva o tronco e dobra os joelhos
+    const low = this._reachLow ?? 0;
+    if (low > 0.001) {
+      this.torso.rotation.x -= 0.8 * low;
+      this.head.rotation.x += 0.55 * low;
+      this.hips.position.y -= 0.3 * low * HS;
+      for (const leg of [L, R]) { leg.thigh.rotation.x += 0.8 * low; leg.knee.rotation.x -= 1.45 * low; leg.ankle.rotation.x += 0.6 * low; }
+    }
     // 1ª pessoa: os ombros vêm um pouco à frente quando as mãos trabalham na frente do rosto
     // (o tronco não aparece; os braços alcançam a arma, a lanterna e a escada sem esticar)
     const reach = this.firstPerson ? Math.max(b.gun, b.bat, b.flash, b.guard, b.ladder, Math.min(1, this.charge * 2), b.knife * 0.6) : 0;
     this._fpReach = damp(this._fpReach ?? 0, reach, 10, dt);
-    for (const arm of [A, Bm]) arm.shoulder.position.z = 0.039 - 0.09 * this._fpReach;
+    for (const arm of [A, Bm]) arm.shoulder.position.z = (this._shoulderZ ?? 0.039) - 0.09 * this._fpReach;
 
     // faca pronta: mão direita à frente do peito (aparece no canto da tela em 1ª pessoa)
     const fpRaise = this.firstPerson ? 0.1 : 0;
@@ -1062,6 +1150,7 @@ export class Character {
     this._gunPose(dt, player, look, ph, sprint, yawRate, busyHands);
     this._batPose(dt, player, look, ph, sprint, yawRate, busyHands);
     this._flashPose(player, look, ph);
+    this._reachPose(dt, player);
     this._swapPose();
 
     // ================= 3) ações de corpo inteiro =================
@@ -1080,6 +1169,8 @@ export class Character {
       A.upper.rotation.z -= d * 0.6;
       Bm.upper.rotation.z += d * 0.6;
     }
+    // modelo 3D com esqueleto próprio: copia a pose final para os ossos dele
+    this.rigDriver?.update(this);
   }
 
   /**
@@ -1274,6 +1365,41 @@ export class Character {
     setHandWorld(this.armL, qW.multiplyQuaternions(q, HAND_FLASH), w);
   }
 
+  /**
+   * Interação com o cenário: a mão vai até um ponto (maçaneta, objeto) — encosta no instante
+   * `contact` (aí a ação acontece: a porta começa a abrir, o objeto vai para a mão), segura um
+   * pouco acompanhando o ponto (empurra a porta) e volta. Se o ponto é baixo, ele se abaixa.
+   * Usa a mão livre: a direita com as mãos vazias, senão a esquerda.
+   */
+  reachTo(getPoint, { contact = 0.3, hold = 0.3, onContact = null, palm = null } = {}) {
+    if (this.reach) return false;
+    const arm = this.equip === 'hands' && !this.move ? this.armR : this.armL;
+    this.reach = { get: getPoint, t: 0, contact, end: contact + hold + 0.32, onContact, fired: false, arm, palm };
+    return true;
+  }
+
+  _reachPose(dt, player) {
+    const r = this.reach;
+    if (!r) { this._reachLow = damp(this._reachLow ?? 0, 0, 8, dt); return; }
+    r.t += dt;
+    if (!r.fired && r.t >= r.contact) { r.fired = true; r.onContact?.(); }
+    const w = smoothstep(0, r.contact * 0.9, r.t) * (1 - smoothstep(r.end - 0.3, r.end, r.t));
+    const p = r.get(this._t3 ?? (this._t3 = new THREE.Vector3()));
+    const arm = r.arm, s = arm.side;
+    arm.shoulder.updateWorldMatrix(true, false);
+    const sh = arm.shoulder.getWorldPosition(this._t1);
+    const lowT = Math.max(0, Math.min(1, (sh.y - p.y - 0.42) / 0.75)) * (r.t < r.end - 0.15 ? 1 : 0);
+    this._reachLow = damp(this._reachLow ?? 0, lowT, 7, dt);
+    // palma virada para o ponto (porta) ou para baixo (pegar), dedos para frente
+    const fx = -Math.sin(this.yaw), fz = -Math.cos(this.yaw);
+    const palm = r.palm ?? (lowT > 0.2 ? [0, -1, 0] : [fx, -0.2, fz]);
+    const fing = lowT > 0.2 ? [fx, -0.3, fz] : [0, 1, 0];
+    solveArmIK(arm, p, this._v.set(s * 0.6, -0.8, 0.25), w, FOREARM_PALM);
+    setHandWorld(arm, handBasis(s, palm, fing), w * 0.8);
+    arm.fist = lerp(arm.fist, r.fired ? 1.1 : 0.15, w);
+    if (r.t >= r.end) this.reach = null;
+  }
+
   /** Pose [direita, cima, frente, inclinação, giro, guinada] no espaço do olhar → posição/rotação no mundo. */
   _eyeSpace(P, yawOff, look, player, pos, q) {
     const eye = this._viewEye(player, this._t2);
@@ -1450,6 +1576,11 @@ export class Character {
     const lad = player.ladder?.l;
     const lp = player.ladderPhase;
     if (lad) {
+      // as mãos agarram o degrau na frente do corpo (o jogador pode estar fora do centro da
+      // escada); em 1ª pessoa mais juntas, para as duas aparecerem na tela
+      const fp = player.feetPosition, lim = (lad.width ?? 0.6) / 2 - 0.05;
+      const off = (fp.x - lad.x) * lad.tx + (fp.z - lad.z) * lad.tz;
+      const spread = this.firstPerson ? 0.17 : 0.21;
       for (const arm of [this.armL, this.armR]) {
         arm.shoulder.updateWorldMatrix(true, false);
         const sy = arm.shoulder.getWorldPosition(this._t2).y;
@@ -1462,7 +1593,11 @@ export class Character {
         // a direita de quem sobe é -tangente (quem sobe olha para -normal); antes as mãos
         // trocavam de lado e os braços se cruzavam na frente do rosto. As mãos ficam perto dos
         // montantes, com a palma virada para a escada e os dedos fechando por cima do degrau.
-        const tgt = this._t1.set(lad.x - lad.tx * arm.side * 0.22 + lad.nx * 0.05, Math.min(rung, lastRung, sy + 0.45) - 0.02, lad.z - lad.tz * arm.side * 0.22 + lad.nz * 0.05);
+        const lat = Math.max(-lim, Math.min(lim, off - arm.side * spread));
+        const raw = this._t1.set(lad.x + lad.tx * lat + lad.nx * 0.05, Math.min(rung, lastRung, sy + 0.45) - 0.02, lad.z + lad.tz * lat + lad.nz * 0.05);
+        // a mão passa de um degrau ao outro (sem teletransportar)
+        const k = arm.side > 0 ? '_ladHR' : '_ladHL';
+        const tgt = this[k] && this[k].distanceTo(raw) < 0.8 ? this[k].lerp(raw, 1 - Math.exp(-14 * this._dt)) : (this[k] = raw.clone());
         solveArmIK(arm, tgt, this._v.set(arm.side * 0.9, -0.6, 0.1), L, FOREARM_PALM);
         const hq = lad._hq ?? (lad._hq = [handBasis(-1, [-lad.nx, 0.35, -lad.nz], [0, 1, 0]), handBasis(1, [-lad.nx, 0.35, -lad.nz], [0, 1, 0])]);
         setHandWorld(arm, hq[arm.side > 0 ? 1 : 0], L);
@@ -1475,6 +1610,30 @@ export class Character {
       leg.ankle.rotation.x = lerp(leg.ankle.rotation.x, 0.3, L);
     }
     this.torso.rotation.x = lerp(this.torso.rotation.x, 0.05, L);
+    // pés nos degraus: cada pé apoia a ponta num degrau de verdade (IK de perna, joelho
+    // apontando para a escada, sola nivelada) e sobe de degrau em degrau alternando com o outro
+    if (lad) {
+      const fp = player.feetPosition, feet = fp.y, lim = (lad.width ?? 0.6) / 2 - 0.05;
+      const off = (fp.x - lad.x) * lad.tx + (fp.z - lad.z) * lad.tz;
+      const yawQ = _mq1.setFromAxisAngle(_UP, this.yaw);
+      for (const leg of [this.legL, this.legR]) {
+        const side = leg === this.legR ? 1 : -1;
+        const want = feet + 0.12 + Math.sin(lp + (side > 0 ? Math.PI : 0)) * 0.13;
+        let rung = lad.bottom + 0.3 + Math.round((want - lad.bottom - 0.3) / 0.3) * 0.3;
+        rung = Math.max(rung, lad.bottom + 0.3);
+        const ground = rung > feet + 0.45 || want < lad.bottom + 0.15;
+        const y = ground ? Math.max(feet, lad.bottom) + 0.09 : rung + 0.075;
+        // tornozelo um pouco atrás do degrau: a ponta do pé fica em cima dele
+        const lat = Math.max(-lim, Math.min(lim, off - side * 0.12));
+        const raw = this._t1.set(lad.x + lad.tx * lat + lad.nx * 0.17, y, lad.z + lad.tz * lat + lad.nz * 0.17);
+        const k = side > 0 ? '_ladFR' : '_ladFL';
+        const tgt = this[k] && this[k].distanceTo(raw) < 0.8 ? this[k].lerp(raw, 1 - Math.exp(-12 * this._dt)) : (this[k] = raw.clone());
+        solveLegIK(leg, tgt, this._v.set(0, 0.2, -1), L);
+        // sola nivelada, ponta para a escada
+        leg.knee.updateWorldMatrix(true, false);
+        leg.ankle.quaternion.slerp(leg.knee.getWorldQuaternion(_mq2).invert().multiply(yawQ), L);
+      }
+    }
   }
 
   _swimPose(player) {
@@ -1483,7 +1642,7 @@ export class Character {
     const sp = player.swimPhase;
     const reach = Math.max(0, Math.sin(sp)), sweep = Math.max(0, -Math.sin(sp));
     this.hips.rotation.x = lerp(this.hips.rotation.x, -1.1 - (player.underwater ? 0.2 : 0), W);
-    this.hips.position.y = lerp(this.hips.position.y, 1.25, W);
+    this.hips.position.y = lerp(this.hips.position.y, 1.25 * HS, W);
     this.torso.rotation.x = lerp(this.torso.rotation.x, 0.3, W);
     for (const arm of [this.armL, this.armR]) {
       arm.upper.rotation.x = lerp(arm.upper.rotation.x, 2.4 + reach * 0.6, W);
@@ -1505,7 +1664,7 @@ export class Character {
     this.legL.knee.rotation.x = lerp(this.legL.knee.rotation.x, -0.15, S);
     this.legR.thigh.rotation.x = lerp(this.legR.thigh.rotation.x, 0.9, S);
     this.legR.knee.rotation.x = lerp(this.legR.knee.rotation.x, -1.6, S);
-    this.hips.position.y = lerp(this.hips.position.y, 0.32, S);
+    this.hips.position.y = lerp(this.hips.position.y, 0.32 * HS, S);
     this.torso.rotation.x = lerp(this.torso.rotation.x, 0.45, S);
     this.armL.upper.rotation.z = lerp(this.armL.upper.rotation.z, -1.0, S);
     this.armR.upper.rotation.z = lerp(this.armR.upper.rotation.z, 0.6, S);
@@ -1516,7 +1675,7 @@ export class Character {
     const k = Math.min(1, player.rollTime / 0.65);
     const tuck = Math.sin(k * Math.PI);
     this.hips.rotation.x = -k * Math.PI * 2;
-    this.hips.position.y = lerp(this.hips.position.y, 0.45, tuck);
+    this.hips.position.y = lerp(this.hips.position.y, 0.45 * HS, tuck);
     for (const leg of [this.legL, this.legR]) {
       leg.thigh.rotation.x = lerp(leg.thigh.rotation.x, 1.6, tuck);
       leg.knee.rotation.x = lerp(leg.knee.rotation.x, -2.2, tuck);

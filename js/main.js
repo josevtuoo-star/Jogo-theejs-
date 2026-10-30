@@ -10,7 +10,7 @@ import { Effects } from './effects.js';
 import { Flashlight } from './flashlight.js';
 import { PropSystem } from './physics.js';
 import { TrainingDummies } from './dummies.js';
-import { loadPlayerModel, loadKnifeModel } from './playerModel.js';
+import { loadRiggedPlayer, loadKnifeModel } from './playerModel.js';
 import { buttonHTML } from './icons.js';
 import { applyPhotoAssets } from './photoAssets.js';
 import { MocapLibrary } from './mocap.js';
@@ -64,7 +64,7 @@ const character = new Character(scene);
 const modelsReady = Promise.allSettled([
   applyPhotoAssets(world, renderer, { quality }),
   new MocapLibrary().load().then((lib) => { character.mocap = lib; }),
-  loadPlayerModel(character, 'models/carl.glb'),
+  loadRiggedPlayer(character, 'models/sobrevivente.glb'),
   loadKnifeModel('models/faca.glb').then((m) => character.setKnifeModel(m)),
 ]).then((r) => r.forEach((x) => x.status === 'rejected' && console.warn('modelo não carregou:', x.reason)));
 const audio = new GameAudio();
@@ -355,15 +355,20 @@ function handleActions() {
     $('btn-light')?.classList.toggle('on', flashOn);
     audio.click();
   }
-  if (input.wasPressed('use') && useTarget) {
+  if (input.wasPressed('use') && useTarget && !character.reach) {
+    // a mão vai até o objeto/maçaneta; a ação acontece quando ela encosta
     if (useTarget.isPickup) {
-      pickUp(useTarget);
+      const p = useTarget, obj = p.root ?? p.mesh;
+      character.reachTo((v) => obj.getWorldPosition(v), { contact: 0.42, hold: 0.08, onContact: () => { if (pickups.includes(p.mesh)) pickUp(p); haptic(10); } });
     } else {
-      const door = useTarget;
-      const what = door.toggle(player.feetPosition);
-      if (what === 'open') audio.doorOpen(door.center);
+      const door = useTarget, knob = door.knobFor(player.feetPosition);
+      character.reachTo((v) => knob.getWorldPosition(v), { contact: 0.3, hold: 0.45, onContact: () => {
+        audio.knob(knob.getWorldPosition(new THREE.Vector3()));
+        const what = door.toggle(player.feetPosition);
+        if (what === 'open') audio.doorOpen(door.center);
+        haptic(10);
+      } });
     }
-    haptic(10);
   }
   // mãos livres / faca / revólver / espingarda / besta / taco (teclas 1–6, rodinha ou botão de trocar)
   let wantEquip = null;

@@ -2,10 +2,8 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 // Modelos 3D do jogador (arquivos .glb em /models):
-//  - personagem: veio sem esqueleto de animação, então aqui ele é "costurado" no esqueleto
-//    procedural do Character — cada vértice ganha pesos para os ossos mais próximos (quadril,
-//    tronco, cabeça, braço, antebraço, mão, coxa, canela, pé) e vira um SkinnedMesh. Assim o
-//    MESMO corpo anima em 1ª e 3ª pessoa com todas as animações que já existem;
+//  - personagem: modelo com esqueleto e pesos de pele próprios (ModelRig, abaixo), dirigido pelo
+//    esqueleto procedural do Character — o MESMO corpo em 1ª e 3ª pessoa, com todas as animações;
 //  - faca: só é reorientada para a convenção do jogo (lâmina em +Y, fio em -Z, cabo na origem).
 
 const loader = new GLTFLoader();
@@ -38,142 +36,6 @@ async function loadModelFile(url) {
   return loader.parseAsync(glb.buffer, base);
 }
 
-// Escala e juntas do modelo, medidas no próprio arquivo (unidades originais, Z para cima,
-// rosto para -Y). S converte para metros; depois o modelo gira 180° para olhar para -Z.
-const S = 0.026;
-const J = {
-  shoulder: [7.6, 55.0, 1.5],
-  elbow: [14.2, 46.2, 1.8],
-  wrist: [20.5, 39.5, 0.0],
-  fingers: [22.7, 33.9, -0.5],
-  hip: [4.0, 33.0, 0.5],
-  knee: [4.8, 19.5, 0.6],
-  ankle: [5.4, 3.6, 1.8],
-  toe: [5.6, 0.8, -7.0],
-};
-/** Junta do modelo no espaço do personagem (metros, frente -Z); side: +1 direita, -1 esquerda. */
-function joint(name, side) {
-  const [x, z, y] = J[name];
-  // original (x, y, z) com Z para cima → three (x, z, -y) → gira 180° em Y → (-x, z, y)
-  // o lado +x do arquivo é o lado esquerdo do personagem
-  return new THREE.Vector3(side * x * S, z * S, y * S);
-}
-
-/** Partes que pertencem 100% à cabeça (e somem da câmera em 1ª pessoa). */
-const HEAD_ONLY = /hat|carl_head|eyeball|hair/;
-const FP_HIDE = /hat|carl_head|eyeball|hair|mechanic_head_color/;
-
-function closestOnSegment(p, a, b, out) {
-  const ab = _ab.subVectors(b, a);
-  const t = Math.max(0, Math.min(1, _ap.subVectors(p, a).dot(ab) / Math.max(ab.lengthSq(), 1e-9)));
-  return out.copy(a).addScaledVector(ab, t);
-}
-const _ab = new THREE.Vector3(), _ap = new THREE.Vector3(), _c = new THREE.Vector3(), _v = new THREE.Vector3();
-
-/**
- * Carrega o personagem e o prende no esqueleto do `character`.
- * Retorna true se deu certo (senão o corpo procedural continua).
- */
-export async function loadPlayerModel(character, url) {
-  const gltf = await loadModelFile(url);
-  const ch = character;
-
-  // ---------- ossos: um por grupo do esqueleto procedural ----------
-  // bind = onde a junta está no modelo; rest = direção do osso no esqueleto em repouso (para baixo)
-  const down = new THREE.Vector3(0, -1, 0);
-  const bones = [];
-  const bindInv = [];
-  const segs = []; // segmento de influência de cada osso (espaço do modelo) + raio
-  const addBone = (group, origin, dirTo, a, b, radius, side = 0) => {
-    const bone = new THREE.Bone();
-    group.add(bone);
-    const q = new THREE.Quaternion();
-    if (dirTo) q.setFromUnitVectors(down, _v.subVectors(dirTo, origin).normalize());
-    const m = new THREE.Matrix4().compose(origin, q, new THREE.Vector3(1, 1, 1));
-    bones.push(bone);
-    bindInv.push(m.invert());
-    segs.push({ a, b, r: radius, side });
-    return bones.length - 1;
-  };
-  // tronco: as juntas do modelo coincidem com o esqueleto em repouso (sem rotação)
-  const v3 = (x, y, z) => new THREE.Vector3(x, y, z);
-  const hipsY = ch.hips.position.y, torsoY = hipsY + ch.torso.position.y, headY = torsoY + ch.head.position.y;
-  const iHips = addBone(ch.hips, v3(0, hipsY, 0), null, v3(0, 0.84, 0.01), v3(0, 1.0, 0.01), 0.15);
-  addBone(ch.torso, v3(0, torsoY, 0), null, v3(0, 1.0, 0), v3(0, 1.42, 0.02), 0.15);
-  const iHead = addBone(ch.head, v3(0, headY, 0), null, v3(0, 1.52, 0), v3(0, 1.74, -0.02), 0.1);
-  for (const [arm, leg] of [[ch.armL, ch.legL], [ch.armR, ch.legR]]) {
-    const s = arm.side;
-    const sh = joint('shoulder', s), el = joint('elbow', s), wr = joint('wrist', s), fi = joint('fingers', s);
-    addBone(arm.upper, sh, el, sh, el, 0.05, s);
-    addBone(arm.elbow, el, wr, el, wr, 0.042, s);
-    // mão até os nós dos dedos + dedos (osso próprio para fechar o punho)
-    const kn1 = new THREE.Vector3().lerpVectors(wr, fi, 0.5), kn2 = new THREE.Vector3().lerpVectors(wr, fi, 0.74);
-    addBone(arm.hand, wr, fi, wr, kn1, 0.036, s);
-    addBone(arm.fingers, kn1, fi, kn1, kn2, 0.024, s);
-    addBone(arm.fingers2, kn2, fi, kn2, fi, 0.022, s);
-    const hp = joint('hip', s), kn = joint('knee', s), an = joint('ankle', s), to = joint('toe', s);
-    addBone(leg.thigh, hp, kn, hp, kn, 0.075, s);
-    addBone(leg.knee, kn, an, kn, an, 0.055, s);
-    addBone(leg.ankle, an, null, an, to, 0.05, s);
-  }
-  const skeleton = new THREE.Skeleton(bones, bindInv);
-
-  // ---------- malhas: geometria para o espaço do personagem + pesos ----------
-  const toChar = new THREE.Matrix4().makeRotationY(Math.PI).multiply(new THREE.Matrix4().makeScale(S, S, S));
-  gltf.scene.updateMatrixWorld(true);
-  const meshes = [];
-  gltf.scene.traverse((o) => { if (o.isMesh) meshes.push(o); });
-  const out = [];
-  const p = new THREE.Vector3();
-  for (const src of meshes) {
-    const name = src.material.name || src.name;
-    const geo = src.geometry.clone();
-    geo.applyMatrix4(new THREE.Matrix4().multiplyMatrices(toChar, src.matrixWorld));
-    const pos = geo.attributes.position;
-    const n = pos.count;
-    const idx = new Uint16Array(n * 4), wts = new Float32Array(n * 4);
-    const headOnly = HEAD_ONLY.test(name);
-    const cand = [];
-    for (let i = 0; i < n; i++) {
-      if (headOnly) { idx[i * 4] = iHead; wts[i * 4] = 1; continue; }
-      p.fromBufferAttribute(pos, i);
-      const side = p.x > 0.015 ? 1 : p.x < -0.015 ? -1 : 0;
-      cand.length = 0;
-      for (let b = 0; b < segs.length; b++) {
-        const sg = segs[b];
-        if (sg.side && side && sg.side !== side) continue; // braço/perna só do próprio lado
-        const d = closestOnSegment(p, sg.a, sg.b, _c).distanceTo(p) / sg.r;
-        cand.push([b, 1 / (Math.pow(d, 5) + 1e-5)]);
-      }
-      cand.sort((x, y) => y[1] - x[1]);
-      let sum = 0;
-      for (let k = 0; k < 4; k++) sum += cand[k][1];
-      for (let k = 0; k < 4; k++) {
-        const w = cand[k][1] / sum;
-        idx[i * 4 + k] = cand[k][0];
-        wts[i * 4 + k] = w < 0.02 ? 0 : w;
-      }
-      // renormaliza depois de descartar pesos muito pequenos
-      let s2 = 0;
-      for (let k = 0; k < 4; k++) s2 += wts[i * 4 + k];
-      for (let k = 0; k < 4; k++) wts[i * 4 + k] /= s2;
-    }
-    geo.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(idx, 4));
-    geo.setAttribute('skinWeight', new THREE.Float32BufferAttribute(wts, 4));
-    const mat = src.material;
-    mat.envMapIntensity = 0.6;
-    const mesh = new THREE.SkinnedMesh(geo, mat);
-    mesh.bind(skeleton, new THREE.Matrix4());
-    mesh.frustumCulled = false;
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    mesh.userData.fpHide = FP_HIDE.test(name);
-    out.push(mesh);
-  }
-  ch.useModel(out, iHips);
-  return true;
-}
-
 /** Faca do arquivo, reorientada: cabo no centro, lâmina para +Y, fio para -Z. */
 export async function loadKnifeModel(url, length = 0.26) {
   const gltf = await loadModelFile(url);
@@ -201,4 +63,210 @@ export async function loadKnifeModel(url, length = 0.26) {
     g.add(mesh);
   });
   return g;
+}
+
+// ======================================================================
+// Personagem com esqueleto próprio (malha com pesos de pele feitos de verdade).
+// O esqueleto do jogo (Character) continua sendo animado como antes — captura de movimento,
+// IK das armas, escada, escalada — e a cada quadro a pose final é copiada para os ossos do
+// modelo: rotação de cada segmento (com o desvio medido numa pose de referência em T), coluna
+// distribuída entre as três vértebras, pescoço entre tronco e cabeça, clavículas que apontam
+// para o ombro (sobem/avançam junto com o braço) e dedos que fecham conforme a pegada.
+
+const _q1 = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _q3 = new THREE.Quaternion(), _qs = new THREE.Quaternion(), _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3();
+const DOWN = new THREE.Vector3(0, -1, 0);
+const FINGERS = ['index', 'middle', 'ring', 'pinky', 'thumb'];
+
+export class ModelRig {
+  constructor(gltf) {
+    this.root = new THREE.Group();
+    this.root.rotation.y = Math.PI; // o arquivo olha para +Z; o jogo, para -Z
+    this.root.add(gltf.scene);
+    this.meshes = [];
+    const B = (this.B = {});
+    gltf.scene.traverse((o) => {
+      if (o.isBone) B[o.name] = o;
+      if (o.isSkinnedMesh) {
+        o.frustumCulled = false;
+        o.castShadow = true;
+        o.receiveShadow = true;
+        for (const m of Array.isArray(o.material) ? o.material : [o.material]) { m.envMapIntensity = 0.6; m.side = THREE.FrontSide; }
+        this.meshes.push(o);
+      }
+    });
+    this.fp = false;
+    this.root.updateMatrixWorld(true);
+  }
+
+  _w(name) { return this.B[name].getWorldPosition(new THREE.Vector3()); }
+
+  /** Medidas das juntas (espaço do personagem, em pé, frente -Z) para Character.adaptRig. */
+  measure() {
+    const w = (n) => this._w(n).toArray();
+    const head = this._w('head');
+    return {
+      pelvis: w('pelvis'), spine: w('spine_01'),
+      thigh: w('thigh_r'), knee: w('calf_r'), ankle: w('foot_r'),
+      shoulder: w('upperarm_r'), elbow: w('lowerarm_r'), wrist: w('hand_r'),
+      palm: this._w('hand_r').distanceTo(this._w('middle_01_r')) * 0.6,
+      head: head.toArray(),
+      eye: [0, 0.045, -0.076], // olhos em relação à junta da cabeça
+    };
+  }
+
+  /**
+   * Pose de referência: o esqueleto do jogo em T, com cada segmento apontando exatamente como o
+   * osso do modelo na pose de amarração; daí sai o desvio de rotação de cada par (grupo → osso).
+   */
+  calibrate(ch) {
+    const B = this.B;
+    const saveP = ch.root.position.clone(), saveQ = ch.root.quaternion.clone();
+    ch.root.position.set(0, 0, 0);
+    ch.root.quaternion.identity();
+    const groups = [ch.hips, ch.torso, ch.head];
+    for (const arm of [ch.armL, ch.armR]) groups.push(arm.shoulder, arm.upper, arm.elbow, arm.hand, arm.fingers, arm.fingers2);
+    for (const leg of [ch.legL, ch.legR]) groups.push(leg.thigh, leg.knee, leg.ankle);
+    for (const g of groups) g.quaternion.identity();
+    ch.root.add(this.root);
+    ch.root.updateMatrixWorld(true);
+    const align = (g, from, to) => {
+      const d = this._w(to).sub(this._w(from)).normalize();
+      g.parent.updateWorldMatrix(true, false);
+      d.applyQuaternion(g.parent.getWorldQuaternion(_q1).invert());
+      g.quaternion.setFromUnitVectors(DOWN, d);
+      g.updateMatrixWorld(true);
+    };
+    for (const [arm, s] of [[ch.armL, 'l'], [ch.armR, 'r']]) {
+      align(arm.upper, `upperarm_${s}`, `lowerarm_${s}`);
+      align(arm.elbow, `lowerarm_${s}`, `hand_${s}`);
+      align(arm.hand, `hand_${s}`, `middle_01_${s}`);
+    }
+    for (const [leg, s] of [[ch.legL, 'l'], [ch.legR, 'r']]) {
+      align(leg.thigh, `thigh_${s}`, `calf_${s}`);
+      align(leg.knee, `calf_${s}`, `foot_${s}`);
+    }
+    ch.root.updateMatrixWorld(true);
+    const off = (g, name) => g.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(B[name].getWorldQuaternion(new THREE.Quaternion()));
+    const M = (this.map = {});
+    M.pelvis = off(ch.hips, 'pelvis');
+    for (const n of ['spine_01', 'spine_02', 'spine_03', 'neck_01']) M[n] = B[n].getWorldQuaternion(new THREE.Quaternion());
+    M.spine_03 = off(ch.torso, 'spine_03');
+    M.head = off(ch.head, 'head');
+    // (coluna e pescoço: desvio em relação à mistura quadril→tronco e tronco→cabeça, iguais na referência)
+    this.arms = [];
+    for (const [arm, s] of [[ch.armL, 'l'], [ch.armR, 'r']]) {
+      const clav = B[`clavicle_${s}`];
+      const fingers = [];
+      for (const f of FINGERS) {
+        for (let k = 1; k <= 3; k++) {
+          const b = B[`${f}_0${k}_${s}`];
+          const c = B[`${f}_0${k + 1}_${s}`] ?? B[`${f}_04_leaf_${s}`];
+          if (!b || !c) continue;
+          const dir = this._w(c.name).sub(this._w(b.name)).normalize();
+          const axis = new THREE.Vector3().crossVectors(dir, DOWN).normalize();
+          axis.applyQuaternion(b.getWorldQuaternion(_q1).invert());
+          fingers.push({ b, bind: b.quaternion.clone(), axis, k, thumb: f === 'thumb' });
+        }
+      }
+      this.arms.push({
+        arm, clav, clavBind: clav.quaternion.clone(), upperLocal: B[`upperarm_${s}`].position.clone(),
+        upper: B[`upperarm_${s}`], lower: B[`lowerarm_${s}`], hand: B[`hand_${s}`],
+        oUpper: off(arm.upper, `upperarm_${s}`), oLower: off(arm.elbow, `lowerarm_${s}`), oHand: off(arm.hand, `hand_${s}`),
+        fingers,
+      });
+    }
+    this.legs = [];
+    for (const [leg, s] of [[ch.legL, 'l'], [ch.legR, 'r']]) {
+      this.legs.push({ leg, thigh: B[`thigh_${s}`], calf: B[`calf_${s}`], foot: B[`foot_${s}`],
+        oThigh: off(leg.thigh, `thigh_${s}`), oCalf: off(leg.knee, `calf_${s}`), oFoot: off(leg.ankle, `foot_${s}`) });
+    }
+    for (const g of groups) g.quaternion.identity();
+    ch.root.position.copy(saveP);
+    ch.root.quaternion.copy(saveQ);
+    ch.root.updateMatrixWorld(true);
+    // pescoço escondido em 1ª pessoa: 16 cm para baixo e 6 cm para trás, no espaço do peito
+    this.neckBind = B.neck_01.position.clone();
+    this.neckHide = new THREE.Vector3(0, -0.16, 0.06).applyQuaternion(B.spine_03.getWorldQuaternion(new THREE.Quaternion()).invert());
+    this.setFirstPerson(this.fp);
+    // estado de cada osso nesta passada (rotação/posição no mundo)
+    for (const b of Object.values(B)) b.userData.wq = new THREE.Quaternion(), b.userData.wp = new THREE.Vector3();
+  }
+
+  /**
+   * Em 1ª pessoa a cabeça e o pescoço somem: o osso do pescoço encolhe e afunda para dentro do
+   * peito (senão o toco do pescoço aparecia na frente da câmera ao olhar para baixo).
+   */
+  setFirstPerson(fp) {
+    this.fp = fp;
+    const n = this.B.neck_01;
+    n.scale.setScalar(fp ? 0.001 : 1);
+    if (this.neckBind) n.position.copy(this.neckBind).addScaledVector(this.neckHide, fp ? 1 : 0);
+  }
+
+  // osso ← rotação no mundo (o pai já foi resolvido nesta passada)
+  _set(b, q) {
+    const p = b.parent.userData;
+    b.quaternion.copy(_qs.copy(p.wq).invert().multiply(q));
+    b.userData.wq.copy(q);
+    b.userData.wp.copy(b.position).applyQuaternion(p.wq).add(p.wp);
+  }
+
+  update(ch) {
+    const B = this.B, M = this.map;
+    if (!M) return;
+    ch.root.updateMatrixWorld(true);
+    const R = B.root;
+    R.updateWorldMatrix(true, false);
+    R.getWorldQuaternion(R.userData.wq);
+    R.getWorldPosition(R.userData.wp);
+    const gq = (g, out) => g.getWorldQuaternion(out);
+    const qH = gq(ch.hips, new THREE.Quaternion()), qT = gq(ch.torso, new THREE.Quaternion()), qC = gq(ch.head, new THREE.Quaternion());
+    // quadril: rotação e posição
+    const pel = B.pelvis;
+    ch.hips.getWorldPosition(_v1);
+    pel.position.copy(_v1).sub(R.userData.wp).applyQuaternion(_q1.copy(R.userData.wq).invert());
+    this._set(pel, _q1.copy(qH).multiply(M.pelvis));
+    // coluna em três partes, pescoço no meio do caminho
+    this._set(B.spine_01, _q1.slerpQuaternions(qH, qT, 0.35).multiply(M.spine_01));
+    this._set(B.spine_02, _q1.slerpQuaternions(qH, qT, 0.7).multiply(M.spine_02));
+    this._set(B.spine_03, _q1.copy(qT).multiply(M.spine_03));
+    this._set(B.neck_01, _q1.slerpQuaternions(qT, qC, 0.5).multiply(M.neck_01));
+    this._set(B.head, _q1.copy(qC).multiply(M.head));
+    for (const a of this.arms) {
+      // clavícula: gira (até um limite) para o ombro do modelo ir aonde está o ombro do esqueleto
+      const clav = a.clav, pq = clav.parent.userData.wq;
+      const rest = _q3.copy(pq).multiply(a.clavBind);
+      clav.userData.wp.copy(clav.position).applyQuaternion(pq).add(clav.parent.userData.wp);
+      const from = _v1.copy(a.upperLocal).applyQuaternion(rest).normalize();
+      const to = a.arm.shoulder.getWorldPosition(_v2).sub(clav.userData.wp).normalize();
+      _q2.setFromUnitVectors(from, to);
+      const ang = 2 * Math.acos(Math.min(1, Math.abs(_q2.w)));
+      if (ang > 0.5) _q2.slerp(_q1.identity(), 1 - 0.5 / ang);
+      this._set(clav, _q2.multiply(rest));
+      this._set(a.upper, gq(a.arm.upper, _q1).multiply(a.oUpper));
+      this._set(a.lower, gq(a.arm.elbow, _q1).multiply(a.oLower));
+      this._set(a.hand, gq(a.arm.hand, _q1).multiply(a.oHand));
+      // dedos: fecham em volta do que a mão segura (o quanto vem da pegada do esqueleto)
+      const fist = a.arm.fist ?? 0.35;
+      for (const f of a.fingers) {
+        const ang = f.thumb ? fist * (f.k === 1 ? 0.15 : 0.35) : fist * (f.k === 1 ? 0.8 : f.k === 2 ? 1.0 : 0.7);
+        f.b.quaternion.copy(f.bind).multiply(_q1.setFromAxisAngle(f.axis, ang));
+      }
+    }
+    for (const l of this.legs) {
+      this._set(l.thigh, gq(l.leg.thigh, _q1).multiply(l.oThigh));
+      this._set(l.calf, gq(l.leg.knee, _q1).multiply(l.oCalf));
+      this._set(l.foot, gq(l.leg.ankle, _q1).multiply(l.oFoot));
+    }
+  }
+}
+
+/** Carrega o personagem com esqueleto próprio e liga ao esqueleto do jogo. */
+export async function loadRiggedPlayer(character, url) {
+  const gltf = await loadModelFile(url);
+  const rig = new ModelRig(gltf);
+  character.adaptRig(rig.measure());
+  rig.calibrate(character);
+  character.useRig(rig);
+  return true;
 }

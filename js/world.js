@@ -137,11 +137,13 @@ class Door {
     slab.castShadow = slab.receiveShadow = true;
     this.pivot.add(slab);
     const knobMat = world.mat.chrome;
+    this.knobs = [];
     for (const s of [-1, 1]) {
       const knob = new THREE.Mesh(new THREE.SphereGeometry(0.035, 10, 8), knobMat);
       knob.position.set(width - 0.1, 1.0, s * 0.06);
       knob.castShadow = true;
       this.pivot.add(knob);
+      this.knobs.push(knob);
     }
     // tábuas horizontais de reforço
     for (const y of [0.35, height - 0.35]) {
@@ -157,6 +159,12 @@ class Door {
   }
 
   get isOpen() { return Math.abs(this.target) > 0.1; }
+
+  /** Maçaneta do lado de quem está em `pos` (a mão do personagem vai até ela). */
+  knobFor(pos) {
+    const local = this.pivot.worldToLocal(pos.clone());
+    return this.knobs[local.z > 0 ? 1 : 0];
+  }
 
   _rebuild() {
     this.pivot.updateMatrixWorld(true);

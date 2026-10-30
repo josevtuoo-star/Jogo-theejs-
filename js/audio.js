@@ -789,6 +789,12 @@ export class GameAudio {
     });
   }
 
+  /** Mão girando a maçaneta: trinco do fecho. */
+  knob(pos) {
+    if (this._play('metal_latch', { gain: 0.3, rate: 1.25, pos })) return;
+    this._burst({ duration: 0.04, freq: 2600, q: 3, gain: 0.12, type: 'bandpass' });
+  }
+
   grab() {
     this._burst({ duration: 0.05, freq: 700, q: 2, gain: 0.25, type: 'bandpass' });
     this._burst({ duration: 0.05, freq: 900, q: 2, gain: 0.2, type: 'bandpass', delay: 0.07 });
