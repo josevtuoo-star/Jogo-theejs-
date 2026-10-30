@@ -85,7 +85,7 @@ export class Shotgun {
     this.loaded = 2;
     this.reserve = 6;
     this.longGun = true;
-    this.sightY = 0.067;
+    this.sightY = 0.074; // o olho um pouco acima da telha: dá para ver os canos até a massa
     this.readyFP = [0.13, -0.19, 0.26, -0.14, 0.22, 0.2]; // 1ª pessoa: inclinada, mostrando o lado
     this.reloadTime = 2.3;
     const g = new THREE.Group();
@@ -97,7 +97,7 @@ export class Shotgun {
       [-0.32, 0.015], [-0.18, 0.018], [-0.06, 0.036]], 0.036, 0.007), wood);
     add(g, profile([[-0.32, -0.09], [-0.335, -0.091], [-0.342, 0.006], [-0.328, 0.006]], 0.038, 0.003), dk);
     // báscula (ação)
-    add(g, profile([[0.12, 0.062], [0.03, 0.062], [0.025, 0.012], [0.11, 0.012]], 0.046, 0.004), st);
+    add(g, profile([[0.12, 0.05], [0.03, 0.05], [0.025, 0.012], [0.11, 0.012]], 0.046, 0.004), st); // (topo abaixo da telha: a mira passa por cima)
     // guarda-mato e gatilhos
     const guard = add(g, new THREE.TorusGeometry(0.02, 0.0025, 6, 14, Math.PI * 1.15), st, 0, 0.0, -0.045);
     guard.rotation.set(0, Math.PI / 2, Math.PI * 0.95);
@@ -200,6 +200,7 @@ export class Crossbow {
     this.longGun = true;
     this.sightY = 0.082;
     this.reloadTime = 1.9;
+    this.readyFP = [0.07, -0.17, 0.28, -0.1, 0.1, 0.08]; // 1ª pessoa: mais alta (não some embaixo da tela)
     const g = new THREE.Group();
     const body = new THREE.MeshStandardMaterial({ color: 0x23262a, metalness: 0.4, roughness: 0.55 });
     const camo = new THREE.MeshStandardMaterial({ color: 0x3f3b2c, roughness: 0.8 });

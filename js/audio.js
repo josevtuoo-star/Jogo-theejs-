@@ -609,21 +609,30 @@ export class GameAudio {
   }
 
   // ---------- besta ----------
-  /** Disparo: estalo do gatilho, corda vibrando e o "vuup" do virote. */
+  /**
+   * Disparo da besta, montado com gravações reais: o trinco soltando (clique metálico), a corda
+   * batendo nos batentes (pancada seca de madeira/metal, bem curta), um "tum" grave que morre
+   * rápido (os braços vibrando) e o virote cortando o ar.
+   */
   crossbowShot() {
     if (!this.ctx) return;
-    this._burst({ duration: 0.03, freq: 3200, q: 3, gain: 0.25, type: 'bandpass' });
-    // corda: tom grave que cai e treme
-    this._tone(118, 0.32, 0.2, 'sawtooth', 0, 0.82, 0, 900);
-    this._tone(236, 0.2, 0.06, 'triangle', 0.005, 0.85);
-    this._burst({ duration: 0.09, freq: 500, q: 1, gain: 0.35, type: 'lowpass' });
-    this._sweep(2400, 900, 0.22, 0.09, 2);
+    const rec = this._play('metal_latch', { gain: 0.55, rate: 1.35, vary: 0.05 });
+    this._play('imp_wood_heavy', { gain: 0.75, rate: 1.55, vary: 0.05, delay: 0.008 });
+    this._play('imp_plank_medium', { gain: 0.45, rate: 1.9, delay: 0.012 });
+    if (!rec) this._burst({ duration: 0.025, freq: 3200, q: 3, gain: 0.25, type: 'bandpass' });
+    // braços/corda: tom grave curtinho (não um zumbido longo)
+    this._tone(92 + Math.random() * 10, 0.11, 0.16, 'triangle', 0.01, 0.7, 0, 600);
+    this._burst({ duration: 0.06, freq: 260, q: 1.2, gain: 0.35, type: 'bandpass', delay: 0.008 });
+    // virote: sopro que se afasta
+    this._sweep(3000, 700, 0.2, 0.06, 1.5);
   }
 
-  /** Puxar a corda até o trinco (estica e trava). */
+  /** Puxar a corda até o trinco: rangido da corda esticando e o clique ao travar. */
   crossbowCock() {
-    this._burst({ duration: 0.4, freq: 700, q: 2, gain: 0.06, type: 'bandpass', attack: 0.3 });
-    this._play('metal_click', { gain: 0.5, rate: 1.2, delay: 0.38 }) || this._burst({ duration: 0.03, freq: 3000, q: 4, gain: 0.25, type: 'bandpass', delay: 0.38 });
+    if (!this._play('creak', { gain: 0.22, rate: 2.2, vary: 0.08 })) this._burst({ duration: 0.4, freq: 700, q: 2, gain: 0.06, type: 'bandpass', attack: 0.3 });
+    this._play('leather', { gain: 0.25, rate: 1.4, delay: 0.05 });
+    this._play('metal_click', { gain: 0.55, rate: 1.15, delay: 0.38 }) || this._burst({ duration: 0.03, freq: 3000, q: 4, gain: 0.25, type: 'bandpass', delay: 0.38 });
+    this._play('metal_latch', { gain: 0.25, rate: 1.6, delay: 0.4 });
   }
 
   /** Virote encaixando no trilho. */

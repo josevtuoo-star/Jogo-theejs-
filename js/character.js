@@ -135,16 +135,20 @@ const WRIST_R_GUN = wristFrom(GRIP.clone().add(new THREE.Vector3(0.018, 0, 0)), 
 const L_PALM = [0.85, 0.42, -0.1], L_FING = [0.12, -0.45, -0.88];
 const HAND_L_GUN = handBasis(-1, L_PALM, L_FING);
 const WRIST_L_GUN = wristFrom(new THREE.Vector3(-0.022, -0.02, -0.004), L_PALM, L_FING);
-// mão esquerda com a lanterna ao lado da arma, apontando para frente
-const F_PALM = [1, 0, 0], F_FING = [0, -0.12, -1];
-const HAND_L_FLASH = handBasis(-1, F_PALM, F_FING);
-const WRIST_L_FLASH = wristFrom(new THREE.Vector3(-0.15, -0.035, 0.0), F_PALM, F_FING);
+// lanterna na mão esquerda: a palma por baixo do corpo da lanterna e os dedos fechando pelo
+// lado direito; a lente sai à frente, do lado do polegar (a lanterna fica no mundo, como as armas)
+const FL_PALM = [0.25, 1, 0], FL_FING = [0.95, 0.1, -0.3];
+const HAND_FLASH = handBasis(-1, FL_PALM, FL_FING);
+const WRIST_FLASH = wristFrom(new THREE.Vector3(-0.004, -0.034, 0.045), FL_PALM, FL_FING);
+// lanterna sozinha no espaço do olhar: à esquerda, baixa, apontando um pouco para o centro
+export const FLASH_POSE = [-0.15, -0.2, 0.34, 0.02, 0, -0.04];
+const FLASH_ON_GUN = new THREE.Vector3(-0.13, -0.005, -0.03); // com o revólver: ao lado da arma
 // armas longas: direita na empunhadura da coronha, esquerda por baixo do guarda-mão
 // (palma para cima, dedos envolvendo pelo lado direito)
 const LR_PALM = [-1, 0, 0], LR_FING = [0, -0.7, -0.7];
 const LL_PALM = [0.3, 1, 0], LL_FING = [0.72, 0.1, -0.68];
 const LONG_HANDS = {
-  shotgun: { qR: handBasis(1, LR_PALM, LR_FING), wR: wristFrom(new THREE.Vector3(0.018, 0.0, 0.03), LR_PALM, LR_FING) },
+  shotgun: { qR: handBasis(1, LR_PALM, LR_FING), wR: wristFrom(new THREE.Vector3(0.02, -0.022, 0.036), LR_PALM, LR_FING) }, // (baixa: não tapa a mira)
   crossbow: { qR: handBasis(1, R_PALM, [0, -0.45, -0.89]), wR: wristFrom(new THREE.Vector3(0.018, -0.026, 0.026), R_PALM, [0, -0.45, -0.89]) },
 };
 const HAND_L_LONG = handBasis(-1, LL_PALM, LL_FING);
@@ -221,6 +225,7 @@ const HEAVY = { punch: 'haymaker', knife: 'overhead', bat: 'batSmash' };
 const HAND_TWIST = Math.PI / 2;
 const KNIFE_REST = -Math.PI / 2 - 0.5;
 const _UP = new THREE.Vector3(0, 1, 0);
+const _QI = new THREE.Quaternion();
 const _mq1 = new THREE.Quaternion(), _mq2 = new THREE.Quaternion(), _mq3 = new THREE.Quaternion(), _me = new THREE.Euler(); // faca na mão, lâmina para frente
 const KNIFE_STAB = -Math.PI * 0.97;    // lâmina alinhada com o antebraço
 
@@ -469,11 +474,12 @@ export class Character {
       if (equip === k) this.scene.add(G.model); else stow(G.model, this.mounts[k]);
     }
     if (this.bat) { if (equip === 'bat') this.scene.add(this.bat); else stow(this.bat, this.batMount); }
-    // lanterna: na mão esquerda (lente ao longo do antebraço) ou presa no peito, apontando para frente
+    // lanterna: na mão esquerda (posicionada no mundo por _flashPose) ou presa no peito
     if (flashOn) {
-      this.armL.hand.add(this.flash);
-      this.flash.position.set(0, -0.06, -0.015);
-      this.flash.rotation.set(-Math.PI / 2, 0, 0);
+      this.chestClip.updateWorldMatrix(true, false);
+      this.flash.updateWorldMatrix(true, false);
+      this.flash.matrixWorld.decompose(this.flash.position, this.flash.quaternion, new THREE.Vector3());
+      this.scene.add(this.flash);
     } else {
       this.chestClip.add(this.flash);
       this.flash.position.set(0, 0, 0);
@@ -710,7 +716,9 @@ export class Character {
     // a lanterna vai para a mão quando liga e volta para o peito quando desliga
     // (com espingarda/besta as duas mãos estão na arma: ela continua acesa presa no peito)
     const isLong = (it) => it === 'shotgun' || it === 'crossbow';
-    const wantHeld = this.flashOn && b.flash > 0.5 && !isLong(this.equip) && !(this.swap >= 0 && isLong(this.swapTo));
+    // (recarregando o revólver ela volta para o peito: as duas mãos trabalham na arma)
+    const wantHeld = this.flashOn && b.flash > 0.5 && !isLong(this.equip) && !(this.swap >= 0 && isLong(this.swapTo)) &&
+      !(this.reloadT >= 0 && this.equip === 'gun');
     if (wantHeld !== this._heldFlash) this._placeItems(this.equip, wantHeld);
 
     // troca de item: a mão desce até o quadril, troca, e volta
@@ -796,8 +804,15 @@ export class Character {
       -hipSwing * 1.4 - this.legYaw,
       -player.lean * 0.35
     );
-    const breath = Math.sin(this.t * (1.6 + player.exertion * 2.2)) * (0.008 + player.exertion * 0.012);
-    this.torso.scale.set(1, 1 + breath * (1 - b.move * 0.7), 1);
+    // respiração: a fase é somada aos poucos (multiplicar o tempo total pela frequência fazia o
+    // ritmo "pular" quando o cansaço mudava, e o peito — e a câmera junto — tremia)
+    const ex = this._ex = damp(this._ex ?? 0, player.exertion, 1.5, dt);
+    this._breathPh = ((this._breathPh ?? 0) + dt * (1.6 + ex * 2.0)) % (Math.PI * 2);
+    const breath = Math.sin(this._breathPh);
+    this.torso.scale.set(1, 1 + breath * (0.006 + ex * 0.008) * (1 - b.move * 0.7), 1);
+    // cansado e parado: ombros sobem e descem com a respiração ofegante, tronco um pouco curvado
+    const pant = ex * (1 - b.move);
+    this.torso.rotation.x += pant * (0.08 + breath * 0.012);
     // cabeça estabilizada: aponta para onde o jogador olha
     this.head.rotation.set(look * 0.75 - this.torso.rotation.x - this.hips.rotation.x, -this.torso.rotation.y * 0.8, -this.torso.rotation.z * 0.5);
 
@@ -825,6 +840,14 @@ export class Character {
       if (tJog > 0.001 && mc.has('jog')) blendPose(P, mc.sample('jog', u, Q), tJog);
       if (tRun > 0.001 && mc.has('run')) blendPose(P, mc.sample('run', u, Q), tRun);
       if (crouchK > 0.01 && mc.has('crouch')) blendPose(P, mc.sample('crouch', u, Q), crouchK);
+      // as gravações de corrida são de ~3 m/s; correndo a 6 m/s a passada precisa ser bem maior
+      // (senão o pé desliza no chão): amplia o balanço das coxas, joelhos e braços
+      const amp = 1 + 0.55 * sprint * (1 - crouchK);
+      if (amp > 1.001) {
+        for (const k of ['thighL', 'thighR']) P[k].slerpQuaternions(_QI, _mq3.copy(P[k]), amp);
+        for (const k of ['upperL', 'upperR']) P[k].slerpQuaternions(_QI, _mq3.copy(P[k]), 1 + (amp - 1) * 0.5);
+        P.kneeL *= 1 + (amp - 1) * 0.45; P.kneeR *= 1 + (amp - 1) * 0.45;
+      }
       const w = wMo;
       const yq = _mq1.setFromAxisAngle(_UP, this.legYaw);
       const hipsT = _mq2.copy(yq).multiply(P.hips);
@@ -936,7 +959,18 @@ export class Character {
     if (ch > 0.001 && !this.move) {
       const tremble = Math.sin(this.t * 40) * 0.015 * ch;
       if (heavyMove.kind === 'bat') { for (let i = 0; i < 6; i++) this._batP[i] = heavyMove.wind[i] + (i === 3 ? tremble * 2 : 0); this._batK = ch; }
-      else poseArm(armOf(heavyMove), heavyMove.wind.map((v, i) => v + (i === 0 ? tremble : 0)), ch);
+      else {
+        poseArm(armOf(heavyMove), heavyMove.wind.map((v, i) => v + (i === 0 ? tremble : 0)), ch);
+        // em 1ª pessoa o braço lá atrás some da tela: o punho recua até o lado do rosto (a faca sobe
+        // acima da cabeça), tremendo com a força, e a outra mão protege
+        if (this.firstPerson) {
+          const arm = armOf(heavyMove), tr = Math.sin(this.t * 38) * 0.006 * ch;
+          const E = heavyMove.kind === 'knife' ? [0.13, 0.07 + tr, 0.22, 0, 0, 0] : [0.17, -0.07 + tr, 0.19, 0, 0, 0];
+          this._eyeSpace(E, 0, look, player, this._t1, this._chq ?? (this._chq = new THREE.Quaternion()));
+          solveArmIK(arm, this._t1, this._v.set(arm.side * 0.8, -0.5, 0.2), ch);
+          if (heavyMove.kind === 'punch') guardIK(arm === A ? Bm : A, ch);
+        }
+      }
       this.torso.rotation.y += -heavyMove.twist * 0.6 * ch;
       this.torso.rotation.x -= heavyMove.kind === 'knife' ? 0.12 * ch : -0.05 * ch;
       grip = heavyMove.grip ? ch : 0;
@@ -996,6 +1030,7 @@ export class Character {
 
     this._gunPose(dt, player, look, ph, sprint, yawRate, busyHands);
     this._batPose(dt, player, look, ph, sprint, yawRate, busyHands);
+    this._flashPose(player, look, ph);
     this._swapPose();
 
     // ================= 3) ações de corpo inteiro =================
@@ -1160,14 +1195,52 @@ export class Character {
       else tgt = cylP.lerp(sup, smoothstep(2.0, 2.35, tr));
       solveArmIK(this.armL, tgt, this._v.set(-0.6, -0.8, 0.3), wR);
     } else if (this._heldFlash) {
-      // lanterna na esquerda, ao lado da arma, iluminando para onde se mira
-      solveArmIK(this.armL, M.localToWorld(this._t1.copy(WRIST_L_FLASH)), this._v.set(-0.7, -0.7, 0.3), join, WRIST);
-      setHandWorld(this.armL, qW.multiplyQuaternions(M.quaternion, HAND_L_FLASH), join);
+      // a esquerda segura a lanterna ao lado da arma (_flashPose)
     } else {
       const wL = join * (1 - oneHand);
       solveArmIK(this.armL, M.localToWorld(this._t1.copy(WRIST_L_GUN)), this._v.set(-0.6, -0.8, 0.3), wL, WRIST);
       setHandWorld(this.armL, qW.multiplyQuaternions(M.quaternion, HAND_L_GUN), wL);
     }
+  }
+
+  /**
+   * Lanterna na mão esquerda: posicionada no espaço do olhar (ou ao lado do revólver) e a mão
+   * vai até ela com IK, envolvendo o corpo da lanterna — sem atravessar a mão. Ao ligar, a mão
+   * a tira da presilha do peito.
+   */
+  _flashPose(player, look, ph) {
+    if (!this._heldFlash) return;
+    const b = this.b, F = this.flash;
+    const pos = this._flPos ?? (this._flPos = new THREE.Vector3());
+    const q = this._flQ ?? (this._flQ = new THREE.Quaternion());
+    const P = FLASH_POSE.slice();
+    P[1] += Math.sin(ph * 2) * 0.01 * b.move;
+    P[0] += Math.sin(ph + 1) * 0.008 * b.move;
+    P[3] += Math.sin(this.t * 1.1) * 0.01;
+    P[2] -= 0.12 * b.obstruct;
+    this._eyeSpace(P, 0, look, player, pos, q);
+    const gk = this.equip === 'gun' ? smoothstep(0.65, 1, b.gun) : 0;
+    if (gk > 0.001) {
+      const M = this.revolver.model;
+      pos.lerp(M.localToWorld(this._t1.copy(FLASH_ON_GUN)), gk);
+      q.slerp(M.quaternion, gk);
+    }
+    const kd = smoothstep(0.5, 0.95, b.flash);
+    if (kd < 0.999) {
+      this.chestClip.updateWorldMatrix(true, false);
+      const cp = this.chestClip.getWorldPosition(this._t1);
+      const cq = this.chestClip.getWorldQuaternion(this._cq ?? (this._cq = new THREE.Quaternion()));
+      pos.lerpVectors(cp, pos, kd);
+      q.slerpQuaternions(cq, q, kd);
+    }
+    F.position.copy(pos);
+    F.quaternion.copy(q);
+    F.updateMatrixWorld(true);
+    const w = smoothstep(0.5, 0.75, b.flash);
+    const wrist = (this._t3 ?? (this._t3 = new THREE.Vector3())).copy(WRIST_FLASH).applyQuaternion(q).add(pos);
+    solveArmIK(this.armL, wrist, this._v.set(-0.6, -0.9, 0.2), w, WRIST);
+    const qW = this._qW ?? (this._qW = new THREE.Quaternion());
+    setHandWorld(this.armL, qW.multiplyQuaternions(q, HAND_FLASH), w);
   }
 
   /** Pose [direita, cima, frente, inclinação, giro, guinada] no espaço do olhar → posição/rotação no mundo. */
@@ -1350,9 +1423,12 @@ export class Character {
         arm.shoulder.updateWorldMatrix(true, false);
         const sy = arm.shoulder.getWorldPosition(this._t2).y;
         // degrau acima do ombro, alternando entre as mãos
-        const want = sy + 0.28 + Math.sin(lp + (arm.side > 0 ? 0 : Math.PI)) * 0.15;
+        // (em 1ª pessoa as mãos pegam degraus mais baixos: o braço não passa na frente do rosto)
+        const want = sy + (this.firstPerson ? 0.06 : 0.28) + Math.sin(lp + (arm.side > 0 ? 0 : Math.PI)) * (this.firstPerson ? 0.12 : 0.15);
         const rung = lad.bottom + 0.3 + Math.round((want - lad.bottom - 0.3) / 0.3) * 0.3;
-        const tgt = this._t1.set(lad.x + lad.tx * arm.side * 0.2 + lad.nx * 0.04, Math.min(rung, lad.top + 0.6), lad.z + lad.tz * arm.side * 0.2 + lad.nz * 0.04);
+        // (só degraus que existem: perto do topo a mão não fica agarrando o ar acima da escada)
+        const lastRung = lad.bottom + 0.3 + Math.floor((lad.top + 0.2 - lad.bottom - 0.3) / 0.3) * 0.3;
+        const tgt = this._t1.set(lad.x + lad.tx * arm.side * 0.2 + lad.nx * 0.04, Math.min(rung, lastRung, sy + 0.45), lad.z + lad.tz * arm.side * 0.2 + lad.nz * 0.04);
         solveArmIK(arm, tgt, this._v.set(arm.side * 0.9, -0.3, 0.3), L);
       }
     }
@@ -1414,4 +1490,4 @@ export class Character {
 }
 
 /** Para ajustes finos (console/testes): pontos das mãos na arma. */
-export const GUN_HANDS = { WRIST_R_GUN, WRIST_L_GUN, WRIST_L_FLASH };
+export const GUN_HANDS = { WRIST_R_GUN, WRIST_L_GUN, WRIST_FLASH };

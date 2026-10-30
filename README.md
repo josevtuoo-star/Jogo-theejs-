@@ -72,7 +72,7 @@ Jogo de sobrevivência em primeira pessoa (estilo DayZ / Minecraft / The Walking
 
 ### Interface e plataformas
 - HUD com vida, bússola, item na mão, mira dinâmica e dicas de contexto (escalar, escada, pendurado, porta, natação)
-- Controles de PC, toque (Android) e controle; configurações de sensibilidade, FOV, volume, qualidade, inverter Y, balanço da câmera, FPS, tamanho dos botões e vibração
+- Controles de PC, toque (Android) e controle; configurações de sensibilidade, FOV, volume, qualidade, antisserrilhado (liga/desliga), inverter Y, balanço da câmera, FPS, tamanho dos botões e vibração
 
 ## Controles
 

@@ -6,7 +6,11 @@ html, body {
   font-family: "Segoe UI", Roboto, Arial, sans-serif;
   user-select: none; -webkit-user-select: none;
   touch-action: none; overscroll-behavior: none;
+  -webkit-touch-callout: none;
 }
+/* segurar/arrastar um botão não pode criar "cópia" (fantasma de arrastar), seleção nem menu */
+button, svg, img, .tbtn, .wslot, #hud, #touch-ui { -webkit-user-drag: none; user-drag: none; -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+.settings input, .settings select { -webkit-user-select: auto; user-select: auto; }
 
 #game, #game canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
 

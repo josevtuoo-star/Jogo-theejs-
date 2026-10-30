@@ -123,6 +123,10 @@ export class Input {
   // ---------------- Android / touch ----------------
   _bindTouch() {
     document.body.classList.add('touch');
+    // segurar um botão no Android abria menu, seleção de texto ou arrastava uma "cópia" do botão
+    for (const ev of ['contextmenu', 'dragstart', 'selectstart']) {
+      document.addEventListener(ev, (e) => { if (!(e.target instanceof Element && e.target.closest('.settings'))) e.preventDefault(); }, { passive: false });
+    }
     this.joyBase = document.getElementById('joy-base');
     this.joyKnob = document.getElementById('joy-knob');
 

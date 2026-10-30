@@ -17,7 +17,11 @@ import { MocapLibrary } from './mocap.js';
 
 // ---------- renderizador ----------
 const container = document.getElementById('game');
-const renderer = new THREE.WebGLRenderer({ antialias: !isTouchDevice, powerPreference: 'high-performance' });
+// antisserrilhado (MSAA): escolhido nas configurações; muda só recriando o contexto (recarrega)
+const savedAA = (() => {
+  try { return JSON.parse(localStorage.getItem('survival-settings') || '{}').antialias ?? !isTouchDevice; } catch { return !isTouchDevice; }
+})();
+const renderer = new THREE.WebGLRenderer({ antialias: savedAA, powerPreference: 'high-performance' });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -81,7 +85,7 @@ const ui = {
   death: $('death'), deathReason: $('death-reason'), respawn: $('respawn-btn'),
   sens: $('sens'), sensVal: $('sens-val'), fov: $('fov'), fovVal: $('fov-val'),
   volume: $('volume'), volumeVal: $('volume-val'), quality: $('quality'),
-  invert: $('invert-y'), headbob: $('headbob'), showFps: $('show-fps'),
+  invert: $('invert-y'), headbob: $('headbob'), showFps: $('show-fps'), antialias: $('antialias'),
 };
 
 // ---------- qualidade gráfica ----------
@@ -158,6 +162,7 @@ function loadSettings() {
     if (s.btnSize) ui.btnSize.value = s.btnSize;
     ui.haptics.checked = s.haptics !== false;
   } catch { /* sem armazenamento disponível */ }
+  ui.antialias.checked = savedAA;
   applySettings();
 }
 
@@ -183,12 +188,19 @@ function applySettings() {
     localStorage.setItem('survival-settings', JSON.stringify({
       sens: ui.sens.value, fov: ui.fov.value, volume: ui.volume.value, quality: ui.quality.value,
       invert: ui.invert.checked, headbob: ui.headbob.checked, showFps: ui.showFps.checked,
-      btnSize: ui.btnSize.value, haptics: ui.haptics.checked,
+      btnSize: ui.btnSize.value, haptics: ui.haptics.checked, antialias: ui.antialias.checked,
     }));
   } catch { /* ignore */ }
 }
 for (const el of [ui.sens, ui.fov, ui.volume, ui.btnSize]) el.addEventListener('input', applySettings);
 for (const el of [ui.quality, ui.invert, ui.headbob, ui.showFps, ui.haptics]) el.addEventListener('change', applySettings);
+ui.antialias.addEventListener('change', () => {
+  applySettings();
+  // só recarrega se a escolha ficou salva (senão voltaria igual)
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem('survival-settings') || '{}').antialias; } catch { /* sem armazenamento */ }
+  if (saved === ui.antialias.checked && saved !== savedAA) location.reload();
+});
 
 /** Vibração curta no celular (pouso, dano, escalada). */
 function haptic(ms) {
@@ -1091,6 +1103,7 @@ function updateHud() {
   const aim = character.b.aim;
   let spread = 4 + Math.min(player.horizontalSpeed, 8) * 1.3 + (player.onFloor ? 0 : 8);
   if (gunOut) spread = lerp(spread + 6, 2, aim) + (character._heldFlash && eq === 'gun' ? 7 : 0) + (eq === 'shotgun' ? 10 - aim * 4 : 0);
+  spread += character.charge * 9; // carregando o golpe forte: a mira abre
   ui.crosshair.style.setProperty('--gap', spread.toFixed(1) + 'px');
   // mirando em 1ª pessoa usa a alça e massa do revólver (sem cruz)
   ui.crosshair.classList.toggle('hide', player.onLadder || player.isClimbing || player.rolling || player.dead || (gunOut && aim > 0.6 && !rig.thirdPerson));
