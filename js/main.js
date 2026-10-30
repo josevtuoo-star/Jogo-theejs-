@@ -1077,7 +1077,7 @@ function updateHud() {
   ui.reloadBtn?.classList.toggle('hidden', !gunOut);
   ui.ammo.classList.toggle('hidden', !gunOut);
   if (gunOut) {
-    const g = character.gun;
+    const g = character.guns[eq]; // (durante a troca já mostra a arma que está vindo)
     ui.ammoLoaded.textContent = g.loaded;
     ui.ammoReserve.textContent = g.reserve;
     ui.ammo.classList.toggle('empty', g.loaded === 0);
