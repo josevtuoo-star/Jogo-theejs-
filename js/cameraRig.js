@@ -95,7 +95,7 @@ export class CameraRig {
     const sprintActive = (player.sprinting && player.horizontalSpeed > 4) || player.sliding;
     // mirando com a arma: aproxima (zoom leve, mais forte pela alça e massa em 1ª pessoa)
     const aim = this.aim ?? 0;
-    this.lensK = damp(this.lensK, this.thirdPerson ? 0 : GOPRO_LENS, 6, dt);
+    this.lensK = damp(this.lensK, this.thirdPerson || this.goproEnabled === false ? 0 : GOPRO_LENS, 6, dt);
     const fovT = this.baseFov + (sprintActive ? SPRINT_FOV_BONUS : 0) + this.slideBlend * 3 - aim * (this.thirdPerson ? 12 : 22) +
       (this.lensK / GOPRO_LENS) * GOPRO_FOV_BONUS;
     this.fov = damp(this.fov, fovT, aim > 0.02 || Math.abs(this.fov - fovT) < 6 ? 12 : 4, dt);
@@ -113,7 +113,7 @@ export class CameraRig {
       // segue os olhos do corpo, sem sair da cápsula (não atravessa paredes)
       if (!this._fp) this._fp = headEye.clone();
       const t = player.clampView(_eye.copy(headEye));
-      const lambdaY = this.bobEnabled ? 40 : 7; // sem balanço: filtra o sobe-e-desce dos passos
+      const lambdaY = this.bobEnabled ? 18 : 7; // sem balanço: filtra o sobe-e-desce dos passos
       this._fp.x = damp(this._fp.x, t.x, 40, dt);
       this._fp.z = damp(this._fp.z, t.z, 40, dt);
       this._fp.y = damp(this._fp.y, t.y, lambdaY, dt);
@@ -121,7 +121,7 @@ export class CameraRig {
       this.camera.position.copy(this._fp);
       const d = this.deathBlend;
       // a câmera está presa na cabeça: sobe/desce e inclina junto com ela (menos mirando)
-      const sw = this.headSway, k = (this.bobEnabled ? 0.75 : 0.15) * (1 - aim * 0.7);
+      const sw = this.headSway, k = (this.bobEnabled ? 0.4 : 0.08) * (1 - aim * 0.8);
       const swayP = sw ? sw.x * k : 0, swayR = sw ? sw.z * k : 0;
       _euler.set((pitch + swayP) * (1 - d) + d * 0.2, yaw, this.roll + extraRoll + swayR + d * 1.3);
       this.camera.quaternion.setFromEuler(_euler);

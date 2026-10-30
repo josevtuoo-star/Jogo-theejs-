@@ -71,6 +71,7 @@ const _forward = new THREE.Vector3();
 const _right = new THREE.Vector3();
 const _wish = new THREE.Vector3();
 const _tn = new THREE.Vector3();
+const _circ = [];
 const _push = new THREE.Vector3();
 const _saveStart = new THREE.Vector3();
 const _saveEnd = new THREE.Vector3();
@@ -87,7 +88,8 @@ function damp(a, b, lambda, dt) {
 }
 
 export class Player {
-  constructor(octree, spawn, ladders = [], { waterAt = () => -Infinity, doors = [], heightAt = null } = {}) {
+  constructor(octree, spawn, ladders = [], { waterAt = () => -Infinity, doors = [], heightAt = null, circlesNear = null } = {}) {
+    this.circlesNear = circlesNear; // troncos e pedras (colisão 2D)
     this.heightAt = heightAt; // relevo do terreno (colisão analítica, fora do Octree)
     this.octree = octree;
     this.ladders = ladders;
@@ -137,6 +139,7 @@ export class Player {
     this.stamina = 100;       // fôlego: correr, pular, escalar e ficar pendurado gastam
     this.exhausted = false;   // zerou: só volta a correr com 30
     this.staminaRegen = 1;    // multiplicador (fome/sede/dor reduzem)
+    this.staminaEnabled = false; // sistema de fôlego guardado para depois (sem limite de corrida)
     this._staminaCd = 0;
 
     this.climb = null;        // animação de escalada em andamento
@@ -356,8 +359,8 @@ export class Player {
     this._staminaCd -= dt;
     if (this._staminaCd <= 0) this.stamina = Math.min(100, this.stamina + (this.horizontalSpeed < 0.5 ? 24 : 15) * this.staminaRegen * dt);
     if (this.exhausted && this.stamina > 30) this.exhausted = false;
-    // respiração ofegante acompanha o fôlego
-    this.exertion = Math.max(0, Math.min(1, damp(this.exertion, 1 - this.stamina / 100, 1.5, dt)));
+    // respiração ofegante depois de correr bastante (só som)
+    this.exertion = Math.max(0, Math.min(1, this.exertion + (this.sprinting && this.horizontalSpeed > 4 ? 0.07 : -0.05) * dt));
 
     if (this.slide) {
       // deslizando: perde velocidade aos poucos, dá para mirar um pouco com o movimento lateral
@@ -757,11 +760,28 @@ export class Player {
    */
   _collide() {
     for (const oct of this._octrees) this._collideWith(oct);
+    this._collideCircles();
     this._collideTerrain();
+  }
+
+  /** Troncos e pedras: empurra a cápsula para fora do círculo (só se os pés estão abaixo do topo). */
+  _collideCircles() {
+    if (!this.circlesNear) return;
+    const c = this.collider.start, feet = c.y - RADIUS;
+    for (const k of this.circlesNear(c.x, c.z, _circ)) {
+      if (feet > k.top - 0.25) continue;
+      const dx = c.x - k.x, dz = c.z - k.z, d = Math.hypot(dx, dz), min = k.r + RADIUS;
+      if (d >= min || d < 1e-5) continue;
+      const nx = dx / d, nz = dz / d, push = min - d;
+      this.collider.translate(_push.set(nx * push, 0, nz * push));
+      const vn = this.velocity.x * nx + this.velocity.z * nz;
+      if (vn < 0) { this.velocity.x -= vn * nx; this.velocity.z -= vn * nz; }
+    }
   }
 
   /** Gasta fôlego (e segura a recuperação por um instante). */
   useStamina(n) {
+    if (!this.staminaEnabled) return; // fôlego desligado por enquanto
     this.stamina = Math.max(0, this.stamina - n);
     this._staminaCd = 0.9;
     if (this.stamina <= 0) this.exhausted = true;

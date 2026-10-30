@@ -31,7 +31,7 @@ class ParticlePool {
       transparent: true,
       depthWrite: false,
       blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending,
-      uniforms: { uScale: { value: 400 } },
+      uniforms: { uScale: { value: 400 }, uLight: { value: 1 } },
       vertexShader: `
         attribute float alpha; attribute float size; attribute vec3 color;
         varying float vAlpha; varying vec3 vColor;
@@ -44,11 +44,12 @@ class ParticlePool {
         }`,
       fragmentShader: `
         varying float vAlpha; varying vec3 vColor;
+        uniform float uLight;
         void main() {
           vec2 c = gl_PointCoord - 0.5;
           float d = dot(c, c) * 4.0;
           if (d > 1.0) discard;
-          gl_FragColor = vec4(vColor, vAlpha * (1.0 - d));
+          gl_FragColor = vec4(vColor * uLight, vAlpha * (1.0 - d));
           #include <colorspace_fragment>
         }`,
     });
@@ -106,6 +107,12 @@ export class Effects {
     this.fires = [];
     this._buildLeaves(quality === 'low' ? 70 : 160);
     this.t = 0;
+  }
+
+  /** Luz do dia (0..1): fumaça e poeira não brilham no escuro. */
+  setLight(k) {
+    for (const p of [this.dust, this.smoke]) p.material.uniforms.uLight.value = k;
+    if (this.leafMat?.color) this.leafMat.color.setScalar(Math.max(0.15, k));
   }
 
   /** Nuvem de poeira no chão (pouso, deslize, escalada). */
@@ -192,7 +199,7 @@ export class Effects {
   _buildLeaves(count) {
     const geo = new THREE.PlaneGeometry(0.11, 0.08);
     // sem iluminação: contra o céu, o lado de trás de uma folha iluminada ficaria preto
-    const mat = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide });
+    const mat = this.leafMat = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide });
     this.leaves = new THREE.InstancedMesh(geo, mat, count);
     this.leaves.frustumCulled = false;
     this.leafData = [];

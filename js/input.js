@@ -69,8 +69,6 @@ export class Input {
       KeyF: 'use',
       KeyG: 'melee',
       Digit1: 'item_bandage',
-      Digit2: 'item_food',
-      Digit3: 'item_water',
       KeyR: 'reload',
       KeyX: 'walkToggle',
     };
@@ -196,6 +194,7 @@ export class Input {
           this.joy.id = e.pointerId;
           this.joy.ox = e.clientX; this.joy.oy = e.clientY;
           this.joy.x = 0; this.joy.y = 0;
+          this._joyRest = { left: this.joyBase.style.left, top: this.joyBase.style.top }; // posição do editor de HUD
           this.joyBase.style.left = e.clientX + 'px';
           this.joyBase.style.top = e.clientY + 'px';
           this.joyBase.classList.add('active');
@@ -237,8 +236,8 @@ export class Input {
       if (e.pointerId === this.joy.id) {
         this.joy.id = null; this.joy.x = 0; this.joy.y = 0;
         this.joyBase.classList.remove('active', 'lock-hint');
-        this.joyBase.style.left = '';
-        this.joyBase.style.top = '';
+        this.joyBase.style.left = this._joyRest?.left ?? '';
+        this.joyBase.style.top = this._joyRest?.top ?? '';
         this._updateKnob();
       } else if (e.pointerId === this.look.id) {
         this.look.id = null;
@@ -384,8 +383,7 @@ export class Input {
     if (down(PAD.B)) this.pressed.add('crouchToggle');
     if (down(PAD.X)) this.pressed.add('use');
     if (down(PAD.UP)) this.pressed.add('item_bandage');
-    if (down(PAD.LEFT)) this.pressed.add('item_food');
-    if (down(PAD.RIGHT)) this.pressed.add('item_water');
+    if (down(PAD.RIGHT)) this.pressed.add('walkToggle');
     if (down(PAD.RB) && this._padHeld(PAD.LB)) this.pressed.add('melee');
     if (down(PAD.L3) && this._padHeld(PAD.LB)) this.pressed.add('walkToggle');
     if (down(PAD.DOWN)) this.pressed.add('reload');

@@ -9,6 +9,7 @@ import { Effects } from './effects.js';
 import { PropSystem } from './physics.js';
 import { TrainingDummies } from './dummies.js';
 import { LensPass } from './lens.js';
+import { HudEditor } from './hudEditor.js';
 import { buttonHTML } from './icons.js';
 import { applyPhotoAssets } from './photoAssets.js';
 
@@ -17,7 +18,8 @@ const container = document.getElementById('game');
 // antisserrilhado (MSAA): escolhido nas configurações; a cena é desenhada numa textura com MSAA
 // (ver lens.js) e muda só recriando o contexto (recarrega)
 const savedAA = (() => {
-  try { return JSON.parse(localStorage.getItem('survival-settings') || '{}').aa ?? true; } catch { return true; }
+  // no celular começa sem MSAA (pesado); dá para ligar nas configurações
+  try { return JSON.parse(localStorage.getItem('survival-settings') || '{}').aa ?? !isTouchDevice; } catch { return !isTouchDevice; }
 })();
 const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -27,7 +29,7 @@ renderer.toneMappingExposure = 0.95;
 renderer.autoClear = false;
 container.appendChild(renderer.domElement);
 const lens = new LensPass(renderer, { samples: savedAA ? 4 : 0 });
-lens.maxScale = isTouchDevice ? 1.1 : 1.35; // no celular a textura cresce menos (desempenho)
+lens.maxScale = isTouchDevice ? 1.0 : 1.3; // no celular a textura cresce menos (desempenho)
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.04, 600);
@@ -52,6 +54,7 @@ const player = new Player(world.octree, world.spawn, world.ladders, {
   waterAt: (x, z) => world.waterAt(x, z),
   doors: [...world.doors, ...dummies.list],
   heightAt: (x, z) => world.groundHeight(x, z),
+  circlesNear: (x, z, out) => world.circlesNear(x, z, out),
 });
 // objetos soltos com física
 const props = new PropSystem(scene, world.octree);
@@ -85,6 +88,7 @@ character.onShellClink = (p) => audio.shellClink(p);
 }
 // hora do dia: começa no fim da tarde; 1 minuto real = 1 hora (a noite passa mais rápido)
 let timeOfDay = 16.5;
+let brightness = 1;
 world.setTimeOfDay(timeOfDay);
 let todFrame = 0;
 function updateTime(dt) {
@@ -95,8 +99,10 @@ function updateTime(dt) {
   // gradação: noite fria e menos saturada, entardecer quente
   const n = world.night, dusk = (1 - n) * (1 - Math.min(1, Math.abs(world.sunDir.y) / 0.35));
   const U = lens.material.uniforms;
-  U.uSat.value = 1.06 - n * 0.32;
-  U.uTint.value.set(1 + dusk * 0.06 - n * 0.12, 1 - n * 0.05, 1 - dusk * 0.08 + n * 0.12);
+  U.uSat.value = 1.06 - n * 0.22;
+  U.uTint.value.set(1 + dusk * 0.06 - n * 0.06, 1 - n * 0.02, 1 - dusk * 0.08 + n * 0.1);
+  renderer.toneMappingExposure = 0.95 * brightness * (1 + n * 0.35); // à noite os olhos se adaptam
+  effects.setLight(world.lightK);
   const hh = Math.floor(timeOfDay), mm = Math.floor((timeOfDay - hh) * 60);
   const txt = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
   if (ui.clock.textContent !== txt) ui.clock.textContent = txt;
@@ -114,6 +120,8 @@ const ui = {
   equip: $('equip-label'), clock: $('clock'), attackBtn: $('btn-attack'), aimBtn: $('btn-aim'), reloadBtn: $('btn-reload'),
   ammo: $('ammo'), ammoLoaded: $('ammo-loaded'), ammoReserve: $('ammo-reserve'), ammoKind: $('ammo-kind'), toast: $('toast'), weaponBar: $('weapon-bar'),
   btnSize: $('btn-size'), btnSizeVal: $('btn-size-val'), haptics: $('haptics'),
+  viewDist: $('view-dist'), viewDistVal: $('view-dist-val'), brightness: $('brightness'), brightnessVal: $('brightness-val'),
+  gopro: $('gopro'), hudOpacity: $('hud-opacity'), hudOpacityVal: $('hud-opacity-val'), playLabel: $('play-label'),
   death: $('death'), deathReason: $('death-reason'), respawn: $('respawn-btn'),
   sens: $('sens'), sensVal: $('sens-val'), fov: $('fov'), fovVal: $('fov-val'),
   volume: $('volume'), volumeVal: $('volume-val'), quality: $('quality'),
@@ -192,6 +200,10 @@ function loadSettings() {
     ui.showFps.checked = !!s.showFps;
     if (s.btnSize) ui.btnSize.value = s.btnSize;
     ui.haptics.checked = s.haptics !== false;
+    if (s.viewDist) ui.viewDist.value = s.viewDist;
+    if (s.brightness) ui.brightness.value = s.brightness;
+    ui.gopro.checked = s.gopro !== false;
+    if (s.hudOpacity) ui.hudOpacity.value = s.hudOpacity;
   } catch { /* sem armazenamento disponível */ }
   ui.antialias.checked = savedAA;
   applySettings();
@@ -209,23 +221,37 @@ function applySettings() {
   ui.fps.classList.toggle('hidden-fps', !ui.showFps.checked);
   document.documentElement.style.setProperty('--btn-scale', ui.btnSize.value);
   ui.btnSizeVal.textContent = Math.round(parseFloat(ui.btnSize.value) * 100);
+  hudEditor.btnScale = parseFloat(ui.btnSize.value);
+  document.documentElement.style.setProperty('--hud-opacity', ui.hudOpacity.value);
+  ui.hudOpacityVal.textContent = Math.round(parseFloat(ui.hudOpacity.value) * 100);
+  // distância de visão: neblina, árvores/construções desenhadas e o fim da câmera
+  const vd = parseFloat(ui.viewDist.value);
+  ui.viewDistVal.textContent = vd;
+  world.drawDistance = vd;
+  fogNormal.far = vd + 40; fogNormal.near = Math.min(40, vd * 0.15);
+  if (!underwater) { scene.fog.far = fogNormal.far; scene.fog.near = fogNormal.near; }
+  camera.far = vd + 160; camera.updateProjectionMatrix();
+  brightness = parseFloat(ui.brightness.value);
+  ui.brightnessVal.textContent = Math.round(brightness * 100);
+  rig.goproEnabled = ui.gopro.checked;
 
   if (ui.quality.value !== qualityMode || activeQuality === null) {
     qualityMode = ui.quality.value;
     autoRes.scale = 1;
     // automático: começa no alto (resolução nítida); se o FPS cair, baixa sozinho
-    applyQuality(qualityMode === 'auto' ? 'high' : qualityMode);
+    applyQuality(qualityMode === 'auto' ? (isTouchDevice ? 'medium' : 'high') : qualityMode);
   }
   try {
     localStorage.setItem('survival-settings', JSON.stringify({
       sens: ui.sens.value, fov: ui.fov.value, volume: ui.volume.value, quality: ui.quality.value,
       invert: ui.invert.checked, headbob: ui.headbob.checked, showFps: ui.showFps.checked,
       btnSize: ui.btnSize.value, haptics: ui.haptics.checked, aa: ui.antialias.checked,
+      viewDist: ui.viewDist.value, brightness: ui.brightness.value, gopro: ui.gopro.checked, hudOpacity: ui.hudOpacity.value,
     }));
   } catch { /* ignore */ }
 }
-for (const el of [ui.sens, ui.fov, ui.volume, ui.btnSize]) el.addEventListener('input', applySettings);
-for (const el of [ui.quality, ui.invert, ui.headbob, ui.showFps, ui.haptics]) el.addEventListener('change', applySettings);
+for (const el of [ui.sens, ui.fov, ui.volume, ui.btnSize, ui.viewDist, ui.brightness, ui.hudOpacity]) el.addEventListener('input', applySettings);
+for (const el of [ui.quality, ui.invert, ui.headbob, ui.showFps, ui.haptics, ui.gopro]) el.addEventListener('change', applySettings);
 ui.antialias.addEventListener('change', () => {
   applySettings();
   // só recarrega se a escolha ficou salva (senão voltaria igual)
@@ -277,7 +303,7 @@ function resume() {
   ui.menu.classList.add('hidden');
   ui.hud.classList.remove('hidden');
   ui.touch.classList.toggle('hidden', !isTouchDevice);
-  document.body.classList.add('playing');
+  document.body.classList.add('playing', 'started');
   audio.unlock();
 }
 
@@ -287,13 +313,59 @@ function pause() {
   input.enabled = false;
   input.reset();
   ui.menu.classList.remove('hidden');
+  showPage('title-screen');
   ui.touch.classList.add('hidden');
-  ui.play.textContent = 'CONTINUAR';
+  ui.playLabel.textContent = 'CONTINUAR';
+  $('quit-btn').classList.remove('hidden');
   document.body.classList.remove('playing');
   audio.suspend();
 }
 
 ui.play.addEventListener('click', startGame);
+
+// ---------- menu: páginas, abas, tela cheia ----------
+function showPage(id) {
+  for (const p of document.querySelectorAll('.menu-page')) p.classList.toggle('hidden', p.id !== id);
+}
+$('open-settings').addEventListener('click', () => showPage('settings-screen'));
+$('open-controls').addEventListener('click', () => showPage('controls-screen'));
+for (const b of document.querySelectorAll('[data-back]')) b.addEventListener('click', () => showPage('title-screen'));
+for (const t of document.querySelectorAll('.tab')) t.addEventListener('click', () => {
+  for (const o of document.querySelectorAll('.tab')) o.classList.toggle('on', o === t);
+  for (const b of document.querySelectorAll('.tab-body')) b.classList.toggle('hidden', b.dataset.body !== t.dataset.tab);
+});
+$('quit-btn').addEventListener('click', () => location.reload());
+function toggleFullscreen(force) {
+  const el = document.documentElement;
+  const on = !!(document.fullscreenElement || document.webkitFullscreenElement);
+  try {
+    if (force === true || !on) {
+      const r = el.requestFullscreen?.({ navigationUI: 'hide' }) ?? el.webkitRequestFullscreen?.();
+      Promise.resolve(r).then(() => screen.orientation?.lock?.('landscape')).catch(() => {});
+    } else if (force !== true) document.exitFullscreen?.();
+  } catch { /* não suportado */ }
+}
+$('fullscreen-btn').addEventListener('click', () => toggleFullscreen());
+// no celular, o primeiro toque no menu já coloca em tela cheia
+if (isTouchDevice) ui.menu.addEventListener('pointerdown', () => { if (!document.fullscreenElement) toggleFullscreen(true); }, { once: true });
+
+// ---------- editor de HUD ----------
+const hudEditor = new HudEditor({
+  isTouch: isTouchDevice,
+  onClose: () => {
+    ui.hud.classList.toggle('hidden', !started);
+    ui.touch.classList.add('hidden');
+    ui.menu.classList.remove('hidden');
+    showPage('settings-screen');
+  },
+});
+$('edit-hud').addEventListener('click', () => {
+  ui.menu.classList.add('hidden');
+  ui.hud.classList.remove('hidden');
+  if (isTouchDevice) ui.touch.classList.remove('hidden');
+  hudEditor.open();
+});
+$('reset-hud').addEventListener('click', () => { hudEditor.reset(); showToast('HUD RESTAURADO'); });
 input.onPauseRequest = pause;
 input.onGamepadStart = () => {
   // controle não conta como gesto para o pointer lock: entra direto
@@ -330,8 +402,7 @@ function respawn() {
   ui.death.classList.add('hidden');
   player.respawn();
   lastHealth = player.health;
-  needs.food = needs.water = 100;
-  items.bandage = Math.max(items.bandage, 1); items.food = Math.max(items.food, 1); items.water = Math.max(items.water, 1);
+  items.bandage = Math.max(items.bandage, 2);
   startGame();
 }
 ui.respawn.addEventListener('click', respawn);
@@ -412,12 +483,9 @@ function handleActions() {
 }
 
 // ---------- sobrevivência: fome, sede, itens, saque ----------
-const needs = { food: 100, water: 100 };
-const items = { bandage: 1, food: 1, water: 1 };
+const items = { bandage: 2 };
 const ITEM_DEF = {
-  bandage: { name: 'CURATIVO', icon: 'bandage', action: 'bandage', time: 3.0, ok: () => player.health < 100, full: 'VIDA CHEIA', use: () => { player.health = Math.min(100, player.health + 35); } },
-  food: { name: 'COMIDA', icon: 'food', action: 'eat', time: 2.6, ok: () => needs.food < 97, full: 'SEM FOME', use: () => { needs.food = Math.min(100, needs.food + 40); } },
-  water: { name: 'ÁGUA', icon: 'water', action: 'drink', time: 2.0, ok: () => needs.water < 97, full: 'SEM SEDE', use: () => { needs.water = Math.min(100, needs.water + 45); } },
+  bandage: { name: 'CURATIVO', icon: 'bandage', action: 'bandage', time: 3.0, ok: () => player.health < 100, full: 'VIDA CHEIA', use: () => { player.health = Math.min(100, player.health + 40); } },
 };
 let progress = null; // barra de progresso (usar item, revistar)
 function useItem(k) {
@@ -432,13 +500,13 @@ function useItem(k) {
   }
 }
 const LOOT = {
-  cabinet: [['food', 0.5], ['water', 0.45], ['bandage', 0.35], ['ammo', 0.3]],
-  fridge: [['food', 0.65], ['water', 0.75]],
-  car: [['ammo', 0.45], ['bandage', 0.4], ['water', 0.35]],
-  locker: [['ammo', 0.9], ['ammo', 0.5], ['bandage', 0.6]],
-  tent: [['food', 0.5], ['water', 0.5], ['bandage', 0.45], ['ammo', 0.3]],
-  crate: [['food', 0.35], ['water', 0.35], ['ammo', 0.45], ['bandage', 0.3]],
-  bag: [['food', 0.7], ['water', 0.7], ['bandage', 0.6], ['ammo', 0.5]],
+  cabinet: [['bandage', 0.45], ['ammo', 0.5]],
+  fridge: [['bandage', 0.15], ['ammo', 0.25]],
+  car: [['ammo', 0.6], ['bandage', 0.35]],
+  locker: [['ammo', 0.95], ['ammo', 0.6], ['bandage', 0.6]],
+  tent: [['bandage', 0.55], ['ammo', 0.45]],
+  crate: [['ammo', 0.55], ['bandage', 0.3]],
+  bag: [['bandage', 0.7], ['ammo', 0.7]],
 };
 function searchLoot(spot) {
   if (spot.searched) { showToast('JÁ REVISTADO — VAZIO'); return; }
@@ -456,19 +524,6 @@ function searchLoot(spot) {
     progress = { t: 0, dur: 1.8, cancel: () => !character.action };
     audio.search(spot.kind);
   }
-}
-function updateNeeds(dt) {
-  if (player.dead) return;
-  const run = player.sprinting && player.horizontalSpeed > 4;
-  needs.food = Math.max(0, needs.food - dt * (100 / (45 * 60)) * (run ? 1.6 : 1));
-  needs.water = Math.max(0, needs.water - dt * (100 / (28 * 60)) * (run ? 2 : 1));
-  if (needs.food <= 0 || needs.water <= 0) {
-    player.health = Math.max(0, player.health - dt * 0.4);
-    deathReason = needs.water <= 0 ? 'Você morreu de sede.' : 'Você morreu de fome.';
-  } else if (needs.food > 55 && needs.water > 55 && player.health < 100) {
-    player.health = Math.min(100, player.health + dt * 0.12); // descansado e alimentado, cicatriza devagar
-  }
-  player.staminaRegen = needs.food < 20 || needs.water < 20 ? 0.55 : 1;
 }
 
 // ---------- armas de fogo ----------
@@ -557,6 +612,14 @@ function bulletImpact(origin, dir, { power = 7, quiet = false, range = 160 } = {
   if (dh && dh.distance > skip && (!best || dh.distance < best.d)) best = { kind: 'door', d: dh.distance };
   const tg = terrainRay(origin, dir, RANGE);
   if (tg !== null && tg > skip && (!best || tg < best.d)) best = { kind: 'terrain', d: tg };
+  const tr = world.circleRay(origin, dir, best ? best.d : RANGE);
+  if (tr !== null && tr > skip && (!best || tr < best.d)) best = { kind: 'tree', d: tr };
+  if (best?.kind === 'tree') {
+    const p = _tmp.copy(origin).addScaledVector(dir, best.d);
+    if (!quiet) audio.bulletHit('wood', p);
+    effects.puff(p, 4, 0.5, DUST.wood);
+    return;
+  }
   if (!best) return;
   if (best.kind === 'terrain') {
     const p = _tmp.copy(origin).addScaledVector(dir, best.d);
@@ -882,7 +945,6 @@ ui.weaponBar.addEventListener('pointerdown', (e) => {
 const itemSlots = [...ui.weaponBar.children];
 ui.attackBtn.innerHTML = buttonHTML('gun', 'ATIRAR');
 ui.ammoKind.textContent = '9MM';
-const statBars = { stamina: $('stamina-fill'), food: $('food-fill'), water: $('water-fill'), box: $('bars') };
 const progressEl = $('progress');
 function updateHud() {
   ui.health.style.width = player.health + '%';
@@ -920,11 +982,7 @@ function updateHud() {
   ui.hint.textContent = hint;
   ui.hint.classList.toggle('hidden', !hint);
   ui.useBtn?.classList.toggle('hidden', !useTarget);
-  ui.equip.textContent = 'PISTOLA 9MM' + (character.reloading ? ' · RECARREGANDO' : '') + (player.walkMode ? ' · ANDANDO DEVAGAR' : '') + (player.exhausted ? ' · SEM FÔLEGO' : '');
-  statBars.stamina.style.width = player.stamina.toFixed(0) + '%';
-  statBars.food.style.width = needs.food.toFixed(0) + '%';
-  statBars.water.style.width = needs.water.toFixed(0) + '%';
-  statBars.box.classList.toggle('exhausted', player.exhausted);
+  ui.equip.textContent = 'PISTOLA 9MM' + (character.reloading ? ' · RECARREGANDO' : '') + (player.walkMode ? ' · ANDANDO DEVAGAR' : '');
   itemSlots.forEach((el) => {
     const k = el.dataset.item, n = String(items[k]);
     const nEl = el.querySelector('.n');
@@ -938,8 +996,6 @@ function updateHud() {
   ui.ammo.classList.toggle('empty', g.loaded === 0);
   if (!hint && g.loaded === 0 && g.reserve === 0) hint = 'SEM MUNIÇÃO — REVISTE CASAS, CARROS E BARRACAS';
   else if (!hint && g.loaded === 0 && !character.reloading) hint = (input.pad.connected ? '↓' : isTouchDevice ? '🔄' : 'R') + ' — RECARREGAR';
-  else if (!hint && needs.water < 15) hint = 'COM MUITA SEDE — BEBA ÁGUA (3)';
-  else if (!hint && needs.food < 15) hint = 'COM MUITA FOME — COMA ALGO (2)';
   else if (!hint && player.health < 35 && items.bandage) hint = 'FERIDO — USE UM CURATIVO (1)';
   ui.hint.textContent = hint;
   ui.hint.classList.toggle('hidden', !hint);
@@ -981,7 +1037,6 @@ function frame() {
     player.update(dt, input);
     handleEvents(dt);
     input.endFrame();
-    updateNeeds(dt);
     updateTime(dt);
     updateHud();
     updateAmbience(dt);
@@ -1054,9 +1109,10 @@ function frame() {
 // pronto (espera os modelos 3D)
 await modelsReady;
 loadSettings();
-ui.loading.classList.add('hidden');
-ui.play.classList.remove('hidden');
+ui.loading.textContent = 'PRONTO';
+document.body.classList.add('ready');
+ui.play.disabled = false;
 frame();
 
 // para depuração no console
-window.game = { player, world, rig, input, character, effects, props, renderer, scene, camera, dummies, audio, lens, needs, items, STAND_HEIGHT, setTime: (h) => { timeOfDay = h; world.setTimeOfDay(h); } };
+window.game = { player, world, rig, input, character, effects, props, renderer, scene, camera, dummies, audio, lens, items, STAND_HEIGHT, setTime: (h) => { timeOfDay = h; world.setTimeOfDay(h); } };

@@ -288,6 +288,7 @@ export class World {
     this.lootSpots = [];   // armários, caixas, porta-malas... (revistar)
     this.hitboxMat = new THREE.MeshBasicMaterial({ visible: false });
     this.lodChunks = [];   // blocos (árvores, construções) escondidos de longe
+    this.circleGrid = new Map(); // troncos e pedras (colisão 2D)
     this.windUniform = { value: 0 };
 
     this.mat = {
@@ -348,25 +349,45 @@ export class World {
     this._down = new THREE.Vector3(0, -1, 0);
     this._rayFrom = new THREE.Vector3();
 
+    this.buildTimes = {};
+    let _t0 = performance.now();
+    const T = (n) => { const t = performance.now(); this.buildTimes[n] = Math.round(t - _t0); _t0 = t; };
     this._buildSky();
+    T('_buildSky');
     this._buildLights();
+    T('_buildLights');
     if (renderer) this._buildEnvironment(renderer);
+    T('if ');
     this._buildTerrain();
+    T('_buildTerrain');
     this._buildBrickHouse();
+    T('_buildBrickHouse');
     this._buildCabin();
+    T('_buildCabin');
     this._buildGasStation();
+    T('_buildGasStation');
     this._buildTower();
+    T('_buildTower');
     this._buildTown();
+    T('_buildTown');
     buildPOIs(this, POIS);
+    T('buildPOIs');
     this._buildCampfire();
+    T('_buildCampfire');
     this._buildLake();
+    T('_buildLake');
     this._buildForest();
+    T('_buildForest');
     this._buildGrass();
+    T('_buildGrass');
     this._buildBounds();
+    T('_buildBounds');
     this._mergeStatic();
-
+    T('_mergeStatic');
     this.octree = new Octree();
+    T('octree = new Octree');
     this.octree.fromGraphNode(this.colliders);
+    T('octree.fromGraphNode');
   }
 
   // ---------- helpers ----------
@@ -583,9 +604,9 @@ export class World {
     const C = (hex) => new THREE.Color(hex);
     const U = this.skyUniforms;
     const pick = (dayC, duskC, nightC) => C(dayC).lerp(C(duskC), low * day).lerp(C(nightC), night);
-    U.uZenith.value.copy(pick(0x5a6874, 0x4a5466, 0x0b1220));
-    U.uHorizon.value.copy(pick(0xb3aa94, 0xd09a6a, 0x1b2230));
-    U.uGround.value.copy(pick(0x6e6858, 0x5a4a3a, 0x0e1014));
+    U.uZenith.value.copy(pick(0x5a6874, 0x4a5466, 0x1a2840));
+    U.uHorizon.value.copy(pick(0xb3aa94, 0xd09a6a, 0x34435a));
+    U.uGround.value.copy(pick(0x6e6858, 0x5a4a3a, 0x1c2230));
     U.uSunColor.value.copy(pick(0xffbf8a, 0xff8a4a, 0x000000)).multiplyScalar(day);
     U.uNight.value = night;
     U.uCloudLight.value = 0.18 + 0.82 * day;
@@ -594,14 +615,16 @@ export class World {
     const moon = night > 0.5;
     this.lightDir = moon ? U.uMoonDir.value : this.sunDir;
     this.sun.color.copy(moon ? C(0x8fa6d8) : C(0xffd0a0).lerp(C(0xff9a5a), low));
-    this.sun.intensity = moon ? 0.28 * night : 2.4 * day;
-    this.hemi.intensity = 0.1 + 0.48 * day + night * 0.06;
-    this.hemi.color.copy(C(0xa6b8c8).lerp(C(0x33405e), night));
-    this.hemi.groundColor.copy(C(0x4b4232).lerp(C(0x0d0f14), night));
+    // noite de jogo: escura, mas dá para enxergar (luar forte e céu claro)
+    this.sun.intensity = moon ? 0.9 * night : 2.4 * day;
+    this.hemi.intensity = 0.1 + 0.48 * day + night * 0.42;
+    this.hemi.color.copy(C(0xa6b8c8).lerp(C(0x6a80aa), night));
+    this.hemi.groundColor.copy(C(0x4b4232).lerp(C(0x262b36), night));
     const fog = U.uHorizon.value.clone().lerp(C(0x9f9a8a), day * 0.5);
+    this.lightK = 0.3 + 0.7 * day;
     this.scene.fog.color.copy(fog);
     if (this.scene.background?.isColor) this.scene.background.copy(fog);
-    this.envK = 0.06 + 0.94 * day;
+    this.envK = 0.32 + 0.68 * day;
     this.night = night;
   }
 
@@ -771,6 +794,45 @@ export class World {
       m.receiveShadow = true;
       this.scene.add(m);
     }
+  }
+
+  /** Obstáculo redondo (tronco, pedra): grade de 8 m para achar rápido os perto do jogador. */
+  addCircle(x, z, r, top) {
+    const k = Math.floor(x / 8) + ',' + Math.floor(z / 8);
+    let list = this.circleGrid.get(k);
+    if (!list) this.circleGrid.set(k, (list = []));
+    list.push({ x, z, r, top });
+  }
+
+  /** Obstáculos redondos perto de (x, z). */
+  circlesNear(x, z, out = []) {
+    out.length = 0;
+    const cx = Math.floor(x / 8), cz = Math.floor(z / 8);
+    for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) { const l = this.circleGrid.get((cx + i) + ',' + (cz + j)); if (l) for (const c of l) out.push(c); }
+    return out;
+  }
+
+  /** Raio contra troncos/pedras: distância do primeiro acerto ou null. */
+  circleRay(o, d, maxD) {
+    let best = null;
+    const seen = new Set();
+    for (let t = 0; t <= maxD; t += 6) {
+      for (const c of this.circlesNear(o.x + d.x * t, o.z + d.z * t, this._cr ?? (this._cr = []))) {
+        if (seen.has(c)) continue;
+        seen.add(c);
+        // círculo (cilindro vertical) x raio no plano
+        const fx = o.x - c.x, fz = o.z - c.z, a = d.x * d.x + d.z * d.z;
+        if (a < 1e-6) continue;
+        const b = 2 * (fx * d.x + fz * d.z), cc = fx * fx + fz * fz - c.r * c.r, disc = b * b - 4 * a * cc;
+        if (disc < 0) continue;
+        const h = (-b - Math.sqrt(disc)) / (2 * a);
+        if (h < 0 || h > maxD || (best !== null && h > best)) continue;
+        const y = o.y + d.y * h;
+        if (y < c.top && y > this.groundHeight(o.x + d.x * h, o.z + d.z * h) - 0.2) best = h;
+      }
+      if (best !== null && best < t) break;
+    }
+    return best;
   }
 
   /** Sem grama/árvore perto das estradas e dos lugares. */
@@ -1552,8 +1614,6 @@ export class World {
     branchGeo.translate(0, 1.1, 0);
     const branches = new THREE.InstancedMesh(branchGeo, this.mat.bark, nDead * 3 + nBroad * 2);
 
-    const colGeo = new THREE.CylinderGeometry(0.3, 0.3, 6, 6);
-    colGeo.translate(0, 3, 0);
 
     const pinePalette = [0x2f4228, 0x34492a, 0x3b4f2c, 0x2b3a24];
     const broadPalette = [0x5a6a2c, 0x6f7230, 0x9a7a30, 0xa8622a, 0x8c3e1e, 0xb8903a, 0x4f5f2a];
@@ -1575,9 +1635,8 @@ export class World {
       q.setFromAxisAngle(up, rand() * Math.PI * 2);
       m.compose(p.set(x, y - 0.15, z), q, s.set(sc, sc * hScale, sc));
       trunks.setMatrixAt(ti++, m);
-      const col = this.invisibleCollider(colGeo, new THREE.Vector3(x, y - 0.5, z));
-      col.scale.set(sc, 1, sc);
-      col.updateMatrix();
+      // colisão do tronco: círculo numa grade 2D (milhares de árvores no Octree deixavam o carregamento lento)
+      this.addCircle(x, z, 0.28 * sc, y + 6);
     };
 
     for (let i = 0; i < nPine; i++) {
@@ -1653,7 +1712,8 @@ export class World {
       r.scale.set(sc * (1 + rand() * 0.6), sc * 0.65, sc);
       r.rotation.set(rand() * 0.4, rand() * 6, rand() * 0.4);
       r.position.set(x, terrainHeight(x, z) + sc * 0.1, z);
-      this.solid(r);
+      this.solid(r, false);
+      if (sc > 0.7) this.addCircle(x, z, sc * 0.95, terrainHeight(x, z) + sc * 0.6);
     }
     for (let i = 0; i < (low ? 70 : 130); i++) {
       const [x, z] = place(TOWN_RADIUS + 2);

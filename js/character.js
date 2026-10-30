@@ -284,7 +284,7 @@ export class Character {
     else if (!player.onFloor && player.timeSinceGround > 0.12) W.jump_air = 1;
     else if (player.crouched) {
       const k = smoothstep(0.1, 0.5, speed);
-      W.crouch_walk = k; W.crouch_idle = (1 - k) * (1 - aim); W.crouch_aim = (1 - k) * aim;
+      W.crouch_walk = k; W.crouch_idle = 1 - k; // mirando agachado: pernas agachadas + tronco da mira (sempre de frente)
       locoRate = speed / SPEED.crouch_walk / A.crouch_walk.d * (fy < -0.3 ? -1 : 1);
     } else {
       const moving = smoothstep(0.1, 0.6, speed);
@@ -366,7 +366,7 @@ export class Character {
       else if (!ovName) { ovName = 'hit'; ovT = this._hit; ovTarget = 0.8; }
     }
     // mirando parado em pé: braços estendidos (mirando andando o clipe do corpo já mira)
-    if (!ovName && aim > 0.01 && !player.crouched && !busyHands) {
+    if (!ovName && aim > 0.01 && !busyHands) {
       ovName = 'aim_idle'; ovT = T.aim_idle; ovTarget = aim * (1 - (this.w.aim_walk ?? 0));
     }
     this.ovW = damp(this.ovW, ovTarget, ovTarget > 0 ? 18 : 10, dt);
@@ -394,7 +394,8 @@ export class Character {
     this.root.updateMatrixWorld(true);
 
     // ----- olhar para cima/baixo -----
-    const lookW = (busyHands || player.rolling || player.sliding ? 0.25 : 1) * (1 - aim);
+    // em 1ª pessoa o tronco quase não dobra (a câmera está na cabeça: dobrar faz ela andar em arco)
+    const lookW = (busyHands || player.rolling || player.sliding ? 0.25 : this.firstPerson ? 0.3 : 1) * (1 - aim);
     this._look = damp(this._look ?? 0, -player.pitch * lookW, 14, dt);
     const lat = _v3.set(1, 0, 0).applyQuaternion(this.root.quaternion).clone();
     for (const [n, k] of [['Spine', 0.25], ['Spine2', 0.3], ['Neck', 0.2], ['Head', 0.25]]) rotateWorld(B[n], new THREE.Quaternion().setFromAxisAngle(lat, this._look * k));
@@ -412,7 +413,8 @@ export class Character {
         if (want.dot(fwd) < 0.2 || this.aimTarget.distanceTo(mz) < 1.2) break;
         const full = new THREE.Quaternion().setFromUnitVectors(have, want);
         const ang = 2 * Math.acos(Math.min(1, Math.abs(full.w)));
-        const q = new THREE.Quaternion().slerp(full, aim * Math.min(1, 0.8 / Math.max(ang, 1e-3)));
+        const lim = player.crouched ? 1.3 : 0.8; // agachado o quadril inclina: o tronco precisa endireitar mais
+        const q = new THREE.Quaternion().slerp(full, aim * Math.min(1, lim / Math.max(ang, 1e-3)));
         rotateWorld(B.Spine, new THREE.Quaternion().slerp(q, 0.45));
         rotateWorld(B.Spine2, new THREE.Quaternion().slerp(q, 0.55));
       }
