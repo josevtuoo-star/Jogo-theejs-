@@ -127,11 +127,13 @@ export class CameraRig {
       _euler.set(pitch - this.deathBlend * 0.5, yaw, 0);
       this.camera.quaternion.setFromEuler(_euler);
       _dir.set(0, 0, 1).applyQuaternion(this.camera.quaternion);
-      _shoulder.set(0.45 + player.leanOffset, 0.1, 0).applyQuaternion(this.camera.quaternion);
+      // pendurado/escalando: a câmera sobe e se afasta do muro para não entrar nele
+      this.wallBlend = damp(this.wallBlend ?? 0, player.isHanging || player.isClimbing ? 1 : 0, 6, dt);
+      _shoulder.set(0.45 + player.leanOffset + this.wallBlend * 0.25, 0.1 + this.wallBlend * 0.45, 0).applyQuaternion(this.camera.quaternion);
       _pivot.copy(_eye).add(_shoulder);
       _ray.set(_pivot, _dir);
       const hit = this.octree.rayIntersect(_ray);
-      let dist = this.tpDistance * (1 - 0.4 * (this.aim ?? 0)) + this.deathBlend * 1.5;
+      let dist = this.tpDistance * (1 - 0.4 * (this.aim ?? 0)) + this.deathBlend * 1.5 + this.wallBlend * 0.6;
       if (hit && hit.distance < dist + 0.3) dist = Math.max(0.3, hit.distance - 0.3);
       // aproxima rápido, afasta devagar
       this.currentTpDist = dist < this.currentTpDist ? dist : damp(this.currentTpDist, dist, 4, dt);

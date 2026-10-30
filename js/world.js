@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { pineBranchTexture, leafClusterTexture, foliageCardMaterial, pineCardsGeometry, broadCardsGeometry, bushCardsGeometry } from './trees.js';
 import { Octree } from 'three/addons/math/Octree.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import * as TEX from './textures.js';
@@ -1348,18 +1349,29 @@ export class World {
     trunkGeo.translate(0, 2.5, 0);
     const trunks = new THREE.InstancedMesh(trunkGeo, this.mat.bark, nPine + nBroad + nDead);
 
-    // pinheiros: 4 cones empilhados
-    const pineLevels = [[2.1, 2.6, 2.4], [1.7, 2.3, 3.6], [1.25, 2.0, 4.7], [0.7, 1.5, 5.7]].map(([r, h, y]) => {
-      const g = lumpy(new THREE.ConeGeometry(r, h, 8, 2), 0.12, r * 10);
+    // copas de "cartões" com galhos/folhas recortados em volta de um miolo escuro (trees.js)
+    const pineCard = foliageCardMaterial(pineBranchTexture());
+    const leafCard = foliageCardMaterial(leafClusterTexture());
+    for (const fm of [pineCard, leafCard]) this.addWind(fm.material, 0.05, 0.12);
+    const cardMesh = (geo, fm, n) => {
+      const im = new THREE.InstancedMesh(geo, fm.material, n);
+      im.customDepthMaterial = fm.depth;
+      return im;
+    };
+    // pinheiros: miolo (cones menores e escuros) + galhos de agulhas
+    const pineLevels = [[0.75, 2.6, 2.4], [0.62, 2.3, 3.6], [0.46, 2.0, 4.7], [0.26, 1.5, 5.7]].map(([r, h, y]) => {
+      const g = lumpy(new THREE.ConeGeometry(r, h, 7, 2), 0.12, r * 10);
       g.translate(0, y, 0);
       return new THREE.InstancedMesh(g, leafMat, nPine);
     });
-    // árvores de folhas: 3 copas arredondadas
-    const crownGeos = [[1.8, 0, 5.0, 0], [1.3, 1.0, 4.3, 0.5], [1.25, -0.9, 4.5, -0.5]].map(([r, x, y, z], k) => {
+    pineLevels.push(cardMesh(pineCardsGeometry(5), pineCard, nPine));
+    // árvores de folhas: miolo (três bolas) + cachos de folhas
+    const crownGeos = [[1.05, 0, 5.0, 0], [0.75, 1.0, 4.3, 0.5], [0.7, -0.9, 4.5, -0.5]].map(([r, x, y, z], k) => {
       const g = lumpy(new THREE.IcosahedronGeometry(r, 1), 0.3, k + 5);
       g.translate(x, y, z);
       return new THREE.InstancedMesh(g, leafMat, nBroad);
     });
+    const broadCards = cardMesh(broadCardsGeometry(7), leafCard, nBroad);
     const branchGeo = new THREE.CylinderGeometry(0.03, 0.1, 2.2, 5);
     branchGeo.translate(0, 1.1, 0);
     const branches = new THREE.InstancedMesh(branchGeo, this.mat.bark, nDead * 3 + nBroad * 2);
@@ -1396,7 +1408,10 @@ export class World {
       q.setFromAxisAngle(up, rand() * Math.PI * 2);
       m.compose(p.set(x, y, z), q, s.set(sc, sc * hs, sc));
       color.setHex(pinePalette[i % pinePalette.length]).offsetHSL(0, 0, (rand() - 0.5) * 0.04);
-      for (const lvl of pineLevels) { lvl.setMatrixAt(i, m); lvl.setColorAt(i, color); }
+      for (const lvl of pineLevels) lvl.setMatrixAt(i, m);
+      for (let k = 0; k < 4; k++) pineLevels[k].setColorAt(i, color.clone().multiplyScalar(0.45));
+      // galhos: a textura já é verde; a cor da instância só varia o tom (seco/vivo, claro/escuro)
+      pineLevels[4].setColorAt(i, color.setRGB(0.85 + rand() * 0.2, 0.85 + rand() * 0.15, 0.75 + rand() * 0.15));
     }
     for (let i = 0; i < nBroad; i++) {
       const [x, z] = place(TOWN_RADIUS - 6);
@@ -1405,7 +1420,9 @@ export class World {
       q.setFromAxisAngle(up, rand() * Math.PI * 2);
       m.compose(p.set(x, y, z), q, s.set(sc, sc, sc));
       color.setHex(broadPalette[Math.floor(rand() * broadPalette.length)]).offsetHSL(0, 0, (rand() - 0.5) * 0.05);
-      for (const cg of crownGeos) { cg.setMatrixAt(i, m); cg.setColorAt(i, color); }
+      for (const cg of crownGeos) { cg.setMatrixAt(i, m); cg.setColorAt(i, color.clone().multiplyScalar(0.32)); }
+      broadCards.setMatrixAt(i, m);
+      broadCards.setColorAt(i, color.clone().multiplyScalar(1.25));
       for (let b = 0; b < 2; b++) {
         const bq = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.8 * (b ? 1 : -1), rand() * 6, 0));
         m.compose(p.set(x, y + 2.6 * sc, z), bq, s.set(sc * 0.8, sc * 0.8, sc * 0.8));
@@ -1425,8 +1442,9 @@ export class World {
     branches.count = bi;
     trunks.count = ti;
 
-    // arbustos
-    const bushGeo = lumpy(new THREE.IcosahedronGeometry(0.85, 1), 0.35, 3);
+    // arbustos: miolo + cachos de folhas
+    const bushCards = cardMesh(bushCardsGeometry(9), leafCard, nBush);
+    const bushGeo = lumpy(new THREE.IcosahedronGeometry(0.55, 1), 0.35, 3);
     bushGeo.scale(1, 0.65, 1);
     bushGeo.translate(0, 0.35, 0);
     const bushes = new THREE.InstancedMesh(bushGeo, leafMat, nBush);
@@ -1436,11 +1454,13 @@ export class World {
       q.setFromAxisAngle(up, rand() * Math.PI * 2);
       m.compose(p.set(x, terrainHeight(x, z) - 0.1, z), q, s.set(sc, sc * (0.7 + rand() * 0.5), sc));
       bushes.setMatrixAt(i, m);
+      bushCards.setMatrixAt(i, m);
       color.setHex(broadPalette[Math.floor(rand() * broadPalette.length)]).offsetHSL(0, -0.05, -0.04);
-      bushes.setColorAt(i, color);
+      bushes.setColorAt(i, color.clone().multiplyScalar(0.35));
+      bushCards.setColorAt(i, color.multiplyScalar(1.15));
     }
 
-    for (const im of [trunks, ...pineLevels, ...crownGeos, branches, bushes]) {
+    for (const im of [trunks, ...pineLevels, ...crownGeos, broadCards, branches, bushes, bushCards]) {
       im.castShadow = true;
       im.receiveShadow = true;
       im.instanceMatrix.needsUpdate = true;

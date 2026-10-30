@@ -794,6 +794,18 @@ function updateUnderwater() {
   }
 }
 
+// granulado de filme: um canvas de ruído gerado uma vez, esticado e tremendo via CSS
+{
+  const grain = document.getElementById('grain');
+  if (grain) {
+    const c = document.createElement('canvas');
+    c.width = 480; c.height = 300;
+    const g = c.getContext('2d'), img = g.createImageData(c.width, c.height);
+    for (let i = 0; i < img.data.length; i += 4) { const v = Math.random() * 255; img.data[i] = img.data[i + 1] = img.data[i + 2] = v; img.data[i + 3] = 255; }
+    g.putImageData(img, 0, 0);
+    grain.appendChild(c);
+  }
+}
 let lastEquipIcon = '';
 function updateHud() {
   ui.health.style.width = player.health + '%';
