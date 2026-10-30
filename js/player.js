@@ -11,7 +11,7 @@ import { Capsule } from 'three/addons/math/Capsule.js';
 const GRAVITY = 17;
 const RADIUS = 0.35;
 export const STAND_HEIGHT = 1.8;
-export const CROUCH_HEIGHT = 1.15;
+export const CROUCH_HEIGHT = 1.3; // (agachado de verdade: olhos ~1,24 m, igual ao corpo animado)
 const EYE_BELOW_TOP = 0.14;
 
 const WALK_SPEED = 1.7;     // andar (modo andar / joystick pouco empurrado)
@@ -189,6 +189,20 @@ export class Player {
   }
 
   /** Posição dos olhos (sem efeitos de câmera). */
+  /**
+   * Câmera de 1ª pessoa: os olhos do corpo, sem sair da cápsula (não atravessa paredes).
+   * A câmera e as armas na mão usam o mesmo ponto (antes a arma ficava fora do lugar agachado).
+   */
+  clampView(v) {
+    const cx = this.collider.start.x, cz = this.collider.start.z;
+    let ox = v.x - cx, oz = v.z - cz;
+    const maxR = 0.28 + Math.abs(this.leanOffset ?? 0);
+    const r = Math.hypot(ox, oz);
+    if (r > maxR) { ox *= maxR / r; oz *= maxR / r; }
+    const top = this.collider.end.y + this.collider.radius - 0.06;
+    return v.set(cx + ox, Math.min(top, Math.max(this.collider.start.y - this.collider.radius + 0.2, v.y)), cz + oz);
+  }
+
   getEyePosition(target) {
     return target.copy(this.collider.end).setY(this.collider.end.y + RADIUS - EYE_BELOW_TOP);
   }
@@ -443,7 +457,7 @@ export class Player {
     this.horizontalSpeed = dt > 0 ? moved / dt : 0;
     if (this.onFloor && this.horizontalSpeed > 0.4) {
       // passada cresce com a velocidade (como de verdade): ~0,75 m andando, ~1,5 m correndo
-      const stride = this.crouched ? 0.5 : 0.45 + this.horizontalSpeed * 0.17;
+      const stride = this.crouched ? 0.5 : 0.45 + this.horizontalSpeed * 0.17 + Math.max(0, this.horizontalSpeed - 4) * 0.12;
       const before = Math.floor(this.stepPhase / Math.PI);
       this.stepPhase += (this.horizontalSpeed * dt / stride) * Math.PI;
       if (Math.floor(this.stepPhase / Math.PI) !== before) {

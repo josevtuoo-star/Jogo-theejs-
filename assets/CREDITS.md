@@ -33,7 +33,7 @@ sintetizados (Web Audio).
 
 | Arquivos | Origem | Licença |
 | --- | --- | --- |
-| `walk`, `jog`, `run`, `crouch`, `sneak`, `zombie` | Captura de movimento da [CMU Graphics Lab Motion Capture Database](http://mocap.cs.cmu.edu/) — sujeitos/tomadas 08_01 (andar), 02_03 (trotar), 09_01 (correr), 136_09 (agachado), 77_29 (andar furtivo) e 104_41 (andar de zumbi), na conversão BVH de Bruce Hahne (cgspeed) via [Shriinivas/cmubvh](https://github.com/Shriinivas/cmubvh). Cortados num ciclo de passada (pisada a pisada), adaptados ao esqueleto do personagem, reamostrados em 48 poses e com a altura do quadril corrigida para o pé tocar o chão | Uso livre — "The data used in this project was obtained from mocap.cs.cmu.edu. The database was created with funding from NSF EIA-0196217." |
+| `walk`, `jog`, `run`, `crouch`, `sneak`, `zombie` | Captura de movimento da [CMU Graphics Lab Motion Capture Database](http://mocap.cs.cmu.edu/) — sujeitos/tomadas 08_01 (andar), 02_03 (trotar), 09_11 (correr), 136_09 (agachado), 77_29 (andar furtivo) e 104_41 (andar de zumbi), na conversão BVH de Bruce Hahne (cgspeed) via [Shriinivas/cmubvh](https://github.com/Shriinivas/cmubvh). Cortados num ciclo de passada (pisada a pisada), adaptados ao esqueleto do personagem, reamostrados em 48 poses e com a altura do quadril corrigida para o pé tocar o chão | Uso livre — "The data used in this project was obtained from mocap.cs.cmu.edu. The database was created with funding from NSF EIA-0196217." |
 
 ## Céu (`env/`)
 

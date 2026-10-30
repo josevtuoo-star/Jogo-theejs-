@@ -141,7 +141,7 @@ const FL_PALM = [0.25, 1, 0], FL_FING = [0.95, 0.1, -0.3];
 const HAND_FLASH = handBasis(-1, FL_PALM, FL_FING);
 const WRIST_FLASH = wristFrom(new THREE.Vector3(-0.004, -0.034, 0.045), FL_PALM, FL_FING);
 // lanterna sozinha no espaço do olhar: à esquerda, baixa, apontando um pouco para o centro
-export const FLASH_POSE = [-0.15, -0.2, 0.34, 0.02, 0, -0.04];
+export const FLASH_POSE = [-0.12, -0.155, 0.31, 0.03, 0.1, -0.06];
 const FLASH_ON_GUN = new THREE.Vector3(-0.13, -0.005, -0.03); // com o revólver: ao lado da arma
 // armas longas: direita na empunhadura da coronha, esquerda por baixo do guarda-mão
 // (palma para cima, dedos envolvendo pelo lado direito)
@@ -663,6 +663,12 @@ export class Character {
     return target;
   }
 
+  /** Ponto de vista das armas: os olhos; em 1ª pessoa, presos na cápsula como a câmera. */
+  _viewEye(player, target) {
+    this.getEyeWorldPosition(target);
+    return this.firstPerson ? player.clampView(target) : target;
+  }
+
   /** Posição dos olhos do corpo no mundo (câmera em 1ª pessoa). */
   getEyeWorldPosition(target) {
     this.root.updateMatrixWorld(true);
@@ -842,11 +848,10 @@ export class Character {
       if (crouchK > 0.01 && mc.has('crouch')) blendPose(P, mc.sample('crouch', u, Q), crouchK);
       // as gravações de corrida são de ~3 m/s; correndo a 6 m/s a passada precisa ser bem maior
       // (senão o pé desliza no chão): amplia o balanço das coxas, joelhos e braços
-      const amp = 1 + 0.55 * sprint * (1 - crouchK);
+      // (só as coxas e os braços; dobrar mais os joelhos tirava os pés do chão)
+      const amp = 1 + 0.22 * sprint * (1 - crouchK);
       if (amp > 1.001) {
-        for (const k of ['thighL', 'thighR']) P[k].slerpQuaternions(_QI, _mq3.copy(P[k]), amp);
-        for (const k of ['upperL', 'upperR']) P[k].slerpQuaternions(_QI, _mq3.copy(P[k]), 1 + (amp - 1) * 0.5);
-        P.kneeL *= 1 + (amp - 1) * 0.45; P.kneeR *= 1 + (amp - 1) * 0.45;
+        for (const k of ['thighL', 'thighR', 'upperL', 'upperR']) P[k].slerpQuaternions(_QI, _mq3.copy(P[k]), amp);
       }
       const w = wMo;
       const yq = _mq1.setFromAxisAngle(_UP, this.legYaw);
@@ -869,9 +874,35 @@ export class Character {
         arm.elbow.rotation.x = lerp(arm.elbow.rotation.x, P['elbow' + Lr], w);
       }
       if (b.land > 0.01) for (const leg of [L, R]) { leg.thigh.rotation.x += b.land * 0.5 * w; leg.knee.rotation.x -= b.land * 1.0 * w; }
+      // andando agachado: mais baixo que a gravação (os olhos ficam na altura da câmera agachada)
+      const deep = crouchK * w;
+      if (deep > 0.001) {
+        this.hips.position.y -= 0.13 * deep;
+        for (const leg of [L, R]) { leg.thigh.rotateX(0.35 * deep); leg.knee.rotation.x -= 0.6 * deep; leg.ankle.rotation.x += 0.25 * deep; }
+      }
       // cabeça continua estável olhando para a mira
       this.head.rotation.set(look * 0.75 - this.torso.rotation.x - this.hips.rotation.x, -this.torso.rotation.y * 0.8, -this.torso.rotation.z * 0.5);
     }
+
+    // a cabeça não pode sair da frente da cápsula (agachado, curvado): o corpo recua junto
+    // (senão a câmera, presa na cápsula, ficava atrás dos olhos, entre os ombros)
+    {
+      const free = player.onFloor && !player.sliding && !player.rolling && !busyHands;
+      const e = this.getEyeWorldPosition(this._t2);
+      const ox = e.x - this.root.position.x, oz = e.z - this.root.position.z;
+      const r = Math.hypot(ox, oz), lim = 0.18;
+      const k = free && r > lim ? (r - lim) / r : 0;
+      const sh = this._rootShift ?? (this._rootShift = new THREE.Vector3());
+      sh.x = damp(sh.x, -ox * k, 10, dt);
+      sh.z = damp(sh.z, -oz * k, 10, dt);
+      this.root.position.x += sh.x;
+      this.root.position.z += sh.z;
+    }
+    // 1ª pessoa: os ombros vêm um pouco à frente quando as mãos trabalham na frente do rosto
+    // (o tronco não aparece; os braços alcançam a arma, a lanterna e a escada sem esticar)
+    const reach = this.firstPerson ? Math.max(b.gun, b.bat, b.flash, b.guard, b.ladder, Math.min(1, this.charge * 2), b.knife * 0.6) : 0;
+    this._fpReach = damp(this._fpReach ?? 0, reach, 10, dt);
+    for (const arm of [A, Bm]) arm.shoulder.position.z = 0.039 - 0.09 * this._fpReach;
 
     // faca pronta: mão direita à frente do peito (aparece no canto da tela em 1ª pessoa)
     const fpRaise = this.firstPerson ? 0.1 : 0;
@@ -914,7 +945,7 @@ export class Character {
       if (w < 0.001 || (arm === A && F > 0.5)) return; // esquerda segurando a lanterna
       const s = arm.side, lead = arm === A ? 1 : 0; // a esquerda fica mais à frente
       const bobG = Math.sin(this.t * 2.2 + s) * 0.012 + Math.sin(ph * 2) * 0.012 * b.move;
-      this.getEyeWorldPosition(this._t2);
+      this._viewEye(player, this._t2);
       const cy = Math.cos(player.yaw), sy = Math.sin(player.yaw), cp = Math.cos(look), sp = Math.sin(look);
       // frente, direita e cima do olhar
       const fx = -sy * cp, fy = sp, fz = -cy * cp;
@@ -1245,7 +1276,7 @@ export class Character {
 
   /** Pose [direita, cima, frente, inclinação, giro, guinada] no espaço do olhar → posição/rotação no mundo. */
   _eyeSpace(P, yawOff, look, player, pos, q) {
-    const eye = this.getEyeWorldPosition(this._t2);
+    const eye = this._viewEye(player, this._t2);
     const yaw = player.yaw, cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(look), sp = Math.sin(look);
     const fx = -sy * cp, fy = sp, fz = -cy * cp;      // frente
     const ux = sy * sp, uy = cp, uz = cy * sp;        // cima
@@ -1424,12 +1455,17 @@ export class Character {
         const sy = arm.shoulder.getWorldPosition(this._t2).y;
         // degrau acima do ombro, alternando entre as mãos
         // (em 1ª pessoa as mãos pegam degraus mais baixos: o braço não passa na frente do rosto)
-        const want = sy + (this.firstPerson ? 0.06 : 0.28) + Math.sin(lp + (arm.side > 0 ? 0 : Math.PI)) * (this.firstPerson ? 0.12 : 0.15);
+        const want = sy + (this.firstPerson ? 0.17 : 0.28) + Math.sin(lp + (arm.side > 0 ? 0 : Math.PI)) * (this.firstPerson ? 0.12 : 0.15);
         const rung = lad.bottom + 0.3 + Math.round((want - lad.bottom - 0.3) / 0.3) * 0.3;
         // (só degraus que existem: perto do topo a mão não fica agarrando o ar acima da escada)
         const lastRung = lad.bottom + 0.3 + Math.floor((lad.top + 0.2 - lad.bottom - 0.3) / 0.3) * 0.3;
-        const tgt = this._t1.set(lad.x + lad.tx * arm.side * 0.2 + lad.nx * 0.04, Math.min(rung, lastRung, sy + 0.45), lad.z + lad.tz * arm.side * 0.2 + lad.nz * 0.04);
-        solveArmIK(arm, tgt, this._v.set(arm.side * 0.9, -0.3, 0.3), L);
+        // a direita de quem sobe é -tangente (quem sobe olha para -normal); antes as mãos
+        // trocavam de lado e os braços se cruzavam na frente do rosto. As mãos ficam perto dos
+        // montantes, com a palma virada para a escada e os dedos fechando por cima do degrau.
+        const tgt = this._t1.set(lad.x - lad.tx * arm.side * 0.22 + lad.nx * 0.05, Math.min(rung, lastRung, sy + 0.45) - 0.02, lad.z - lad.tz * arm.side * 0.22 + lad.nz * 0.05);
+        solveArmIK(arm, tgt, this._v.set(arm.side * 0.9, -0.6, 0.1), L, FOREARM_PALM);
+        const hq = lad._hq ?? (lad._hq = [handBasis(-1, [-lad.nx, 0.35, -lad.nz], [0, 1, 0]), handBasis(1, [-lad.nx, 0.35, -lad.nz], [0, 1, 0])]);
+        setHandWorld(arm, hq[arm.side > 0 ? 1 : 0], L);
       }
     }
     const altL = Math.sin(lp), altR = Math.sin(lp + Math.PI);

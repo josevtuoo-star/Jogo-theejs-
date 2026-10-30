@@ -19,7 +19,7 @@ import { MocapLibrary } from './mocap.js';
 const container = document.getElementById('game');
 // antisserrilhado (MSAA): escolhido nas configurações; muda só recriando o contexto (recarrega)
 const savedAA = (() => {
-  try { return JSON.parse(localStorage.getItem('survival-settings') || '{}').antialias ?? !isTouchDevice; } catch { return !isTouchDevice; }
+  try { return JSON.parse(localStorage.getItem('survival-settings') || '{}').aa ?? true; } catch { return true; }
 })();
 const renderer = new THREE.WebGLRenderer({ antialias: savedAA, powerPreference: 'high-performance' });
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -92,7 +92,7 @@ const ui = {
 const QUALITY = {
   low:    { maxRatio: 0.9,  shadows: false, shadowSize: 512,  shadowType: THREE.BasicShadowMap, grass: 0.45 },
   medium: { maxRatio: 1.25, shadows: true,  shadowSize: 1024, shadowType: THREE.PCFShadowMap,  grass: 0.75 },
-  high:   { maxRatio: 2,    shadows: true,  shadowSize: 2048, shadowType: THREE.PCFSoftShadowMap, grass: 1 },
+  high:   { maxRatio: 2.25, shadows: true,  shadowSize: 2048, shadowType: THREE.PCFSoftShadowMap, grass: 1 },
 };
 let qualityMode = 'auto';
 let activeQuality = null;
@@ -182,13 +182,14 @@ function applySettings() {
   if (ui.quality.value !== qualityMode || activeQuality === null) {
     qualityMode = ui.quality.value;
     autoRes.scale = 1;
-    applyQuality(qualityMode === 'auto' ? (isTouchDevice ? 'medium' : 'high') : qualityMode);
+    // automático: começa no alto (resolução nítida); se o FPS cair, baixa sozinho
+    applyQuality(qualityMode === 'auto' ? 'high' : qualityMode);
   }
   try {
     localStorage.setItem('survival-settings', JSON.stringify({
       sens: ui.sens.value, fov: ui.fov.value, volume: ui.volume.value, quality: ui.quality.value,
       invert: ui.invert.checked, headbob: ui.headbob.checked, showFps: ui.showFps.checked,
-      btnSize: ui.btnSize.value, haptics: ui.haptics.checked, antialias: ui.antialias.checked,
+      btnSize: ui.btnSize.value, haptics: ui.haptics.checked, aa: ui.antialias.checked,
     }));
   } catch { /* ignore */ }
 }
@@ -198,7 +199,7 @@ ui.antialias.addEventListener('change', () => {
   applySettings();
   // só recarrega se a escolha ficou salva (senão voltaria igual)
   let saved = null;
-  try { saved = JSON.parse(localStorage.getItem('survival-settings') || '{}').antialias; } catch { /* sem armazenamento */ }
+  try { saved = JSON.parse(localStorage.getItem('survival-settings') || '{}').aa; } catch { /* sem armazenamento */ }
   if (saved === ui.antialias.checked && saved !== savedAA) location.reload();
 });
 

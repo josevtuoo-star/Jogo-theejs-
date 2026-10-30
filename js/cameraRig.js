@@ -105,17 +105,11 @@ export class CameraRig {
     if (!this.thirdPerson) {
       // segue os olhos do corpo, sem sair da cápsula (não atravessa paredes)
       if (!this._fp) this._fp = headEye.clone();
-      const cx = player.collider.start.x, cz = player.collider.start.z;
-      let ox = headEye.x - cx, oz = headEye.z - cz;
-      const maxR = 0.28 + Math.abs(player.leanOffset);
-      const r = Math.hypot(ox, oz);
-      if (r > maxR) { ox *= maxR / r; oz *= maxR / r; }
-      const top = player.collider.end.y + player.collider.radius - 0.06;
-      const ty = Math.min(top, Math.max(player.collider.start.y - player.collider.radius + 0.2, headEye.y));
-      const lambdaY = this.bobEnabled ? 28 : 7; // sem balanço: filtra o sobe-e-desce dos passos
-      this._fp.x = damp(this._fp.x, cx + ox, 35, dt);
-      this._fp.z = damp(this._fp.z, cz + oz, 35, dt);
-      this._fp.y = damp(this._fp.y, ty, lambdaY, dt);
+      const t = player.clampView(_eye.copy(headEye));
+      const lambdaY = this.bobEnabled ? 40 : 7; // sem balanço: filtra o sobe-e-desce dos passos
+      this._fp.x = damp(this._fp.x, t.x, 40, dt);
+      this._fp.z = damp(this._fp.z, t.z, 40, dt);
+      this._fp.y = damp(this._fp.y, t.y, lambdaY, dt);
       if (player.dead || player.rolling) this._fp.copy(headEye);
       this.camera.position.copy(this._fp);
       const d = this.deathBlend;

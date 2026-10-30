@@ -85,7 +85,8 @@ export function leafClusterTexture() {
 
 /** Material das copas: recorte por alpha, dos dois lados, cor por instância. */
 export function foliageCardMaterial(map) {
-  const m = new THREE.MeshStandardMaterial({ map, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.9 });
+  // alphaToCoverage: com o antisserrilhado, a borda recortada das folhas também fica lisa
+  const m = new THREE.MeshStandardMaterial({ map, alphaTest: 0.45, alphaToCoverage: true, side: THREE.DoubleSide, roughness: 0.9 });
   const depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map, alphaTest: 0.45, side: THREE.DoubleSide });
   return { material: m, depth };
 }
