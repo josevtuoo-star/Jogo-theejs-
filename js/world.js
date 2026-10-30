@@ -543,9 +543,26 @@ export class World {
     const cGrass = new THREE.Color(0x5b6a33), cDry = new THREE.Color(0x8f8148), cDark = new THREE.Color(0x3f4c26);
     const cDirt = new THREE.Color(0x6e563a), cRock = new THREE.Color(0x77736a), cLeafy = new THREE.Color(0x8a5a2c);
     const colors = new Float32Array(pos.count * 3);
+    // pesos para as texturas fotográficas (grama verde, chão seco com folhas, rocha, terra) e um
+    // tom (manchas mais escuras/claras) — usados pelo material do terreno em photoAssets.js
+    const splat = new Float32Array(pos.count * 4);
+    const tint = new Float32Array(pos.count);
     const c = new THREE.Color();
     for (let i = 0; i < pos.count; i++) {
       const x = pos.getX(i), z = pos.getZ(i);
+      {
+        const green = 1 - smoothstep(0.36, 0.7, valueNoise(x * 0.035, z * 0.035));
+        const forestZone = smoothstep(TOWN_RADIUS, TOWN_RADIUS + 20, Math.hypot(x, z));
+        const g = green * (1 - forestZone * 0.6);
+        const rock = Math.min(1, smoothstep(0.88, 0.7, nrm.getY(i)) + smoothstep(0.8, 0.93, valueNoise(x * 0.05 + 90, z * 0.05 - 30)) * 0.7);
+        const wear = smoothstep(16, 4, Math.hypot(x - 8, z - 6)) * 0.4;
+        const dirtW = Math.max(smoothstep(0.74, 0.9, valueNoise(x * 0.15 + 7, z * 0.15 + 3)) * 0.7, trailMask(x, z), wear);
+        splat[i * 4] = g * (1 - rock);
+        splat[i * 4 + 1] = (1 - g) * (1 - rock) + 0.05;
+        splat[i * 4 + 2] = rock;
+        splat[i * 4 + 3] = dirtW * (1 - rock * 0.7);
+        tint[i] = (1 - 0.28 * smoothstep(0.55, 0.85, valueNoise(x * 0.09 + 20, z * 0.09))) * (0.92 + 0.14 * valueNoise(x * 0.4 + 3, z * 0.4 + 9));
+      }
       c.copy(cGrass).lerp(cDry, smoothstep(0.42, 0.78, valueNoise(x * 0.035, z * 0.035)));
       c.lerp(cDark, smoothstep(0.55, 0.85, valueNoise(x * 0.09 + 20, z * 0.09)) * 0.6);
       // folhas secas acumuladas na floresta
@@ -558,11 +575,14 @@ export class World {
       colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b;
     }
     geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    geo.setAttribute('splat', new THREE.BufferAttribute(splat, 4));
+    geo.setAttribute('tint', new THREE.BufferAttribute(tint, 1));
     const uv = geo.attributes.uv;
     for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 90, uv.getY(i) * 90);
 
     const ground = new THREE.Mesh(geo, this.mat.ground);
     ground.receiveShadow = true;
+    this.terrainMesh = ground;
     this.scene.add(ground);
     this.colliders.add(new THREE.Mesh(geo, this.colliderMat));
 

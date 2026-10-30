@@ -12,6 +12,7 @@ import { TrainingDummies } from './dummies.js';
 import { loadPlayerModel, loadKnifeModel } from './playerModel.js';
 import { CAPACITY } from './revolver.js';
 import { buttonHTML } from './icons.js';
+import { applyPhotoAssets } from './photoAssets.js';
 
 // ---------- renderizador ----------
 const container = document.getElementById('game');
@@ -56,10 +57,12 @@ const rig = new CameraRig(camera, world.octree);
 const character = new Character(scene);
 // modelos 3D (personagem e faca); enquanto carregam, fica o corpo procedural
 const modelsReady = Promise.allSettled([
+  applyPhotoAssets(world, renderer, { quality }),
   loadPlayerModel(character, 'models/carl.glb'),
   loadKnifeModel('models/faca.glb').then((m) => character.setKnifeModel(m)),
 ]).then((r) => r.forEach((x) => x.status === 'rejected' && console.warn('modelo não carregou:', x.reason)));
 const audio = new GameAudio();
+audio.preload(); // sons gravados (decodificados no primeiro toque)
 props.onImpact = (kind, strength, pos) => audio.impact(kind, strength, pos);
 
 
@@ -651,7 +654,7 @@ function strikeHit(m, name) {
     // soco em parede/porta: baque seco e a mão volta
     const p = door && (!wall || door.distance < wall.distance) ? door.point : wall && wall.distance < reach ? wall.position : null;
     if (!p) return;
-    audio.punchHit(p);
+    audio.punchHit(p, heavy);
     character.hitRecoil(1);
     hitStop = 0.05;
     rig.shake = Math.max(rig.shake, 0.1);
@@ -958,4 +961,4 @@ ui.play.classList.remove('hidden');
 frame();
 
 // para depuração no console
-window.game = { player, world, rig, input, character, effects, props, flashlight, renderer, scene, camera, dummies, STAND_HEIGHT };
+window.game = { player, world, rig, input, character, effects, props, flashlight, renderer, scene, camera, dummies, audio, STAND_HEIGHT };

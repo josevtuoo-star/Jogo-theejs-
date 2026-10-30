@@ -17,6 +17,96 @@ export class GameAudio {
     this.bubbleTimer = 0;
     this.indoor = 0;
     this._dest = null;
+    this.samples = {};       // gravações reais (assets/sfx): nome → [AudioBuffer]
+    this._raw = null;        // arquivos baixados antes do primeiro toque (ainda não decodificados)
+    this._last = {};
+  }
+
+  /**
+   * Baixa as gravações reais (CC0, ver assets/CREDITS.md) já no carregamento. Elas só são
+   * decodificadas depois do primeiro toque/clique (o navegador exige um gesto para o áudio).
+   * Enquanto não chegam, os sons sintetizados fazem o papel.
+   */
+  async preload(base = 'assets/sfx/') {
+    try {
+      const index = await (await fetch(base + 'index.json')).json();
+      const jobs = [];
+      this._raw = {};
+      for (const [name, n] of Object.entries(index)) {
+        const files = n === 1 && name.startsWith('amb_') ? [name] : Array.from({ length: n }, (_, i) => `${name}_${i}`);
+        jobs.push(Promise.all(files.map((f) => fetch(base + f + '.mp3').then((r) => (r.ok ? r.arrayBuffer() : null)).catch(() => null)))
+          .then((bufs) => { this._raw[name] = bufs.filter(Boolean); }));
+      }
+      await Promise.all(jobs);
+      if (this.ctx) this._decodeAll();
+    } catch (e) {
+      console.warn('sons gravados não carregaram (usando sintetizados):', e);
+    }
+  }
+
+  async _decodeAll() {
+    if (!this._raw || !this.ctx) return;
+    const raw = this._raw;
+    this._raw = null;
+    await Promise.all(Object.entries(raw).map(async ([name, bufs]) => {
+      const out = [];
+      for (const b of bufs) {
+        try { out.push(await this.ctx.decodeAudioData(b.slice(0))); } catch { /* arquivo ruim: ignora */ }
+      }
+      if (out.length) this.samples[name] = out;
+    }));
+    this._startAmbience();
+  }
+
+  /** Tem a gravação `name` pronta para tocar? */
+  has(name) { return !!this.samples[name]; }
+
+  /**
+   * Toca uma gravação (variação aleatória, sem repetir a anterior), com leve mudança de tom e
+   * volume para nunca soar igual. pos: posição 3D no mundo. Retorna false se ainda não carregou.
+   */
+  _play(name, { gain = 1, rate = 1, pos = null, ref = 2, delay = 0, vary = 0.06, lowpass = 0, dest = null } = {}) {
+    const set = this.samples[name];
+    if (!this.ctx || !set) return false;
+    let i = Math.floor(Math.random() * set.length);
+    if (set.length > 1 && i === this._last[name]) i = (i + 1) % set.length;
+    this._last[name] = i;
+    const src = this.ctx.createBufferSource();
+    src.buffer = set[i];
+    src.playbackRate.value = rate * (1 + (Math.random() * 2 - 1) * vary);
+    const g = this.ctx.createGain();
+    g.gain.value = gain * (1 + (Math.random() * 2 - 1) * vary * 1.5);
+    let node = src.connect(g);
+    if (lowpass) {
+      const f = this.ctx.createBiquadFilter();
+      f.type = 'lowpass'; f.frequency.value = lowpass;
+      node = node.connect(f);
+    }
+    let pan = null;
+    if (pos) pan = this._panner(pos, ref);
+    node.connect(pan ?? dest ?? this._dest ?? this.sfx);
+    src.start(this.ctx.currentTime + delay);
+    if (pan) setTimeout(() => pan.disconnect(), (set[i].duration / src.playbackRate.value + delay) * 1000 + 500);
+    return true;
+  }
+
+  /** Ambiente gravado em loop: pássaros e insetos (o vento continua sintetizado). */
+  _startAmbience() {
+    if (this.ambBirds || !this.ctx) return;
+    const loop = (name, vol) => {
+      const set = this.samples[name];
+      if (!set) return null;
+      const src = this.ctx.createBufferSource();
+      src.buffer = set[0];
+      src.loop = true;
+      const g = this.ctx.createGain();
+      g.gain.value = vol;
+      src.connect(g).connect(this.master);
+      src.start(this.ctx.currentTime, Math.random() * set[0].duration);
+      return g;
+    };
+    this.ambBirds = loop('amb_birds', 0.0);
+    this.ambInsects = loop('amb_insects', 0.0);
   }
 
   /** Precisa ser chamado a partir de um gesto do usuário (clique/toque). */
@@ -56,6 +146,7 @@ export class GameAudio {
     for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
 
     this.firePanners = new Map();
+    if (this._raw) this._decodeAll();
     this._shotBuffers(); // prepara o som do tiro já (evita travadinha no primeiro disparo)
     // passos: gera um piso de cada vez, sem travar o início do jogo
     ['grass', 'concrete', 'wood', 'metal'].forEach((sfc, i) => setTimeout(() => this._stepBank(sfc), 150 + i * 250));
@@ -280,6 +371,16 @@ export class GameAudio {
     if (!this.ctx) return;
     if (surface === 'water') { this.splash(0.22 * (run ? 1.3 : 0.8)); this._foley(0.8, run, speed); return; }
     const k = crouch ? 0.38 : run ? 1.25 : Math.min(1.05, 0.5 + speed * 0.15);
+    // gravações reais por piso; na grama seca de outono soma o estalar de folhas
+    const rate = (run ? 1.06 : 1) * (crouch ? 0.94 : 1);
+    const main = surface === 'concrete' || surface === 'metal' ? 'step_concrete' : surface === 'wood' ? 'step_wood' : 'step_grass';
+    if (this._play(main, { gain: (surface === 'grass' || !['concrete', 'metal', 'wood'].includes(surface) ? 0.5 : 0.62) * k, rate })) {
+      if (main === 'step_grass') this._play('step_snow', { gain: 0.14 * k, rate: rate * 1.15, vary: 0.1 });
+      if (surface === 'metal') this._play('imp_metal_light', { gain: 0.16 * k, rate: 0.9 });
+      if (surface === 'wood' && Math.random() < 0.12) this._play('creak', { gain: 0.08, rate: 1.2, delay: 0.05 });
+      this._foley(k, run, speed);
+      return;
+    }
     const bank = this._stepBank(surface === 'concrete' || surface === 'wood' || surface === 'metal' ? surface : 'grass');
     const src = this.ctx.createBufferSource();
     src.buffer = bank[Math.floor(Math.random() * bank.length)];
@@ -301,6 +402,8 @@ export class GameAudio {
 
   /** Roupa roçando e equipamento balançando a cada passo. */
   _foley(k, run, speed) {
+    // roupa: gravação de tecido baixinha, às vezes
+    if (this.has('cloth') && Math.random() < (run ? 0.6 : 0.25)) this._play('cloth', { gain: 0.09 * k, rate: 1.1, vary: 0.12 });
     this._burst({ duration: 0.16, freq: 1300 + Math.random() * 500, q: 0.6, gain: 0.03 * k, type: 'bandpass', attack: 0.05, delay: 0.02 });
     if (speed > 3) {
       // fivelas e alças da mochila
@@ -343,6 +446,7 @@ export class GameAudio {
 
   unsheath() {
     if (!this.ctx) return;
+    if (this._play('knife_draw', { gain: 0.55 })) return;
     const t = this.ctx.currentTime;
     const src = this.ctx.createBufferSource();
     src.buffer = this.noise;
@@ -361,6 +465,7 @@ export class GameAudio {
   }
 
   sheathe() {
+    if (this._play('knife_draw', { gain: 0.35, rate: 1.15 })) { this._play('leather', { gain: 0.3, delay: 0.16 }); return; }
     this._burst({ duration: 0.18, freq: 3000, q: 3, gain: 0.08, type: 'bandpass', attack: 0.03 });
     this._burst({ duration: 0.05, freq: 600, q: 2, gain: 0.12, type: 'bandpass', delay: 0.16 });
   }
@@ -434,12 +539,17 @@ export class GameAudio {
     if (!this.ctx) return;
     const ctx = this.ctx, t = ctx.currentTime;
     const bufs = this._shotBuffers();
+    const g = ctx.createGain();
+    g.connect(this.sfx);
+    // tiro gravado de verdade (pistola, CC0), um pouco mais grave para soar como .357,
+    // somado à pancada grave sintetizada; sem a gravação, só o sintetizado
+    const rec = this._play('gun_shot', { gain: 1.0, rate: 0.84, vary: 0.03, dest: g });
     const src = ctx.createBufferSource();
     src.buffer = bufs[Math.floor(Math.random() * bufs.length)];
     src.playbackRate.value = 0.95 + Math.random() * 0.1;
-    const g = ctx.createGain();
-    g.gain.value = 1.0;
-    src.connect(g).connect(this.sfx);
+    const sg = ctx.createGain();
+    sg.gain.value = rec ? 0.55 : 1.0;
+    src.connect(sg).connect(g);
     // eco: cópia abafada e atrasada, duas vezes (morro e floresta)
     const k = 1 - indoor;
     if (k > 0.05) {
@@ -460,35 +570,45 @@ export class GameAudio {
   }
 
   dryFire() {
+    if (this._play('metal_click', { gain: 0.55, rate: 1.1 })) return;
     this._tone(2600, 0.04, 0.12, 'square', 0, 0.8, 0, 2600);
     this._burst({ duration: 0.03, freq: 4000, q: 3, gain: 0.15, type: 'bandpass' });
   }
 
   /** Sacar do coldre / guardar: couro raspando e o clique do metal. */
   holster(draw = true) {
+    if (this._play('leather', { gain: 0.45 })) {
+      this._play(draw ? 'belt_handle' : 'cloth_belt', { gain: 0.4, delay: draw ? 0.12 : 0.1 });
+      this._play('metal_click', { gain: 0.18, rate: 1.3, delay: draw ? 0.3 : 0.22 });
+      return;
+    }
     this._burst({ duration: 0.22, freq: 1500, q: 1.2, gain: 0.12, type: 'bandpass', attack: 0.04 });
     this._tone(draw ? 3400 : 2900, 0.06, 0.04, 'triangle', draw ? 0.18 : 0.12);
     this._burst({ duration: 0.03, freq: 2500, q: 3, gain: 0.12, type: 'bandpass', delay: draw ? 0.2 : 0.14 });
   }
 
   cylinderOpen() {
+    if (this._play('metal_latch', { gain: 0.5, rate: 1.15 })) return;
     this._burst({ duration: 0.04, freq: 3000, q: 4, gain: 0.2, type: 'bandpass' });
     this._tone(1800, 0.08, 0.05, 'triangle', 0.03, 0.9);
   }
 
   cylinderClose() {
+    if (this._play('metal_click', { gain: 0.6, rate: 0.85 })) { this._play('metal_latch', { gain: 0.3, rate: 1.4, delay: 0.03 }); return; }
     this._burst({ duration: 0.035, freq: 2400, q: 4, gain: 0.3, type: 'bandpass' });
     this._tone(1400, 0.1, 0.08, 'triangle', 0, 0.85);
     this._burst({ duration: 0.02, freq: 5000, q: 3, gain: 0.08, type: 'bandpass', delay: 0.05 });
   }
 
   ejectShells(count) {
+    if (this._play('coins', { gain: 0.3, rate: 1.25 })) return;
     // cápsulas deslizando para fora do tambor
     for (let i = 0; i < count; i++) this._tone(3600 + Math.random() * 1500, 0.07, 0.03, 'triangle', i * 0.012);
     this._burst({ duration: 0.08, freq: 2800, q: 2, gain: 0.08, type: 'bandpass' });
   }
 
   loadRounds() {
+    if (this._play('coins', { gain: 0.4, rate: 0.95 })) { this._play('metal_click', { gain: 0.25, rate: 1.4, delay: 0.12 }); return; }
     for (let i = 0; i < 3; i++) this._burst({ duration: 0.025, freq: 3000 + i * 300, q: 4, gain: 0.12, type: 'bandpass', delay: i * 0.04 });
     this._tone(2200, 0.05, 0.04, 'triangle', 0.1);
   }
@@ -503,6 +623,11 @@ export class GameAudio {
 
   /** Bala acertando: cada material tem seu som; às vezes ricocheteia. */
   bulletHit(surface, pos, ricochet = false) {
+    const rec = { metal: 'imp_metal_medium', wood: 'imp_wood_heavy', concrete: 'imp_mining', sack: 'imp_soft_heavy', water: null }[surface] ?? 'imp_soft_medium';
+    if (rec && this._play(rec, { gain: 0.8, pos, ref: 3, rate: surface === 'concrete' ? 1.1 : 1 })) {
+      if (ricochet) this._at(pos, () => this._tone(3800 + Math.random() * 1500, 0.35, 0.06, 'sine', 0.01, 0.45), 3);
+      return;
+    }
     this._at(pos, () => {
       switch (surface) {
         case 'metal':
@@ -536,6 +661,7 @@ export class GameAudio {
   }
 
   pickup() {
+    if (this._play('leather', { gain: 0.45 })) { this._play('coins', { gain: 0.35, delay: 0.08 }); return; }
     this._burst({ duration: 0.12, freq: 1400, q: 1, gain: 0.12, type: 'bandpass', attack: 0.02 });
     for (let i = 0; i < 4; i++) this._tone(3000 + Math.random() * 1200, 0.05, 0.03, 'triangle', 0.08 + i * 0.03);
   }
@@ -543,6 +669,11 @@ export class GameAudio {
   /** Golpe acertando o boneco de estopa: baque abafado, palha e (faca) o pano rasgando. */
   sackHit(pos, knife, power = 4) {
     const k = Math.min(1, power / 8);
+    if (this._play(k > 0.6 ? 'imp_soft_heavy' : 'imp_soft_medium', { gain: 0.6 + k * 0.3, pos, rate: 0.9 })) {
+      if (knife) this._play('knife_slice', { gain: 0.55, pos });
+      this._at(pos, () => this._grains(6 + Math.round(k * 8), 0.12, { fMin: 2500, fMax: 6500, gain: 0.04 })); // palha
+      return;
+    }
     this._at(pos, () => {
       this._burst({ duration: 0.14 + k * 0.08, freq: 150 + k * 60, q: 0.8, gain: 0.45 + k * 0.4 });
       this._burst({ duration: 0.1, freq: 700, q: 1.2, gain: 0.12 + k * 0.1, type: 'bandpass' });
@@ -554,7 +685,8 @@ export class GameAudio {
     });
   }
 
-  punchHit(pos) {
+  punchHit(pos, heavy = false) {
+    if (this._play(heavy ? 'imp_punch_heavy' : 'imp_punch_medium', { gain: 0.7, pos })) return;
     this._at(pos, () => {
       this._burst({ duration: 0.09, freq: 220, gain: 0.5 });
       this._burst({ duration: 0.04, freq: 1500, q: 1.5, gain: 0.15, type: 'bandpass' });
@@ -568,6 +700,7 @@ export class GameAudio {
   }
 
   jump() {
+    this._play('cloth', { gain: 0.25 });
     this._burst({ duration: 0.08, freq: 300, gain: 0.18 });
     this._burst({ duration: 0.18, freq: 1200, q: 0.8, gain: 0.05, type: 'bandpass', attack: 0.03 }); // roupa
     if (Math.random() < 0.5) this.grunt(0.5);
@@ -575,6 +708,13 @@ export class GameAudio {
 
   land(speed, surface = 'grass') {
     const k = Math.min(speed / 12, 1);
+    if (this._play(k > 0.5 ? 'imp_soft_heavy' : 'imp_soft_medium', { gain: 0.35 + k * 0.5, rate: 0.85 })) {
+      this.step(surface, true, false, 6);
+      this._play('cloth', { gain: 0.3, delay: 0.03 });
+      if (k > 0.3) this._play('drop_leather', { gain: 0.25 * k, delay: 0.05 });
+      if (speed > 8) this.grunt(0.8);
+      return;
+    }
     this._burst({ duration: 0.16 + k * 0.15, freq: 160 + k * 100, q: 0.7, gain: 0.25 + k * 0.45 }); // corpo
     this.step(surface, true, false, 6);
     this.step(surface, true, false, 6);
@@ -584,6 +724,12 @@ export class GameAudio {
   }
 
   climb(heavy = false) {
+    if (this._play('cloth', { gain: 0.35 })) {
+      this._play('leather', { gain: 0.25, delay: 0.06 });
+      this._play('imp_soft_medium', { gain: 0.2, delay: 0.04, rate: 1.2 }); // mãos na borda
+      this.grunt(heavy ? 1 : 0.6);
+      return;
+    }
     this._burst({ duration: 0.35, freq: 1300, q: 0.7, gain: 0.12, type: 'bandpass', attack: 0.08 }); // roupa raspando
     this._burst({ duration: 0.06, freq: 700, q: 2, gain: 0.22, type: 'bandpass', delay: 0.04 });     // mãos na borda
     this._burst({ duration: 0.06, freq: 650, q: 2, gain: 0.18, type: 'bandpass', delay: 0.1 });
@@ -631,6 +777,12 @@ export class GameAudio {
 
   /** Faca acertando uma superfície. */
   knifeHit(surface, pos) {
+    const rec = { metal: 'imp_metal_light', wood: 'imp_wood_medium', concrete: 'imp_mining' }[surface] ?? 'imp_soft_medium';
+    if (this._play(rec, { gain: 0.6, pos })) {
+      if (surface === 'wood') this._play('chop', { gain: 0.35, pos });
+      if (surface === 'metal') this._tone(1900 + Math.random() * 300, 0.35, 0.06, 'triangle'); // lâmina vibrando
+      return;
+    }
     this._at(pos, () => {
       switch (surface) {
         case 'metal':
@@ -655,6 +807,11 @@ export class GameAudio {
   /** Objeto com física batendo em algo. */
   impact(kind, strength, pos) {
     const k = Math.max(0.15, strength);
+    const rec = {
+      can: 'imp_tin_medium', glass: k > 0.6 ? 'imp_glass_medium' : 'imp_glass_light', hollow: 'imp_plate_light',
+      wood: k > 0.6 ? 'imp_wood_medium' : 'imp_wood_light', metal: k > 0.6 ? 'imp_metal_medium' : 'metal_pot',
+    }[kind] ?? 'imp_generic_light';
+    if (this._play(rec, { gain: 0.25 + k * 0.5, pos, ref: 1.2, rate: kind === 'can' ? 1.1 : 1 })) return;
     this._at(pos, () => {
       switch (kind) {
         case 'can':
@@ -679,6 +836,7 @@ export class GameAudio {
   }
 
   doorOpen(pos) {
+    if (this._play('door_open', { gain: 0.7, pos })) { if (Math.random() < 0.6) this._play('creak', { gain: 0.35, pos, delay: 0.15 }); return; }
     this._at(pos, () => {
       this._burst({ duration: 0.05, freq: 2400, q: 3, gain: 0.25, type: 'bandpass' }); // trinco
       // rangido: dente-de-serra filtrado com vibrato
@@ -705,6 +863,7 @@ export class GameAudio {
   }
 
   doorClose(pos) {
+    if (this._play('door_close', { gain: 0.75, pos })) return;
     this._at(pos, () => {
       this._burst({ duration: 0.25, freq: 160, gain: 0.7 });
       this._burst({ duration: 0.06, freq: 2000, q: 3, gain: 0.25, type: 'bandpass', delay: 0.02 });
@@ -780,6 +939,10 @@ export class GameAudio {
     this.indoor += (indoor - this.indoor) * Math.min(1, dt * 3);
     this.reverbSend.gain.setTargetAtTime(this.indoor * 0.45, t, 0.2);
     this.under.frequency.setTargetAtTime(underwater ? 500 : 20000, t, 0.08);
+    // ambiente gravado: pássaros e insetos somem dentro de casa e debaixo d'água
+    const out = (1 - this.indoor * 0.8) * (underwater ? 0.1 : 1);
+    if (this.ambBirds) this.ambBirds.gain.setTargetAtTime(0.16 * out, t, 0.5);
+    if (this.ambInsects) this.ambInsects.gain.setTargetAtTime(0.07 * out, t, 0.5);
     if (this.windGain) {
       this.windGain.gain.value = 0.05 * (1 - this.indoor * 0.75) * (underwater ? 0.2 : 1);
       this.windFilter.Q.value = 0.6 + this.indoor * 1.5;
@@ -787,7 +950,8 @@ export class GameAudio {
     if (!underwater) {
       this.birdTimer -= dt;
       if (this.birdTimer <= 0) {
-        if (Math.random() < 0.25) this._crow(); else this._bird();
+        // com o ambiente gravado tocando, só os corvos sintetizados de vez em quando
+        if (this.ambBirds) { if (Math.random() < 0.35) this._crow(); } else if (Math.random() < 0.25) this._crow(); else this._bird();
         this.birdTimer = 3 + Math.random() * 8;
       }
     } else {

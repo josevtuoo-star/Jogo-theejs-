@@ -34,6 +34,9 @@ Jogo de sobrevivência em primeira pessoa (estilo DayZ / Minecraft / The Walking
 - **Sacar e guardar animados** (revólver e faca): a mão vai até o coldre/bainha, segura, puxa para cima, gira e traz para frente; guardar faz o caminho inverso
 - Mãos de verdade na arma: a direita envolve a empunhadura com o polegar por cima, a esquerda apoia por baixo
 - **Lanterna com o revólver**: uma mão na arma e a outra segurando a lanterna ao lado, iluminando para onde se mira — atirando com uma mão só a arma balança mais, o recuo é maior e a precisão cai bastante
+- **Sons gravados de verdade** (CC0): passos por piso (grama com folhas secas, concreto, madeira), impactos de soco, metal, madeira, vidro e lata, portas rangendo, faca saindo da bainha, couro do coldre, roupa, tiro real (mais grave, com estrondo e eco sintetizados), recarga, ambiente de pássaros e insetos — variação aleatória sem repetir, tom e volume levemente diferentes a cada vez, som 3D
+- **Texturas fotográficas** (Poly Haven, CC0): terreno misturando grama, chão seco de outono com folhas e gravetos e rocha com musgo (mistura por altura, duas escalas para não repetir), terra escura nas trilhas, asfalto com pedriscos, tijolo real com relevo, tábuas velhas
+- **Iluminação de céu real** (HDRI do Poly Haven) ajustada para um dia nublado de outono
 - Passos sintetizados amostra a amostra por piso (grama/terra, concreto, madeira, metal), 6 variações cada, pé esquerdo/direito
 - Controles do celular refeitos: ícones desenhados (iguais em qualquer aparelho), layout de jogo de tiro, munição embaixo da vida
 - Som do tiro sintetizado amostra a amostra (estalo, explosão, pancada grave, cauda) com eco do vale; compressor no áudio para não estourar
@@ -119,6 +122,9 @@ js/playerModel.js   carrega os modelos 3D (personagem com pesos automáticos no 
 js/dummies.js       bonecos de treino (balanço com mola, marcas de corte e furos)
 js/revolver.js      revólver: modelo, tambor, cão, clarão, cápsulas
 js/textures.js      texturas procedurais (canvas)
+js/photoAssets.js   texturas fotográficas, material do terreno (mistura por altura) e céu HDRI
+js/icons.js         ícones SVG dos botões touch
+assets/             sons gravados (sfx/), texturas (tex/), céu HDRI (env/) e CREDITS.md
 models/             carl.glb (personagem) e faca.glb
 js/audio.js         sons procedurais (Web Audio)
 ```
@@ -133,6 +139,12 @@ No console do navegador, `window.game` dá acesso ao jogador e ao mundo para dep
 5. Combate corpo a corpo / armas
 6. Construção e coleta de recursos (estilo Minecraft)
 7. Ciclo dia/noite e salvamento
+
+## Créditos dos sons, texturas e céu
+
+Gravações reais (Kenney, The Free Firearm Sound Library — CC0; Godot demos — MIT), texturas
+fotográficas do Poly Haven (CC0) e do three.js (MIT) e céu HDRI do Poly Haven (CC0). Lista
+completa, com links e o que foi alterado em cada arquivo: [`assets/CREDITS.md`](assets/CREDITS.md).
 
 ## Créditos dos modelos 3D
 
