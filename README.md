@@ -34,6 +34,8 @@ Jogo de sobrevivência em primeira pessoa (estilo DayZ / Minecraft / The Walking
 - **Sacar e guardar animados** (revólver e faca): a mão vai até o coldre/bainha, segura, puxa para cima, gira e traz para frente; guardar faz o caminho inverso
 - Mãos de verdade na arma: a direita envolve a empunhadura com o polegar por cima, a esquerda apoia por baixo
 - **Lanterna com o revólver**: uma mão na arma e a outra segurando a lanterna ao lado, iluminando para onde se mira — atirando com uma mão só a arma balança mais, o recuo é maior e a precisão cai bastante
+- Passos sintetizados amostra a amostra por piso (grama/terra, concreto, madeira, metal), 6 variações cada, pé esquerdo/direito
+- Controles do celular refeitos: ícones desenhados (iguais em qualquer aparelho), layout de jogo de tiro, munição embaixo da vida
 - Som do tiro sintetizado amostra a amostra (estalo, explosão, pancada grave, cauda) com eco do vale; compressor no áudio para não estourar
 - **Recarga animada** (`R` / 🔄 / `↓`): abre o tambor, ejeta as cápsulas (que caem e tilintam no chão), pega o speedloader no cinto, carrega e fecha
 - Munição limitada (6 no tambor + reserva); **caixas de munição .357** espalhadas pelo mapa (`F` para pegar)
@@ -74,8 +76,8 @@ Jogo de sobrevivência em primeira pessoa (estilo DayZ / Minecraft / The Walking
 | Inclinar (espiar) | `Q` / `E` | — | `LB` / `RB` |
 | Soco / golpe de faca (combo) | Clique esquerdo | 👊 / 🔪 | `RT` |
 | Golpe forte | Segurar e soltar o clique | Segurar 👊 / 🔪 | Segurar `RT` |
-| Revólver | `3` | **⇄** (mãos → faca → revólver) | `←` |
-| Mirar / atirar / recarregar | Botão direito / clique / `R` | **MIRAR** / 🔫 / 🔄 | `LT` / `RT` / `↓` |
+| Revólver / trocar item | `3` / rodinha do mouse | **TROCAR** (mãos → faca → revólver) | `←` |
+| Mirar / atirar / recarregar | Botão direito / clique / `R` | **MIRAR** / **ATIRAR** / **RECARR.** (arrastar sobre ATIRAR/MIRAR gira a câmera) | `LT` / `RT` / `↓` |
 | Usar / porta | `F` | **USAR** (aparece perto da porta) | `X` |
 | Lanterna | `L` | 🔦 | `↑` (direcional) |
 | Nadar: mergulhar / subir | `Ctrl` / `Espaço` | **AGACHAR** / **PULAR** | `B` / `A` |

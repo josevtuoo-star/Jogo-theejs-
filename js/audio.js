@@ -57,6 +57,8 @@ export class GameAudio {
 
     this.firePanners = new Map();
     this._shotBuffers(); // prepara o som do tiro já (evita travadinha no primeiro disparo)
+    // passos: gera um piso de cada vez, sem travar o início do jogo
+    ['grass', 'concrete', 'wood', 'metal'].forEach((sfc, i) => setTimeout(() => this._stepBank(sfc), 150 + i * 250));
     this._startWind();
   }
 
@@ -178,35 +180,122 @@ export class GameAudio {
   }
 
   /** Passo: calcanhar + rolagem do pé + ponta, com textura de cada piso. */
-  step(surface = 'grass', run = false, crouch = false, speed = 3) {
-    const k = crouch ? 0.4 : run ? 1.35 : Math.min(1.1, 0.55 + speed * 0.15);
-    const toe = run ? 0.05 : 0.09; // tempo entre calcanhar e ponta
-    switch (surface) {
-      case 'concrete':
-        this._burst({ duration: 0.025, freq: 2400 + Math.random() * 600, q: 2, gain: 0.22 * k, type: 'bandpass' });
-        this._burst({ duration: 0.05, freq: 160, gain: 0.22 * k });
-        this._grains(7, 0.05, { fMin: 3500, fMax: 8000, gain: 0.035 * k, dur: 0.008 });
-        this._burst({ duration: 0.05, freq: 1700, q: 1.3, gain: 0.1 * k, type: 'bandpass', delay: toe, attack: 0.01 }); // arrasto da ponta
-        break;
-      case 'wood':
-        this._burst({ duration: 0.13, freq: 260 + Math.random() * 60, q: 6, gain: 0.55 * k, type: 'bandpass' });
-        this._tone(120 + Math.random() * 25, 0.11, 0.14 * k, 'triangle');
-        this._burst({ duration: 0.06, freq: 900, q: 3, gain: 0.12 * k, type: 'bandpass', delay: toe });
-        if (Math.random() < 0.2) this._tone(330 + Math.random() * 120, 0.35, 0.018, 'sawtooth', 0.03, 0.82, 0, 650); // rangido da tábua
-        break;
-      case 'metal':
-        this._burst({ duration: 0.03, freq: 3000, q: 2, gain: 0.16 * k, type: 'bandpass' });
-        for (const [f, g] of [[430, 0.045], [1170, 0.025], [2310, 0.012]]) this._tone(f * (0.95 + Math.random() * 0.1), 0.3, g * k, 'sine');
-        this._burst({ duration: 0.04, freq: 140, gain: 0.15 * k });
-        break;
-      case 'water':
-        this.splash(0.22 * k);
-        break;
-      default: // grama alta, terra e folhas secas
-        this._burst({ duration: 0.06, freq: 170, gain: 0.2 * k });                                   // pé no chão
-        this._grains(run ? 26 : 18, run ? 0.07 : 0.1, { fMin: 1800, fMax: 7000, gain: 0.05 * k, dur: 0.014 }); // folhas estalando
-        this._burst({ duration: 0.14, freq: 1100, q: 0.7, gain: 0.05 * k, type: 'bandpass', attack: 0.02 }); // grama roçando
+  /**
+   * Banco de passos sintetizados amostra a amostra (uma vez), 6 variações por piso:
+   * calcanhar + rolagem + ponta, com a textura do piso — grama/terra (folhas e torrões
+   * estalando), concreto (estalo da sola e arrasto), madeira (tábua oca ressoando),
+   * metal (chapa vibrando).
+   */
+  _stepBank(surface) {
+    this._steps ??= {};
+    if (this._steps[surface]) return this._steps[surface];
+    const sr = this.ctx.sampleRate, n = Math.floor(sr * 0.36);
+    const bank = [];
+    // filtro passa-faixa (RBJ) simples, amostra a amostra
+    const bp = (f, q) => {
+      const w = 2 * Math.PI * f / sr, al = Math.sin(w) / (2 * q), a0 = 1 + al;
+      const b0 = al / a0, b2 = -al / a0, a1 = -2 * Math.cos(w) / a0, a2 = (1 - al) / a0;
+      let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+      return (x) => { const y = b0 * x + b2 * x2 - a1 * y1 - a2 * y2; x2 = x1; x1 = x; y2 = y1; y1 = y; return y; };
+    };
+    const lp = (f) => { const a = 1 - Math.exp(-2 * Math.PI * f / sr); let y = 0; return (x) => (y += (x - y) * a); };
+    for (let v = 0; v < 6; v++) {
+      const buf = this.ctx.createBuffer(1, n, sr);
+      const d = buf.getChannelData(0);
+      const toe = 0.065 + Math.random() * 0.04;           // calcanhar → ponta
+      const heelG = 0.8 + Math.random() * 0.4, toeG = 0.5 + Math.random() * 0.4;
+      const thumpLP = lp(220 + Math.random() * 80), scuffBP = bp(1400 + Math.random() * 900, 0.9), rustleBP = bp(2200 + Math.random() * 1500, 0.7);
+      const modes = surface === 'wood' ? [[92, 0.09], [178, 0.065], [305, 0.045], [515, 0.03], [860, 0.018]]
+        : surface === 'metal' ? [[380, 0.35], [1015, 0.22], [1960, 0.14], [3120, 0.09], [4300, 0.06]] : [];
+      const mf = modes.map(([f]) => f * (0.94 + Math.random() * 0.12));
+      // estalos (folhas, terra, cascalho): instantes aleatórios depois do calcanhar e da ponta
+      const clicks = [];
+      const nClicks = surface === 'grass' ? 40 : surface === 'concrete' ? 10 : 4;
+      for (let i = 0; i < nClicks; i++) {
+        const base = Math.random() < 0.55 ? 0 : toe;
+        clicks.push([Math.floor((base + Math.pow(Math.random(), 1.8) * 0.13) * sr), 0.2 + Math.random() * 0.8, 1 + Math.random() * 3]);
+      }
+      const clickBuf = new Float32Array(n);
+      for (const [at, g, ms] of clicks) {
+        const len = Math.floor(sr * ms / 1000);
+        let hp = 0, prev = 0;
+        for (let i = 0; i < len && at + i < n; i++) {
+          const w = Math.random() * 2 - 1;
+          hp = 0.85 * (hp + w - prev); prev = w; // passa-alta: estalo seco
+          clickBuf[at + i] += hp * g * Math.exp(-i / (len * 0.35));
+        }
+      }
+      for (let i = 0; i < n; i++) {
+        const t = i / sr;
+        const w = Math.random() * 2 - 1;
+        const eH = t < 0.002 ? t / 0.002 : Math.exp(-(t - 0.002) / 0.03);
+        const tt = t - toe;
+        const eT = tt < 0 ? 0 : tt < 0.004 ? tt / 0.004 : Math.exp(-(tt - 0.004) / 0.035);
+        const impact = eH * heelG + eT * toeG;
+        let x = thumpLP(w) * impact * 3.2 + Math.sin(2 * Math.PI * 78 * t) * Math.exp(-t / 0.035) * 0.35 * heelG;
+        switch (surface) {
+          case 'concrete': {
+            // estalo da sola (curto e agudo) + arrasto da ponta + areia
+            const click = (t < 0.004 ? 1 : 0) * w * 0.9 * heelG + (tt > 0 && tt < 0.003 ? w * 0.5 * toeG : 0);
+            const scuffEnv = tt > 0 ? Math.min(1, tt / 0.012) * Math.exp(-tt / 0.045) : 0;
+            x += click + scuffBP(w) * scuffEnv * 1.1 + clickBuf[i] * 0.35;
+            break;
+          }
+          case 'wood': {
+            let r = 0;
+            for (let m = 0; m < mf.length; m++) {
+              const dec = modes[m][1];
+              r += Math.sin(2 * Math.PI * mf[m] * t) * Math.exp(-t / dec) * heelG / (m + 1.5)
+                 + (tt > 0 ? Math.sin(2 * Math.PI * mf[m] * tt) * Math.exp(-tt / dec) * toeG / (m + 2) : 0);
+            }
+            x = x * 0.6 + r * 0.55 + (t < 0.003 ? w * 0.4 : 0) + clickBuf[i] * 0.2;
+            break;
+          }
+          case 'metal': {
+            let r = 0;
+            for (let m = 0; m < mf.length; m++) {
+              const dec = modes[m][1] * 0.6;
+              r += Math.sin(2 * Math.PI * mf[m] * t) * Math.exp(-t / dec) * heelG / (m + 1)
+                 + (tt > 0 ? Math.sin(2 * Math.PI * mf[m] * tt) * Math.exp(-tt / dec) * toeG / (m + 1.5) : 0);
+            }
+            x = x * 0.5 + r * 0.35 + (t < 0.002 ? w * 0.6 : 0);
+            break;
+          }
+          default: {
+            // grama seca, folhas e terra: estalos + capim roçando no tornozelo
+            const rustle = rustleBP(w) * (t < 0.03 ? t / 0.03 : Math.exp(-(t - 0.03) / 0.09)) * 0.55;
+            x = x * 0.85 + clickBuf[i] * 0.9 + rustle;
+          }
+        }
+        d[i] = Math.tanh(x * 1.2) * 0.85;
+      }
+      bank.push(buf);
     }
+    this._steps[surface] = bank;
+    return bank;
+  }
+
+  /** Passo: amostra do piso (variação aleatória), pé esquerdo/direito levemente de lados opostos. */
+  step(surface = 'grass', run = false, crouch = false, speed = 3) {
+    if (!this.ctx) return;
+    if (surface === 'water') { this.splash(0.22 * (run ? 1.3 : 0.8)); this._foley(0.8, run, speed); return; }
+    const k = crouch ? 0.38 : run ? 1.25 : Math.min(1.05, 0.5 + speed * 0.15);
+    const bank = this._stepBank(surface === 'concrete' || surface === 'wood' || surface === 'metal' ? surface : 'grass');
+    const src = this.ctx.createBufferSource();
+    src.buffer = bank[Math.floor(Math.random() * bank.length)];
+    src.playbackRate.value = (run ? 1.12 : 1) * (0.92 + Math.random() * 0.16) * (crouch ? 0.9 : 1);
+    const g = this.ctx.createGain();
+    g.gain.value = 0.55 * k * (0.85 + Math.random() * 0.3);
+    this._foot = -(this._foot ?? 1);
+    let node = src.connect(g);
+    if (this.ctx.createStereoPanner) {
+      const p = this.ctx.createStereoPanner();
+      p.pan.value = this._foot * 0.12;
+      node = node.connect(p);
+    }
+    node.connect(this.sfx);
+    src.start();
+    if (surface === 'wood' && Math.random() < 0.15) this._tone(330 + Math.random() * 120, 0.35, 0.016, 'sawtooth', 0.03, 0.82, 0, 650); // tábua rangendo
     this._foley(k, run, speed);
   }
 

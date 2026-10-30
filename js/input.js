@@ -1,4 +1,5 @@
 // Entrada unificada: teclado + mouse (PC) e joystick virtual + toque (Android).
+import { buttonHTML } from './icons.js';
 // O jogador lê apenas estados abstratos (mover, olhar, pular, correr...).
 
 // Notebooks com tela touch continuam no modo PC (ponteiro principal "fino").
@@ -102,6 +103,13 @@ export class Input {
       if (e.button === 2) this.mouseRight = true;
     });
     this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+    // rodinha do mouse: troca de item (para baixo = próximo, para cima = anterior)
+    let wheelCd = 0;
+    window.addEventListener('wheel', (e) => {
+      if (!this.enabled || isTouchDevice || performance.now() < wheelCd || Math.abs(e.deltaY) < 1) return;
+      wheelCd = performance.now() + 180;
+      this.pressed.add(e.deltaY > 0 ? 'swapItem' : 'swapPrev');
+    }, { passive: true });
     window.addEventListener('mouseup', (e) => {
       if (e.button === 0) this.mouseDown = false;
       if (e.button === 2) this.mouseRight = false;
@@ -118,6 +126,26 @@ export class Input {
     // botões
     document.querySelectorAll('#touch-ui .tbtn').forEach((btn) => {
       const action = btn.dataset.action;
+      if (btn.dataset.icon) btn.innerHTML = buttonHTML(btn.dataset.icon, btn.dataset.label);
+      // botões de tiro/mirar: arrastar o dedo sobre eles também gira a câmera (atirar e mirar
+      // sem soltar o botão, como nos jogos de tiro de celular)
+      if (btn.dataset.look) {
+        const drag = new Map();
+        btn.addEventListener('pointerdown', (e) => drag.set(e.pointerId, { x: e.clientX, y: e.clientY, moved: 0 }));
+        btn.addEventListener('pointermove', (e) => {
+          const d = drag.get(e.pointerId);
+          if (!d || !this.enabled) return;
+          const dx = e.clientX - d.x, dy = e.clientY - d.y;
+          d.x = e.clientX; d.y = e.clientY;
+          d.moved += Math.abs(dx) + Math.abs(dy);
+          if (d.moved < 6) return; // um toque com o dedo tremendo não mexe a mira
+          this.lookDX += dx * this.touchSensitivity * this.sensitivity;
+          this.lookDY += dy * this.touchSensitivity * this.sensitivity * (this.invertY ? -1 : 1);
+        });
+        const stop = (e) => drag.delete(e.pointerId);
+        btn.addEventListener('pointerup', stop);
+        btn.addEventListener('pointercancel', stop);
+      }
       btn.addEventListener('pointerdown', (e) => {
         e.preventDefault();
         e.stopPropagation();

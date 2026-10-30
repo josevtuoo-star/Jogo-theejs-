@@ -149,23 +149,8 @@ body:not(.touch) .touch-only { display: none; }
   border-radius: 50%; background: rgba(255,255,255,0.35); border: 2px solid rgba(255,255,255,0.6);
 }
 
-.tbtn {
-  position: absolute; pointer-events: auto; touch-action: none;
-  transform: scale(var(--btn-scale, 1)); transform-origin: bottom right;
-  width: 64px; height: 64px; border-radius: 50%;
-  background: rgba(20,20,20,0.45); color: #fff; border: 2px solid rgba(255,255,255,0.35);
-  font-size: 11px; font-weight: bold; letter-spacing: 0.5px;
-}
-.tbtn.big { width: 84px; height: 84px; font-size: 13px; }
-.tbtn.on, .tbtn:active { background: rgba(200,170,90,0.55); border-color: #f0dca0; }
 
-#btn-jump   { right: max(24px, env(safe-area-inset-right)); bottom: 30px; }
-#btn-crouch { right: calc(max(24px, env(safe-area-inset-right)) + 100px); bottom: 20px; }
-#btn-attack { right: calc(max(24px, env(safe-area-inset-right)) + 8px); bottom: 130px; }
-#btn-sprint { right: calc(max(24px, env(safe-area-inset-right)) + 100px); bottom: 100px; }
-#btn-pause  { right: max(14px, env(safe-area-inset-right)); top: 30px; width: 44px; height: 44px; font-size: 14px; }
-#btn-view   { right: calc(max(14px, env(safe-area-inset-right)) + 54px); top: 30px; width: 44px; height: 44px; font-size: 18px; }
-#btn-light  { right: calc(max(14px, env(safe-area-inset-right)) + 108px); top: 30px; width: 44px; height: 44px; font-size: 18px; }
+
 
 #rotate-hint {
   display: none; position: fixed; inset: 0; z-index: 30; background: #0e1113;
@@ -195,14 +180,12 @@ body:not(.touch) .touch-only { display: none; }
 }
 @keyframes sway { from { transform: scale(1.02) translateX(-4px); } to { transform: scale(1.04) translateX(4px); } }
 
-#btn-use { right: calc(max(24px, env(safe-area-inset-right)) + 200px); bottom: 60px; width: 72px; height: 72px; font-size: 12px; border-color: #e6dcc0; background: rgba(120,100,50,0.5); }
 
 #equip-label {
   position: absolute; right: max(16px, env(safe-area-inset-right)); bottom: 18px;
   font-size: 11px; letter-spacing: 2px; opacity: 0.6; text-shadow: 0 1px 2px #000;
 }
 body.touch #equip-label { right: auto; left: 50%; transform: translateX(-50%); bottom: 40px; }
-#btn-swap { right: calc(max(24px, env(safe-area-inset-right)) + 108px); bottom: 180px; width: 56px; height: 56px; font-size: 13px; }
 
 #credits {
   position: fixed; left: 50%; bottom: 6px; transform: translateX(-50%);
@@ -220,7 +203,6 @@ body.playing #credits { display: none; }
 #ammo small { font-size: 15px; opacity: 0.75; }
 #ammo em { display: block; font-style: normal; font-size: 10px; letter-spacing: 0.2em; opacity: 0.6; }
 #ammo.empty #ammo-loaded { color: #e05a3a; }
-body.touch #ammo { bottom: auto; top: 64px; right: max(110px, env(safe-area-inset-right)); font-size: 20px; }
 #toast {
   position: absolute; left: 50%; top: 30%; transform: translate(-50%, 8px); opacity: 0;
   color: #f2e7c4; font-size: 15px; letter-spacing: 0.14em; text-shadow: 0 1px 4px rgba(0,0,0,0.9);
@@ -229,5 +211,41 @@ body.touch #ammo { bottom: auto; top: 64px; right: max(110px, env(safe-area-inse
 #toast.show { opacity: 1; transform: translate(-50%, 0); }
 #crosshair.hit i { background: #ffdf9a; }
 #crosshair.hit { transform: rotate(45deg); }
-#btn-aim { right: calc(max(24px, env(safe-area-inset-right)) + 8px); bottom: 225px; width: 66px; height: 66px; font-size: 12px; }
-#btn-reload { right: calc(max(24px, env(safe-area-inset-right)) + 200px); bottom: 150px; width: 58px; height: 58px; font-size: 22px; }
+
+/* ---------- botões touch (layout de jogo de tiro, ícones SVG) ---------- */
+.tbtn {
+  --R: max(18px, env(safe-area-inset-right));
+  position: absolute; pointer-events: auto; touch-action: none; -webkit-user-select: none; user-select: none;
+  transform: scale(var(--btn-scale, 1)); transform-origin: bottom right;
+  width: 60px; height: 60px; border-radius: 50%; padding: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+  background: radial-gradient(circle at 50% 35%, rgba(40,40,38,0.55), rgba(10,10,10,0.5));
+  color: #f1ead8; border: 1.5px solid rgba(255,255,255,0.28);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.08);
+  font: 600 8.5px/1 system-ui, sans-serif; letter-spacing: 0.08em;
+  transition: background 0.08s, transform 0.08s, border-color 0.08s;
+}
+.tbtn .ico { width: 46%; height: 46%; display: block; }
+.tbtn .ico svg { width: 100%; height: 100%; display: block; }
+.tbtn .lbl { opacity: 0.75; }
+.tbtn:active { background: rgba(225,190,110,0.5); border-color: #f2dca2; transform: scale(calc(var(--btn-scale, 1) * 0.94)); }
+.tbtn.on { background: rgba(200,160,70,0.5); border-color: #f2dca2; color: #fff6dc; }
+.tbtn.hidden { display: none; }
+/* polegar direito: tiro grande no centro do arco, os outros em volta */
+#btn-attack { width: 90px; height: 90px; right: calc(var(--R) + 96px); bottom: 92px; border-width: 2px; background: radial-gradient(circle at 50% 35%, rgba(120,40,30,0.55), rgba(40,10,8,0.55)); }
+#btn-attack .ico { width: 44%; height: 44%; }
+#btn-jump   { width: 76px; height: 76px; right: var(--R); bottom: 24px; }
+#btn-crouch { right: calc(var(--R) + 100px); bottom: 14px; }
+#btn-sprint { right: calc(var(--R) + 8px); bottom: 116px; }
+#btn-swap   { width: 56px; height: 56px; right: calc(var(--R) + 14px); bottom: 192px; }
+#btn-aim    { width: 64px; height: 64px; right: calc(var(--R) + 200px); bottom: 150px; }
+#btn-reload { width: 54px; height: 54px; right: calc(var(--R) + 204px); bottom: 76px; }
+#btn-use    { width: 66px; height: 66px; right: calc(var(--R) + 280px); bottom: 40px; border-color: #e6dcc0; background: rgba(120,100,50,0.55); }
+/* topo: pausa, câmera, lanterna */
+#btn-pause, #btn-view, #btn-light { width: 44px; height: 44px; top: 16px; bottom: auto; transform-origin: top right; }
+#btn-pause  { right: var(--R); }
+#btn-view   { right: calc(var(--R) + 52px); }
+#btn-light  { right: calc(var(--R) + 104px); }
+#btn-pause .ico, #btn-view .ico, #btn-light .ico { width: 52%; height: 52%; }
+/* munição no celular: embaixo da barra de vida (não cobre botões) */
+body.touch #ammo { bottom: auto; right: auto; top: 46px; left: max(18px, env(safe-area-inset-left)); text-align: left; font-size: 20px; }

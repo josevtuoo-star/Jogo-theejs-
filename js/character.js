@@ -137,6 +137,16 @@ const WRIST_L_GUN = wristFrom(new THREE.Vector3(-0.022, -0.02, -0.004), L_PALM, 
 const F_PALM = [1, 0, 0], F_FING = [0, -0.12, -1];
 const HAND_L_FLASH = handBasis(-1, F_PALM, F_FING);
 const WRIST_L_FLASH = wristFrom(new THREE.Vector3(-0.15, -0.035, 0.0), F_PALM, F_FING);
+// poses do revólver no espaço do olhar: [direita, cima, frente, inclinação, giro, guinada]
+// (a guinada vira o cano um pouco para dentro: em 1ª pessoa se vê a lateral da arma)
+export const GUN_POSES = {
+  // (distâncias dentro do alcance real dos braços: o punho fica ~0,5 m do ombro)
+  ready: [0.15, -0.19, 0.37, -0.12, 0.1, 0.18],
+  point: [0.08, -0.12, 0.39, 0, 0.03, 0.06],
+  sprint: [0.17, -0.42, 0.18, -1.15, 0.45, 0.1],
+  ads: [0, -SIGHT_Y, 0.4, 0, 0, 0],
+  reload: [0.03, -0.17, 0.3, 0, 0, 0.1],
+};
 // tempo de cada troca (sacar/guardar)
 const SWAP_TIME = { hands: 0.45, knife: 0.8, gun: 0.95 };
 
@@ -888,12 +898,13 @@ export class Character {
     if (b.gun < 0.001 && !out) return;
 
     // ----- pose da arma no espaço do olhar: [direita, cima, frente, inclinação, giro] -----
-    const P = [0.1, -0.17, 0.42, -0.38, 0.1];                  // baixa, pronta
-    const mix = (Q, w) => { if (w > 0.001) for (let i = 0; i < 5; i++) P[i] = lerp(P[i], Q[i], w); };
-    mix([0.07, -0.12, 0.46, 0, 0], b.point);                    // apontada (depois de atirar)
-    mix([0.17, -0.42, 0.18, -1.15, 0.45], sprint * (1 - b.aim)); // correndo: arma para baixo, uma mão
-    mix([0, -SIGHT_Y, 0.43, 0, 0], b.aim);                       // mirando pela alça e massa
-    mix([0.03, -0.17, 0.3, rPitch, rRoll], rk);                  // recarga
+    const GP = GUN_POSES;
+    const P = GP.ready.slice();
+    const mix = (Q, w) => { if (w > 0.001) for (let i = 0; i < 6; i++) P[i] = lerp(P[i], Q[i], w); };
+    mix(GP.point, b.point);
+    mix(GP.sprint, sprint * (1 - b.aim));
+    mix(GP.ads, b.aim);
+    mix([GP.reload[0], GP.reload[1], GP.reload[2], rPitch, rRoll, GP.reload[5]], rk);
     // perto de parede: recolhe
     P[2] -= 0.16 * b.obstruct * (1 - b.aim * 0.5);
     P[3] -= 0.7 * b.obstruct;
@@ -922,7 +933,7 @@ export class Character {
       eye.z + rz * P[0] + uz * P[1] + fz * P[2],
     );
     const e = this._gunEuler ?? (this._gunEuler = new THREE.Euler(0, 0, 0, 'YXZ'));
-    e.set(look + P[3], yaw + yawOff, -P[4]);
+    e.set(look + P[3], yaw + yawOff + P[5], -P[4]);
     const q = this._gunQ ?? (this._gunQ = new THREE.Quaternion());
     q.setFromEuler(e);
     const M = G.model;
@@ -1139,3 +1150,6 @@ export class Character {
     this.torso.rotation.x = lerp(this.torso.rotation.x, -0.9, tuck);
   }
 }
+
+/** Para ajustes finos (console/testes): pontos das mãos na arma. */
+export const GUN_HANDS = { WRIST_R_GUN, WRIST_L_GUN, WRIST_L_FLASH };

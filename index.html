@@ -53,17 +53,17 @@
   <!-- Controles touch (Android) -->
   <div id="touch-ui" class="hidden">
     <div id="joy-base"><div id="joy-knob"></div></div>
-    <button class="tbtn" id="btn-pause" data-action="pause" aria-label="Pausar">❚❚</button>
-    <button class="tbtn" id="btn-view" data-action="view" aria-label="Trocar câmera">👁</button>
-    <button class="tbtn" id="btn-light" data-action="light" aria-label="Lanterna">🔦</button>
-    <button class="tbtn" id="btn-sprint" data-action="sprint">CORRER</button>
-    <button class="tbtn" id="btn-crouch" data-action="crouch">AGACHAR</button>
-    <button class="tbtn" id="btn-attack" data-action="attack" aria-label="Atacar">👊</button>
-    <button class="tbtn hidden" id="btn-use" data-action="use">USAR</button>
-    <button class="tbtn" id="btn-swap" data-action="swapItem" aria-label="Trocar item">⇄🔪</button>
-    <button class="tbtn hidden" id="btn-aim" data-action="aim">MIRAR</button>
-    <button class="tbtn hidden" id="btn-reload" data-action="reload" aria-label="Recarregar">🔄</button>
-    <button class="tbtn big" id="btn-jump" data-action="jump">PULAR</button>
+    <button class="tbtn" id="btn-pause" data-action="pause" aria-label="Pausar" data-icon="pause"></button>
+    <button class="tbtn" id="btn-view" data-action="view" aria-label="Trocar câmera" data-icon="view"></button>
+    <button class="tbtn" id="btn-light" data-action="light" aria-label="Lanterna" data-icon="light"></button>
+    <button class="tbtn" id="btn-sprint" data-action="sprint" data-icon="sprint" data-label="CORRER"></button>
+    <button class="tbtn" id="btn-crouch" data-action="crouch" data-icon="crouch" data-label="AGACHAR"></button>
+    <button class="tbtn" id="btn-attack" data-action="attack" data-look="1" aria-label="Atacar" data-icon="fist"></button>
+    <button class="tbtn hidden" id="btn-use" data-action="use" data-icon="use" data-label="USAR"></button>
+    <button class="tbtn" id="btn-swap" data-action="swapItem" aria-label="Trocar item" data-icon="knife" data-label="TROCAR"></button>
+    <button class="tbtn hidden" id="btn-aim" data-action="aim" data-look="1" data-icon="aim" data-label="MIRAR"></button>
+    <button class="tbtn hidden" id="btn-reload" data-action="reload" aria-label="Recarregar" data-icon="reload" data-label="RECARR."></button>
+    <button class="tbtn" id="btn-jump" data-action="jump" data-icon="jump" data-label="PULAR"></button>
   </div>
 
   <!-- Menu -->
@@ -100,7 +100,7 @@
           <ul>
             <li><b>W A S D</b> mover (trotar) · <b>Mouse</b> olhar</li>
             <li><b>Shift</b> correr · <b>X</b> andar devagar · <b>Espaço</b> pular</li>
-            <li><b>1</b> mãos livres · <b>2</b> faca · <b>3</b> revólver</li>
+            <li><b>1</b> mãos livres · <b>2</b> faca · <b>3</b> revólver · <b>rodinha</b> troca</li>
             <li>Revólver: <b>botão direito</b> mirar · <b>clique</b> atirar · <b>R</b> recarregar</li>
             <li><b>F</b> perto de caixas .357: pegar munição</li>
             <li><b>Espaço</b> perto de obstáculo: passar por cima / subir / escalar</li>
@@ -121,14 +121,15 @@
           <h3>Android</h3>
           <ul>
             <li><b>Lado esquerdo</b> joystick (pouco = andar, mais = trotar)</li>
-            <li><b>⇄</b> trocar mãos livres → faca → revólver</li>
-            <li>Revólver: <b>MIRAR</b> (liga/desliga) · <b>🔫</b> atirar · <b>🔄</b> recarregar</li>
+            <li><b>TROCAR</b> mãos livres → faca → revólver</li>
+            <li>Revólver: <b>MIRAR</b> (liga/desliga) · <b>ATIRAR</b> · <b>RECARR.</b></li>
+            <li>Arraste o dedo sobre <b>ATIRAR</b>/<b>MIRAR</b> para mirar sem soltar</li>
             <li><b>Lado direito</b> arrastar para olhar</li>
             <li>Joystick no limite = correr</li>
             <li><b>PULAR</b> perto de obstáculo: escalar</li>
             <li><b>AGACHAR</b> correndo: deslizar</li>
             <li><b>USAR</b> aparece perto de portas</li>
-            <li><b>👊/🔪</b> toques seguidos = combo · segurar = golpe forte</li>
+            <li><b>Botão de ataque</b>: toques seguidos = combo · segurar = golpe forte</li>
           </ul>
         </div>
         <div class="col">

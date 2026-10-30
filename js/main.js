@@ -11,6 +11,7 @@ import { PropSystem } from './physics.js';
 import { TrainingDummies } from './dummies.js';
 import { loadPlayerModel, loadKnifeModel } from './playerModel.js';
 import { CAPACITY } from './revolver.js';
+import { buttonHTML } from './icons.js';
 
 // ---------- renderizador ----------
 const container = document.getElementById('game');
@@ -352,6 +353,7 @@ function handleActions() {
   if (input.wasPressed('equipKnife')) wantEquip = 'knife';
   if (input.wasPressed('equipGun')) wantEquip = 'gun';
   if (input.wasPressed('swapItem')) wantEquip = { hands: 'knife', knife: 'gun', gun: 'hands' }[character.equip];
+  if (input.wasPressed('swapPrev')) wantEquip = { hands: 'gun', knife: 'hands', gun: 'knife' }[character.equip];
   const from = character.equip;
   if (wantEquip && character.setEquip(wantEquip)) {
     if (wantEquip === 'gun' || from === 'gun') setTimeout(() => audio.holster(wantEquip === 'gun'), 150);
@@ -789,6 +791,7 @@ function updateUnderwater() {
   }
 }
 
+let lastEquipIcon = '';
 function updateHud() {
   ui.health.style.width = player.health + '%';
   ui.state.textContent = player.state;
@@ -828,8 +831,12 @@ function updateHud() {
   const eq = character.swap >= 0 ? character.swapTo : character.equip;
   const gunOut = eq === 'gun';
   ui.equip.textContent = ({ knife: 'FACA', gun: 'REVÓLVER .357' }[eq] ?? 'MÃOS LIVRES') + (character.reloading ? ' · RECARREGANDO' : '') + (player.walkMode ? ' · ANDANDO DEVAGAR' : '');
-  if (ui.attackBtn) ui.attackBtn.textContent = { knife: '🔪', gun: '🔫' }[eq] ?? '👊';
-  ui.swapBtn.textContent = { hands: '⇄🔪', knife: '⇄🔫', gun: '⇄✊' }[eq];
+  if (eq !== lastEquipIcon) {
+    // ícone do botão de ataque = item na mão; o de troca mostra o próximo item
+    lastEquipIcon = eq;
+    ui.attackBtn.innerHTML = buttonHTML({ knife: 'knife', gun: 'gun' }[eq] ?? 'fist', eq === 'gun' ? 'ATIRAR' : '');
+    ui.swapBtn.innerHTML = buttonHTML({ hands: 'knife', knife: 'gun', gun: 'fist' }[eq], 'TROCAR');
+  }
   ui.aimBtn?.classList.toggle('hidden', !gunOut);
   ui.reloadBtn?.classList.toggle('hidden', !gunOut);
   ui.ammo.classList.toggle('hidden', !gunOut);
