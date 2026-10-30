@@ -256,3 +256,24 @@ body.touch #ammo { bottom: auto; right: auto; top: 46px; left: max(18px, env(saf
 #grain canvas { width: 100%; height: 100%; display: block; }
 @keyframes grain { 0% { transform: translate(0, 0); } 25% { transform: translate(-3%, 2%); } 50% { transform: translate(2%, -3%); } 75% { transform: translate(-2%, -2%); } 100% { transform: translate(3%, 3%); } }
 body.no-grain #grain { display: none; }
+
+/* barra de armas (1–6): item na mão destacado, munição carregada/reserva embaixo */
+#weapon-bar {
+  position: absolute; left: 50%; bottom: 44px; transform: translateX(-50%);
+  display: flex; gap: 5px; pointer-events: auto; opacity: 0.82;
+}
+.wslot {
+  position: relative; width: 46px; height: 46px; padding: 0; border-radius: 7px; cursor: pointer;
+  background: rgba(12,12,10,0.45); border: 1px solid rgba(230,220,192,0.22); color: #e9e0c6;
+  display: flex; align-items: center; justify-content: center; touch-action: none; -webkit-user-select: none; user-select: none;
+  font: 600 9px/1 system-ui, sans-serif;
+}
+.wslot .ico { width: 62%; height: 62%; display: block; opacity: 0.8; }
+.wslot .ico svg { width: 100%; height: 100%; display: block; }
+.wslot .k { position: absolute; left: 4px; top: 3px; opacity: 0.55; }
+.wslot .n { position: absolute; right: 3px; bottom: 2px; font-size: 8px; opacity: 0.8; letter-spacing: 0.02em; }
+.wslot.sel { background: rgba(170,130,60,0.45); border-color: #f2dca2; color: #fff6dc; }
+.wslot.sel .ico { opacity: 1; }
+body.touch #weapon-bar { bottom: auto; top: 44px; gap: 4px; }
+body.touch .wslot { width: 40px; height: 40px; }
+body.touch .wslot .k { display: none; }

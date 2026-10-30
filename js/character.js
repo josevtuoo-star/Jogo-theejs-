@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { makeFlashlightModel } from './flashlight.js';
 import { Revolver, SIGHT_Y, CAPACITY, GRIP } from './revolver.js';
+import { Shotgun, Crossbow, makeBat } from './weapons.js';
+import { makePose, blendPose } from './mocap.js';
 
 // Corpo do personagem — o MESMO em 1ª e 3ª pessoa.
 // Em 1ª pessoa a câmera fica nos olhos dele. Cabeça e tronco somem da câmera (continuam fazendo
@@ -137,6 +139,37 @@ const WRIST_L_GUN = wristFrom(new THREE.Vector3(-0.022, -0.02, -0.004), L_PALM, 
 const F_PALM = [1, 0, 0], F_FING = [0, -0.12, -1];
 const HAND_L_FLASH = handBasis(-1, F_PALM, F_FING);
 const WRIST_L_FLASH = wristFrom(new THREE.Vector3(-0.15, -0.035, 0.0), F_PALM, F_FING);
+// armas longas: direita na empunhadura da coronha, esquerda por baixo do guarda-mão
+// (palma para cima, dedos envolvendo pelo lado direito)
+const LR_PALM = [-1, 0, 0], LR_FING = [0, -0.7, -0.7];
+const LL_PALM = [0.3, 1, 0], LL_FING = [0.72, 0.1, -0.68];
+const LONG_HANDS = {
+  shotgun: { qR: handBasis(1, LR_PALM, LR_FING), wR: wristFrom(new THREE.Vector3(0.018, 0.0, 0.03), LR_PALM, LR_FING) },
+  crossbow: { qR: handBasis(1, R_PALM, [0, -0.45, -0.89]), wR: wristFrom(new THREE.Vector3(0.018, -0.026, 0.026), R_PALM, [0, -0.45, -0.89]) },
+};
+const HAND_L_LONG = handBasis(-1, LL_PALM, LL_FING);
+const WRIST_L_LONG_OFF = wristFrom(new THREE.Vector3(), LL_PALM, LL_FING); // punho a partir do centro da palma
+// taco: as duas mãos fechadas em volta do cabo (direita em cima, esquerda embaixo, perto do pomo)
+const BR_PALM = [-1, 0, 0], BR_FING = [0, -1, 0.05];
+const BL_PALM = [1, 0, 0], BL_FING = [0, -1, -0.05];
+const HAND_R_BAT = handBasis(1, BR_PALM, BR_FING);
+const WRIST_R_BAT = wristFrom(new THREE.Vector3(0.02, 0, -0.1), BR_PALM, BR_FING);
+const HAND_L_BAT = handBasis(-1, BL_PALM, BL_FING);
+const WRIST_L_BAT = wristFrom(new THREE.Vector3(-0.02, 0, -0.005), BL_PALM, BL_FING);
+// armas longas no espaço do olhar (a coronha encosta no ombro; em "pronto" o cano fica baixo)
+// (os braços do personagem são curtos: a arma fica perto do rosto e o tronco gira de lado)
+export const LONG_POSES = {
+  ready: [0.11, -0.24, 0.25, -0.3, 0.06, 0.1],
+  point: [0.05, -0.15, 0.26, -0.03, 0.02, 0.03],
+  sprint: [0.12, -0.34, 0.2, -0.85, 0.75, 0.55],
+  ads: [0, -0.067, 0.25, 0, 0, 0],
+  reload: [0.05, -0.22, 0.24, 0, 0, 0.3],
+};
+// taco no espaço do olhar: [direita, cima, frente, inclinação, giro, guinada]; a ponta é -Z
+export const BAT_POSES = {
+  ready: [0.2, -0.3, 0.32, 1.05, -0.35, -0.25],   // apoiado em diagonal, ponta para cima/direita
+  sprint: [0.24, -0.45, 0.2, 0.55, -0.5, -0.3],
+};
 // poses do revólver no espaço do olhar: [direita, cima, frente, inclinação, giro, guinada]
 // (a guinada vira o cano um pouco para dentro: em 1ª pessoa se vê a lateral da arma)
 export const GUN_POSES = {
@@ -148,7 +181,10 @@ export const GUN_POSES = {
   reload: [0.03, -0.17, 0.3, 0, 0, 0.1],
 };
 // tempo de cada troca (sacar/guardar)
-const SWAP_TIME = { hands: 0.45, knife: 0.8, gun: 0.95 };
+const SWAP_TIME = { hands: 0.45, knife: 0.8, gun: 0.95, bat: 0.9, shotgun: 1.15, crossbow: 1.2 };
+const FIREARMS = ['gun', 'shotgun', 'crossbow'];
+export const isFirearm = (it) => FIREARMS.includes(it);
+export const ITEMS = ['hands', 'knife', 'gun', 'shotgun', 'crossbow', 'bat']; // ordem das teclas 1–6
 
 // Golpes. a = fim da preparação, hit = instante do impacto, r = começo da volta, dur = fim.
 // reach (m), power (força no alvo), lunge (passo à frente, m/s). Poses: [braço.x, braço.y, braço.z, cotovelo]
@@ -170,11 +206,22 @@ export const MOVES = {
               wind: [0.55, 0.1, 0.35, 1.95], strike: [1.6, -0.12, 0.05, 0.05] },
   overhead: { kind: 'knife', hand: 1, a: 0.0, hit: 0.16, r: 0.3, dur: 0.72, reach: 1.95, power: 9, lunge: 2.6, twist: -0.25, heavy: true, grip: 1,
               wind: [2.85, 0.15, 0.45, 1.35], strike: [0.95, -0.15, 0.0, 0.2] },
+  // taco: poses no espaço do olhar (como as armas), as duas mãos seguem o cabo
+  batSwing: { kind: 'bat', hand: 1, a: 0.14, hit: 0.22, r: 0.34, dur: 0.66, reach: 2.0, power: 7, lunge: 0.7, twist: -0.55,
+              wind: [0.3, -0.1, 0.12, 0.45, -1.3, -1.9], strike: [0.1, -0.18, 0.4, 0.05, -1.45, 0.75], follow: [-0.25, -0.28, 0.25, -0.15, -1.3, 2.0] },
+  batBack:  { kind: 'bat', hand: 1, a: 0.13, hit: 0.21, r: 0.33, dur: 0.64, reach: 2.0, power: 6, lunge: 0.6, twist: 0.5,
+              wind: [-0.25, -0.1, 0.15, 0.45, 1.3, 1.9], strike: [-0.05, -0.18, 0.4, 0.05, 1.45, -0.75], follow: [0.3, -0.3, 0.22, -0.15, 1.3, -2.0] },
+  batJab:   { kind: 'bat', hand: 1, a: 0.1, hit: 0.16, r: 0.24, dur: 0.5, reach: 1.9, power: 5, lunge: 1.2, twist: -0.25,
+              wind: [0.1, -0.24, 0.12, 0.05, 0, 0.05], strike: [0.04, -0.2, 0.5, -0.02, 0, 0.02] },
+  batSmash: { kind: 'bat', hand: 1, a: 0.0, hit: 0.2, r: 0.34, dur: 0.8, reach: 2.1, power: 12, lunge: 2.4, twist: -0.25, heavy: true,
+              wind: [0.2, 0.06, 0.12, 2.3, 0.3, -0.4], strike: [0.02, -0.32, 0.45, -0.75, 0, 0.0], follow: [0.0, -0.45, 0.3, -1.2, 0, 0.1] },
 };
-const COMBOS = { punch: ['jab', 'cross', 'hook'], knife: ['slash', 'backslash', 'stab'] };
-const HEAVY = { punch: 'haymaker', knife: 'overhead' };
+const COMBOS = { punch: ['jab', 'cross', 'hook'], knife: ['slash', 'backslash', 'stab'], bat: ['batSwing', 'batBack', 'batJab'] };
+const HEAVY = { punch: 'haymaker', knife: 'overhead', bat: 'batSmash' };
 const HAND_TWIST = Math.PI / 2;
-const KNIFE_REST = -Math.PI / 2 - 0.5; // faca na mão, lâmina para frente
+const KNIFE_REST = -Math.PI / 2 - 0.5;
+const _UP = new THREE.Vector3(0, 1, 0);
+const _mq1 = new THREE.Quaternion(), _mq2 = new THREE.Quaternion(), _mq3 = new THREE.Quaternion(), _me = new THREE.Euler(); // faca na mão, lâmina para frente
 const KNIFE_STAB = -Math.PI * 0.97;    // lâmina alinhada com o antebraço
 
 export class Character {
@@ -324,18 +371,47 @@ export class Character {
     this.hips.add(this.legL.thigh, this.legR.thigh);
 
     // revólver: no coldre da coxa direita ou na mão (posicionado a partir dos olhos)
-    this.gun = new Revolver(scene);
+    this.revolver = new Revolver(scene);
     this.gunHolster = new THREE.Group();
     this.gunHolster.position.set(0.15, -0.03, 0.055);
     this.gunHolster.rotation.set(-Math.PI / 2 + 0.12, 0, 0.08);
     this.legR.thigh.add(this.gunHolster);
+    // espingarda e besta: penduradas nas costas em diagonal (a empunhadura perto do ombro
+    // direito / do quadril direito, por onde a mão direita puxa)
+    this.shotgun = new Shotgun(scene, this.revolver.light);
+    this.crossbow = new Crossbow(scene);
+    const sling = (x, y, z, dir, up = new THREE.Vector3(0, 0, 1)) => {
+      const g = new THREE.Group();
+      g.position.set(x, y, z);
+      const f = dir.clone().normalize().negate(); // o cano (-Z da arma) aponta para `dir`
+      const u = up.clone().addScaledVector(f, -up.dot(f)).normalize();
+      g.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(new THREE.Vector3().crossVectors(u, f), u, f));
+      this.torso.add(g);
+      return g;
+    };
+    this.mounts = {
+      gun: this.gunHolster,
+      shotgun: sling(0.13, 0.43, 0.15, new THREE.Vector3(-0.42, -0.9, 0)),
+      crossbow: sling(0.15, 0.06, 0.21, new THREE.Vector3(-0.32, 0.95, 0)),
+    };
+    this.guns = { gun: this.revolver, shotgun: this.shotgun, crossbow: this.crossbow };
+    this._gunKey = 'gun';
+    // taco com arame farpado: preso no cinto do lado esquerdo, cabo para cima
+    this.bat = new THREE.Group();
+    const batModel = makeBat();
+    batModel.rotation.x = -Math.PI / 2; // ponta do taco para -Z (como o cano das armas)
+    this.bat.add(batModel);
+    this.batMount = new THREE.Group();
+    this.batMount.position.set(-0.2, 0.06, 0.07);
+    this.batMount.rotation.set(-Math.PI / 2 - 0.25, 0, -0.1);
+    this.hips.add(this.batMount);
 
     this.root.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
     scene.add(this.root);
     this.scene = scene;
     this.skinned = null;
 
-    this.b = { run: 0, move: 0, crouch: 0, air: 0, climb: 0, death: 0, ladder: 0, slide: 0, swim: 0, flash: 0, land: 0, hang: 0, knife: 0, obstruct: 0, guard: 0, gun: 0, aim: 0, point: 0 };
+    this.b = { run: 0, move: 0, crouch: 0, air: 0, climb: 0, death: 0, ladder: 0, slide: 0, swim: 0, flash: 0, land: 0, hang: 0, knife: 0, obstruct: 0, guard: 0, gun: 0, aim: 0, point: 0, bat: 0 };
     this.t = 0;
     this.yaw = 0;
     this.prevYaw = 0;
@@ -365,6 +441,9 @@ export class Character {
     this.reloadT = -1;       // recarga em andamento (s)
     this.legYaw = 0;         // quadril virado para a direção do passo (andar de lado)
     this.obstructTarget = 0;
+    this._batK = 0;          // golpe do taco em andamento (peso da pose do golpe)
+    this._batP = [0, 0, 0, 0, 0, 0];
+    this._lh = new THREE.Vector3(); // alvo suavizado da mão esquerda na recarga das armas longas
     this.firstPerson = true;
     this.setFirstPerson(true);
     this._v = new THREE.Vector3();
@@ -384,16 +463,12 @@ export class Character {
       this.knife.position.set(0, 0.01, 0);
       this.knife.rotation.set(Math.PI, 0, 0);
     }
-    // revólver: na mão (controlado no mundo, a partir dos olhos) ou no coldre
-    if (this.gun) {
-      if (equip === 'gun') {
-        this.scene.add(this.gun.model);
-      } else {
-        this.gunHolster.add(this.gun.model);
-        this.gun.model.position.set(0, 0, 0);
-        this.gun.model.quaternion.identity();
-      }
+    // armas e taco: na mão (controlados no mundo, a partir dos olhos) ou no coldre/costas/cinto
+    const stow = (obj, mount) => { mount.add(obj); obj.position.set(0, 0, 0); obj.quaternion.identity(); };
+    for (const [k, G] of Object.entries(this.guns ?? {})) {
+      if (equip === k) this.scene.add(G.model); else stow(G.model, this.mounts[k]);
     }
+    if (this.bat) { if (equip === 'bat') this.scene.add(this.bat); else stow(this.bat, this.batMount); }
     // lanterna: na mão esquerda (lente ao longo do antebraço) ou presa no peito, apontando para frente
     if (flashOn) {
       this.armL.hand.add(this.flash);
@@ -406,7 +481,20 @@ export class Character {
     }
     this._heldFlash = flashOn;
     if (this.fpHidden) this._flashLayer();
+    this._stowLayers();
   }
+
+  /** Em 1ª pessoa as armas penduradas nas costas somem da câmera (ficariam na frente do rosto). */
+  _stowLayers() {
+    if (!this.guns) return;
+    for (const k of ['shotgun', 'crossbow']) {
+      const hide = this.firstPerson && this.guns[k].model.parent === this.mounts[k];
+      this.guns[k].model.traverse((o) => { if (o.isMesh) o.layers.set(hide ? FP_HIDDEN_LAYER : 0); });
+    }
+  }
+
+  /** Arma de fogo na mão (ou a última usada). */
+  get gun() { return this.guns?.[this._gunKey]; }
 
   /**
    * Troca o corpo procedural pelo modelo 3D (SkinnedMeshes presos nos mesmos ossos).
@@ -414,12 +502,13 @@ export class Character {
    */
   useModel(meshes) {
     const keep = new Set();
-    for (const g of [this.knife, this.flash, this.sheath, this.gun.model]) g.traverse((o) => keep.add(o));
+    for (const g of [this.knife, this.flash, this.sheath, this.bat, ...Object.values(this.guns).map((G) => G.model)]) g.traverse((o) => keep.add(o));
     this.root.traverse((o) => { if (o.isMesh && !keep.has(o)) o.visible = false; });
     this.skinned = meshes;
     for (const m of meshes) this.scene.add(m);
     this.fpHidden = meshes.filter((m) => m.userData.fpHide);
     this.setFirstPerson(this.firstPerson);
+    this._stowLayers();
   }
 
   /** Troca o modelo da faca (mesma convenção: cabo na origem, lâmina em +Y). */
@@ -431,15 +520,17 @@ export class Character {
 
   /** Tiro. Retorna 'fired', 'dry' (sem bala) ou null (não dá agora). */
   fireGun() {
-    if (this.equip !== 'gun' || this.swap >= 0 || this.reloadT >= 0 || this.b.gun < 0.8 || this.fireCooldown > 0) return null;
-    if (this.gun.loaded <= 0) {
+    const G = this.gun;
+    if (!isFirearm(this.equip) || this.swap >= 0 || this.reloadT >= 0 || this.b.gun < 0.8 || this.fireCooldown > 0) return null;
+    if (G.loaded <= 0) {
       this.fireCooldown = 0.3;
-      this.gun.cock = 1;
+      G.cock = 1;
       return 'dry';
     }
-    this.gun.fire();
-    this.fireCooldown = 0.32; // ação dupla: puxar o gatilho leva um tempinho
-    this.gunKick = 1;
+    G.fire();
+    // revólver de ação dupla: puxar o gatilho leva um tempinho; espingarda: segundo cano logo em seguida
+    this.fireCooldown = { gun: 0.32, shotgun: 0.24, crossbow: 0.4 }[this.equip];
+    this.gunKick = { gun: 1, shotgun: 1.35, crossbow: 0.35 }[this.equip];
     this.gunPoint = 1.6;
     this._kickSide = (Math.random() - 0.5) * 0.04;
     return 'fired';
@@ -448,20 +539,23 @@ export class Character {
   /** Começa a recarregar (se der). */
   reload() {
     const g = this.gun;
-    if (this.equip !== 'gun' || this.swap >= 0 || this.reloadT >= 0 || g.loaded >= CAPACITY || g.reserve <= 0 || this.b.gun < 0.5) return false;
+    if (!isFirearm(this.equip) || this.swap >= 0 || this.reloadT >= 0 || g.loaded >= g.capacity || g.reserve <= 0 || this.b.gun < 0.5) return false;
     this.reloadT = 0;
     this._reloadDone = new Set();
-    this._spent = CAPACITY - g.loaded;
+    this._spent = g.capacity - g.loaded;
+    if (this.equip !== 'gun') { this.gun.supportParent.updateWorldMatrix(true, false); this._lh.copy(this.gun.supportParent.localToWorld(this._t1.copy(this.gun.support))); }
     return true;
   }
 
   get reloading() { return this.reloadT >= 0; }
 
-  /** Troca para 'hands' (mãos livres), 'knife' ou 'gun'. Retorna true se começou a trocar. */
+  /** Troca para 'hands' (mãos livres), 'knife', 'bat', 'gun', 'shotgun' ou 'crossbow'. Retorna true se começou a trocar. */
   setEquip(equip) {
     if (equip === this.equip || this.swap >= 0) return false;
     this.reloadT = -1;
-    this.gun.open = 0;
+    for (const G of Object.values(this.guns)) G.open = 0;
+    this.crossbow.cocked = Math.round(this.crossbow.cocked);
+    this.move = null; this.attackT = -1; this.charge = 0; this.queued = null;
     this._swapFrom = this.equip;
     this.swap = 0;
     this.swapTo = equip;
@@ -473,14 +567,14 @@ export class Character {
     this.flash.userData.lensMat.color.setHex(on && intensity > 0.5 ? 0xfff6dc : 0x3a3a34);
   }
 
-  get attackKind() { return this.equip === 'knife' ? 'knife' : 'punch'; }
+  get attackKind() { return { knife: 'knife', bat: 'bat' }[this.equip] ?? 'punch'; }
 
   /**
    * Golpe leve (emenda combo: jab → direto → gancho; corte → corte de volta → estocada)
    * ou forte (heavy: depois de carregar). Se outro golpe ainda está no meio, fica na fila.
    */
   attack(heavy = false) {
-    if (this.swap >= 0 || this.equip === 'gun') return false;
+    if (this.swap >= 0 || isFirearm(this.equip)) return false;
     const kind = this.attackKind;
     let name;
     if (heavy) name = HEAVY[kind];
@@ -538,6 +632,7 @@ export class Character {
     this.firstPerson = fp;
     for (const m of this.fpHidden) m.layers.set(fp ? FP_HIDDEN_LAYER : 0);
     this._flashLayer();
+    this._stowLayers();
   }
 
   /** Lanterna presa no peito some em 1ª pessoa (o peito também some); na mão, aparece. */
@@ -549,6 +644,17 @@ export class Character {
   getLensWorldPosition(target) {
     this.root.updateMatrixWorld(true);
     return this.flash.userData.lens.getWorldPosition(target);
+  }
+
+  /**
+   * Câmera de 1ª pessoa: nos olhos; mirando com arma longa, o rosto encosta na coronha e a
+   * câmera recua um pouco (a mão e a coronha não tapam a tela).
+   */
+  getCameraWorldPosition(target, forward) {
+    this.getEyeWorldPosition(target);
+    const k = this.gun?.longGun && isFirearm(this.equip) ? this.b.aim : 0;
+    if (k > 0.001) target.addScaledVector(forward, -0.14 * k);
+    return target;
   }
 
   /** Posição dos olhos do corpo no mundo (câmera em 1ª pessoa). */
@@ -602,7 +708,9 @@ export class Character {
     this.runLean = damp(this.runLean, player.onFloor ? yawRate * 0.035 * smoothstep(1, 6, speed) : 0, 6, dt);
 
     // a lanterna vai para a mão quando liga e volta para o peito quando desliga
-    const wantHeld = this.flashOn && b.flash > 0.5;
+    // (com espingarda/besta as duas mãos estão na arma: ela continua acesa presa no peito)
+    const isLong = (it) => it === 'shotgun' || it === 'crossbow';
+    const wantHeld = this.flashOn && b.flash > 0.5 && !isLong(this.equip) && !(this.swap >= 0 && isLong(this.swapTo));
     if (wantHeld !== this._heldFlash) this._placeItems(this.equip, wantHeld);
 
     // troca de item: a mão desce até o quadril, troca, e volta
@@ -612,6 +720,7 @@ export class Character {
       swapDip = Math.sin(Math.min(1, this.swap) * Math.PI);
       if (this.swap >= 0.5 && this.equip !== this.swapTo) {
         this.equip = this.swapTo;
+        if (isFirearm(this.equip)) this._gunKey = this.equip;
         this._placeItems(this.equip, this._heldFlash);
       }
       if (this.swap >= 1) this.swap = -1;
@@ -704,6 +813,43 @@ export class Character {
     swingArm(A, ph + Math.PI); // braço esquerdo vai junto com a perna direita
     swingArm(Bm, ph);
 
+    // ----- captura de movimento real: andar/trotar/correr/agachado (mocap.js) -----
+    // substitui a passada procedural quando o corpo está andando; parado continua procedural
+    const mc = this.mocap;
+    const wMo = mc && mc.has('walk') ? b.move * (1 - b.slide) * (1 - b.swim) : 0;
+    if (wMo > 0.001) {
+      const u = ph / (Math.PI * 2);
+      const P = this._moP ?? (this._moP = makePose()), Q = this._moQ ?? (this._moQ = makePose());
+      mc.sample('walk', u, P);
+      const tJog = smoothstep(1.9, 3.4, speed), tRun = smoothstep(4.0, 5.8, speed);
+      if (tJog > 0.001 && mc.has('jog')) blendPose(P, mc.sample('jog', u, Q), tJog);
+      if (tRun > 0.001 && mc.has('run')) blendPose(P, mc.sample('run', u, Q), tRun);
+      if (crouchK > 0.01 && mc.has('crouch')) blendPose(P, mc.sample('crouch', u, Q), crouchK);
+      const w = wMo;
+      const yq = _mq1.setFromAxisAngle(_UP, this.legYaw);
+      const hipsT = _mq2.copy(yq).multiply(P.hips);
+      this.hips.quaternion.slerp(hipsT, w);
+      this.hips.position.x = lerp(this.hips.position.x, P.hipsPos[0] + player.lean * 0.05, w);
+      this.hips.position.y = lerp(this.hips.position.y, HIP_Y + P.hipsPos[1] - b.land * 0.22, w);
+      // tronco: postura da captura, sem o giro das pernas (continua mirando) + olhar e inclinação
+      const torsoT = _mq3.copy(hipsT).invert().multiply(P.hips).multiply(P.torso);
+      _me.set(look * 0.25 - this.accelLean * 0.06, 0, -player.lean * 0.35);
+      torsoT.multiply(_mq1.setFromEuler(_me));
+      this.torso.quaternion.slerp(torsoT, w);
+      for (const [leg, Lr] of [[L, 'L'], [R, 'R']]) {
+        leg.thigh.quaternion.slerp(P['thigh' + Lr], w);
+        leg.knee.rotation.x = lerp(leg.knee.rotation.x, P['knee' + Lr], w);
+        leg.ankle.rotation.x = lerp(leg.ankle.rotation.x, P['ankle' + Lr], w);
+      }
+      for (const [arm, Lr] of [[A, 'L'], [Bm, 'R']]) {
+        arm.upper.quaternion.slerp(P['upper' + Lr], w);
+        arm.elbow.rotation.x = lerp(arm.elbow.rotation.x, P['elbow' + Lr], w);
+      }
+      if (b.land > 0.01) for (const leg of [L, R]) { leg.thigh.rotation.x += b.land * 0.5 * w; leg.knee.rotation.x -= b.land * 1.0 * w; }
+      // cabeça continua estável olhando para a mira
+      this.head.rotation.set(look * 0.75 - this.torso.rotation.x - this.hips.rotation.x, -this.torso.rotation.y * 0.8, -this.torso.rotation.z * 0.5);
+    }
+
     // faca pronta: mão direita à frente do peito (aparece no canto da tela em 1ª pessoa)
     const fpRaise = this.firstPerson ? 0.1 : 0;
     const K = b.knife * (1 - sprint * 0.55) * (1 - b.obstruct * 0.8);
@@ -763,7 +909,8 @@ export class Character {
     // dedos: punho fechado segurando a faca, socando ou em guarda; meio abertos relaxados
     for (const arm of [A, Bm]) {
       let want = 0.35;
-      if (arm === Bm && (this.equip === 'knife' || this.swap >= 0.45)) want = 1.45;
+      if (arm === Bm && (this.equip === 'knife' || this.equip === 'bat' || this.swap >= 0.45)) want = 1.45;
+      if (arm === A && b.bat > 0.3 && !this._heldFlash) want = 1.45;
       if (arm === A && this._heldFlash) want = 1.35;
       if (b.gun > 0.3) want = arm === Bm ? 1.3 : 1.2;
       if (b.guard > 0.3 || (this.move && this.move.hand === arm.side)) want = Math.max(want, 1.5);
@@ -785,9 +932,11 @@ export class Character {
       arm.elbow.rotation.x = lerp(arm.elbow.rotation.x, P[3] - (P[0] > 1.2 ? look * 0.2 : 0), w);
     };
     let grip = 0;
+    this._batK = 0;
     if (ch > 0.001 && !this.move) {
       const tremble = Math.sin(this.t * 40) * 0.015 * ch;
-      poseArm(armOf(heavyMove), heavyMove.wind.map((v, i) => v + (i === 0 ? tremble : 0)), ch);
+      if (heavyMove.kind === 'bat') { for (let i = 0; i < 6; i++) this._batP[i] = heavyMove.wind[i] + (i === 3 ? tremble * 2 : 0); this._batK = ch; }
+      else poseArm(armOf(heavyMove), heavyMove.wind.map((v, i) => v + (i === 0 ? tremble : 0)), ch);
       this.torso.rotation.y += -heavyMove.twist * 0.6 * ch;
       this.torso.rotation.x -= heavyMove.kind === 'knife' ? 0.12 * ch : -0.05 * ch;
       grip = heavyMove.grip ? ch : 0;
@@ -806,7 +955,12 @@ export class Character {
       this._moveK = m.kind === 'punch' ? k : 0;
       const P = m.wind.map((v, i) => lerp(v, m.strike[i], strike));
       const arm = armOf(m);
-      poseArm(arm, P, k);
+      if (m.kind === 'bat') {
+        // taco: passa do ponto de impacto até o fim do arco (follow-through) e volta
+        const fol = m.follow ? smoothstep(m.hit, m.r + 0.04, t) : 0;
+        for (let i = 0; i < 6; i++) this._batP[i] = m.follow ? lerp(P[i], m.follow[i], fol) : P[i];
+        this._batK = k;
+      } else poseArm(arm, P, k);
       if (m.kind === 'punch') {
         // a outra mão volta para proteger o rosto
         const other = arm === A ? Bm : A;
@@ -818,7 +972,7 @@ export class Character {
       this.hips.rotation.y += tw * 0.35;
       this.torso.rotation.x -= (m.heavy ? 0.22 : 0.08) * Math.sin(strike * Math.PI) * k;
       if (m.grip) grip = Math.max(grip, k);
-      arm.upper.rotation.x -= this.recoil * 0.3;
+      if (m.kind !== 'bat') arm.upper.rotation.x -= this.recoil * 0.3;
       if (t >= m.dur) {
         this.move = null;
         this.attackT = -1;
@@ -841,6 +995,7 @@ export class Character {
     if (this.knife.parent !== this.sheath) this.knife.rotation.x = lerp(KNIFE_REST, KNIFE_STAB, grip);
 
     this._gunPose(dt, player, look, ph, sprint, yawRate, busyHands);
+    this._batPose(dt, player, look, ph, sprint, yawRate, busyHands);
     this._swapPose();
 
     // ================= 3) ações de corpo inteiro =================
@@ -867,9 +1022,10 @@ export class Character {
    * mira fica exatamente no centro da tela e em 3ª pessoa o corpo faz o mesmo movimento.
    */
   _gunPose(dt, player, look, ph, sprint, yawRate, busyHands) {
-    const b = this.b, G = this.gun;
-    const out = this.equip === 'gun';
-    const leaving = this.swap >= 0 && this.swapTo !== 'gun';
+    const b = this.b, G = this.gun, key = this._gunKey;
+    const out = this.equip === key;
+    const long = G.longGun;
+    const leaving = this.swap >= 0 && this.swapTo !== key;
     b.gun = damp(b.gun, out && !leaving && !busyHands && !player.sliding && !player.rolling ? 1 : 0, 9, dt);
     this.fireCooldown = Math.max(0, this.fireCooldown - dt);
     this.gunPoint = Math.max(0, this.gunPoint - dt);
@@ -878,88 +1034,112 @@ export class Character {
     b.aim = damp(b.aim, out && this.aiming && !busyHands && !reloading && sprint < 0.5 ? 1 : 0, 13, dt);
     b.point = damp(b.point, this.gunPoint > 0 ? 1 : 0, 14, dt);
 
-    // ----- recarga: abre o tambor, ejeta as cápsulas, põe as balas (speedloader), fecha -----
-    let rk = 0, rPitch = 0, rRoll = 0, open = 0;
+    // ----- recarga -----
+    // revólver: abre o tambor, ejeta as cápsulas, põe as balas (speedloader), fecha
+    // espingarda: abre a báscula, os cartuchos vazios saltam, põe dois novos, fecha com tranco
+    // besta: aponta para baixo, puxa a corda até o trinco, põe o virote no trilho
+    let rk = 0, rPitch = 0, rRoll = 0, open = 0, leftMode = 'support', rDrop = 0, rFwd = 0;
     if (reloading) {
       const t = (this.reloadT += dt);
-      rk = smoothstep(0, 0.3, t) * (1 - smoothstep(2.15, 2.55, t));
-      open = smoothstep(0.28, 0.42, t) * (1 - smoothstep(1.82, 1.95, t));
-      rPitch = 0.95 * smoothstep(0.4, 0.55, t) * (1 - smoothstep(0.78, 0.95, t)) - 0.55 * smoothstep(0.85, 1.05, t) * (1 - smoothstep(1.8, 2.05, t));
-      rRoll = 0.55 * smoothstep(0.3, 0.5, t) * (1 - smoothstep(1.85, 2.1, t));
       const done = this._reloadDone;
-      const mark = (at, type) => { if (t >= at && !done.has(type)) { done.add(type); this.events.push({ type, count: this._spent }); return true; } return false; };
-      mark(0.3, 'cylOpen');
-      if (mark(0.58, 'eject')) G.ejectShells(this._spent);
-      mark(1.5, 'loadRounds');
-      mark(1.86, 'cylClose');
-      if (t >= 2.55) this.reloadT = -1;
+      const mark = (at, type) => { if (t >= at && !done.has(type)) { done.add(type); this.events.push({ type, count: this._spent, weapon: key }); return true; } return false; };
+      if (!long) {
+        rk = smoothstep(0, 0.3, t) * (1 - smoothstep(2.15, 2.55, t));
+        open = smoothstep(0.28, 0.42, t) * (1 - smoothstep(1.82, 1.95, t));
+        rPitch = 0.95 * smoothstep(0.4, 0.55, t) * (1 - smoothstep(0.78, 0.95, t)) - 0.55 * smoothstep(0.85, 1.05, t) * (1 - smoothstep(1.8, 2.05, t));
+        rRoll = 0.55 * smoothstep(0.3, 0.5, t) * (1 - smoothstep(1.85, 2.1, t));
+        mark(0.3, 'cylOpen');
+        if (mark(0.58, 'eject')) G.ejectShells(this._spent);
+        mark(1.5, 'loadRounds');
+        mark(1.86, 'cylClose');
+        if (t >= 2.55) this.reloadT = -1;
+      } else {
+        const A = G.reloadAnim(t);
+        rk = A.k; open = A.open; rPitch = A.pitch; rRoll = A.roll; leftMode = A.left; rDrop = A.drop ?? 0; rFwd = A.fwd ?? 0;
+        if (A.cock !== undefined) G.cocked = Math.max(G.cocked, A.cock);
+        for (const [at, type] of A.marks) {
+          if (mark(at, type) && type === 'eject') { G.ejectShells(this._spent); G.setLoaded(G.loaded); }
+        }
+        if (t >= G.reloadTime) this.reloadT = -1;
+      }
     }
     G.open = open;
     if (b.gun < 0.001 && !out) return;
 
-    // ----- pose da arma no espaço do olhar: [direita, cima, frente, inclinação, giro] -----
-    const GP = GUN_POSES;
-    const P = GP.ready.slice();
+    // ----- pose da arma no espaço do olhar: [direita, cima, frente, inclinação, giro, guinada] -----
+    const GP = long ? LONG_POSES : GUN_POSES;
+    // (em 1ª pessoa algumas armas ficam mais altas e de lado para aparecerem na tela)
+    const P = (this.firstPerson && G.readyFP ? G.readyFP : GP.ready).slice();
     const mix = (Q, w) => { if (w > 0.001) for (let i = 0; i < 6; i++) P[i] = lerp(P[i], Q[i], w); };
     mix(GP.point, b.point);
     mix(GP.sprint, sprint * (1 - b.aim));
-    mix(GP.ads, b.aim);
-    mix([GP.reload[0], GP.reload[1], GP.reload[2], rPitch, rRoll, GP.reload[5]], rk);
+    const ads = this._ads ?? (this._ads = GP.ads.slice());
+    for (let i = 0; i < 6; i++) ads[i] = GP.ads[i];
+    ads[1] = -G.sightY;
+    mix(ads, b.aim);
+    mix([GP.reload[0], GP.reload[1] - rDrop, GP.reload[2] + rFwd, rPitch, rRoll, GP.reload[5]], rk);
     // perto de parede: recolhe
     P[2] -= 0.16 * b.obstruct * (1 - b.aim * 0.5);
     P[3] -= 0.7 * b.obstruct;
     // balanço: respiração, passos, atraso ao girar e recuo
-    // com a lanterna na outra mão a arma fica bem menos firme
-    const oneHanded = this._heldFlash ? 1 : 0;
-    const steady = (1 - b.aim * 0.65) * (1 + oneHanded * 1.2);
+    // com a lanterna na outra mão a arma fica bem menos firme; arma longa no ombro é mais firme
+    const oneHanded = this._heldFlash && !long ? 1 : 0;
+    const steady = (1 - b.aim * 0.65) * (1 + oneHanded * 1.2) * (long ? 0.75 : 1);
     const kickK = 1 + oneHanded * 0.6;
     const t = this.t;
-    let yawOff = Math.sin(t * 0.9) * 0.006 * steady - Math.max(-0.08, Math.min(0.08, yawRate * 0.012));
+    let yawOff = Math.sin(t * 0.9) * 0.006 * steady - Math.max(-0.08, Math.min(0.08, yawRate * 0.012 * (long ? 1.3 : 1)));
     P[3] += Math.sin(t * 1.3) * 0.007 * steady + Math.sin(t * 3.1) * 0.003 * oneHanded + this.gunKick * 0.32 * kickK;
     P[1] += Math.sin(ph * 2) * 0.011 * b.move * steady + this.gunKick * 0.012;
     P[0] += Math.sin(ph) * 0.009 * b.move * steady;
     P[2] -= this.gunKick * 0.04;
     yawOff += (this.gunKick > 0.5 ? (this._kickSide ?? 0) : 0);
 
-    const eye = this.getEyeWorldPosition(this._t2);
-    const yaw = player.yaw, cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(look), sp = Math.sin(look);
-    const fx = -sy * cp, fy = sp, fz = -cy * cp;      // frente
-    const ux = sy * sp, uy = cp, uz = cy * sp;        // cima
-    const rx = cy, rz = -sy;                          // direita
+    // arma longa: postura de tiro de lado (ombro esquerdo à frente, coronha no ombro direito)
+    if (long && out) {
+      const tw = 0.4 * b.gun;
+      this.torso.rotation.y -= tw;
+      this.head.rotation.y += tw * 0.85;
+      this.torso.updateMatrixWorld(true);
+    }
     const pos = this._gunPos ?? (this._gunPos = new THREE.Vector3());
-    pos.set(
-      eye.x + rx * P[0] + ux * P[1] + fx * P[2],
-      eye.y + uy * P[1] + fy * P[2],
-      eye.z + rz * P[0] + uz * P[1] + fz * P[2],
-    );
-    const e = this._gunEuler ?? (this._gunEuler = new THREE.Euler(0, 0, 0, 'YXZ'));
-    e.set(look + P[3], yaw + yawOff + P[5], -P[4]);
     const q = this._gunQ ?? (this._gunQ = new THREE.Quaternion());
-    q.setFromEuler(e);
+    this._eyeSpace(P, yawOff, look, player, pos, q);
     const M = G.model;
     if (out) {
-      // saindo do coldre: parte da posição do coldre e vai até a mão
-      if (b.gun < 0.999) {
-        this.gunHolster.updateWorldMatrix(true, false);
-        const hp = this.gunHolster.getWorldPosition(this._t1);
-        const hq = this.gunHolster.getWorldQuaternion(this._hq ?? (this._hq = new THREE.Quaternion()));
-        // sacar: primeiro puxa para cima (ainda com o cano para baixo), depois gira o cano
-        // para frente e leva até a posição; guardar faz o caminho inverso
-        const k = smoothstep(0, 1, b.gun);
-        pos.lerpVectors(hp, pos, k);
-        pos.y += Math.sin(k * Math.PI) * 0.1;
-        q.slerpQuaternions(hq, q, smoothstep(0.25, 0.9, k));
-      }
+      // saindo do coldre/das costas: parte de lá e vai até a mão; guardar faz o caminho inverso
+      if (b.gun < 0.999) this._fromMount(this.mounts[key], b.gun, pos, q, long ? [0.22, 0.14] : [0.1, 0]);
       M.position.copy(pos);
       M.quaternion.copy(q);
       M.updateMatrixWorld(true);
     }
-    // ----- mãos: direita envolvendo a empunhadura; esquerda apoiando, na lanterna ou na recarga -----
+    // ----- mãos: direita na empunhadura; esquerda apoiando, na lanterna ou na recarga -----
     // a mão direita fica na arma o tempo todo (também saindo/entrando no coldre)
     const wR = out ? Math.min(1, b.gun * 6) : 0;
     if (wR < 0.001) return;
     const join = smoothstep(0.65, 1, b.gun); // a esquerda só entra quando a arma já está na frente
     const qW = this._qW ?? (this._qW = new THREE.Quaternion());
+    if (long) {
+      const H = LONG_HANDS[key];
+      solveArmIK(this.armR, M.localToWorld(this._t1.copy(H.wR)), this._v.set(0.7, -0.7, 0.25), wR, WRIST);
+      setHandWorld(this.armR, qW.multiplyQuaternions(M.quaternion, H.qR), wR);
+      // esquerda: embaixo do guarda-mão; na recarga vai à bolsa do cinto e às câmaras / à corda
+      const sp = G.supportParent;
+      sp.updateWorldMatrix(true, false);
+      const qS = sp.getWorldQuaternion(this._qS ?? (this._qS = new THREE.Quaternion()));
+      const t3 = this._t3 ?? (this._t3 = new THREE.Vector3());
+      if (leftMode === 'pouch') {
+        this.hips.updateWorldMatrix(true, false);
+        this.hips.localToWorld(t3.set(-0.19, 0.0, -0.06));
+      } else if (leftMode === 'reload') {
+        G.reloadPoint.getWorldPosition(t3);
+        t3.y -= 0.03;
+      } else sp.localToWorld(t3.copy(G.support).add(WRIST_L_LONG_OFF));
+      if (reloading) this._lh.lerp(t3, 1 - Math.exp(-18 * dt)); else this._lh.copy(t3);
+      solveArmIK(this.armL, this._lh, this._v.set(-0.3, -1, 0.15), join, WRIST);
+      const ori = leftMode === 'support' ? join : join * 0.4;
+      setHandWorld(this.armL, qW.multiplyQuaternions(qS, HAND_L_LONG), ori);
+      return;
+    }
     solveArmIK(this.armR, M.localToWorld(this._t1.copy(WRIST_R_GUN)), this._v.set(0.55, -0.85, 0.35), wR, WRIST);
     setHandWorld(this.armR, qW.multiplyQuaternions(M.quaternion, HAND_R_GUN), wR);
     const oneHand = sprint * (1 - b.aim) * (1 - rk);
@@ -990,15 +1170,94 @@ export class Character {
     }
   }
 
+  /** Pose [direita, cima, frente, inclinação, giro, guinada] no espaço do olhar → posição/rotação no mundo. */
+  _eyeSpace(P, yawOff, look, player, pos, q) {
+    const eye = this.getEyeWorldPosition(this._t2);
+    const yaw = player.yaw, cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(look), sp = Math.sin(look);
+    const fx = -sy * cp, fy = sp, fz = -cy * cp;      // frente
+    const ux = sy * sp, uy = cp, uz = cy * sp;        // cima
+    const rx = cy, rz = -sy;                          // direita
+    pos.set(
+      eye.x + rx * P[0] + ux * P[1] + fx * P[2],
+      eye.y + uy * P[1] + fy * P[2],
+      eye.z + rz * P[0] + uz * P[1] + fz * P[2],
+    );
+    const e = this._gunEuler ?? (this._gunEuler = new THREE.Euler(0, 0, 0, 'YXZ'));
+    e.set(look + P[3], yaw + yawOff + P[5], -P[4]);
+    q.setFromEuler(e);
+  }
+
   /**
-   * Sacar/guardar: a mão direita vai até o coldre (revólver) ou a bainha (faca), pega/solta o
-   * item no meio da troca e volta. Entre dois itens guardados, passa de um lugar ao outro.
+   * Sacando/guardando: o item parte do coldre (costas, cinto) e vai até a pose, primeiro
+   * puxando (arco para cima/para o lado) e depois girando para frente; guardar faz o inverso.
+   */
+  _fromMount(mount, k, pos, q, arc) {
+    mount.updateWorldMatrix(true, false);
+    const hp = mount.getWorldPosition(this._t1);
+    const hq = mount.getWorldQuaternion(this._hq ?? (this._hq = new THREE.Quaternion()));
+    const kk = smoothstep(0, 1, k);
+    pos.lerpVectors(hp, pos, kk);
+    const a = Math.sin(kk * Math.PI);
+    pos.y += a * arc[0];
+    if (arc[1]) { pos.x += Math.cos(this.yaw) * a * arc[1]; pos.z -= Math.sin(this.yaw) * a * arc[1]; }
+    q.slerpQuaternions(hq, q, smoothstep(0.25, 0.9, kk));
+  }
+
+  /**
+   * Taco com arame farpado: como as armas, posicionado no espaço do olhar (pronto, correndo e os
+   * golpes — arco horizontal, de volta, estocada com a ponta e o golpe forte de cima) e as duas
+   * mãos vão até o cabo com IK. Com a lanterna ligada, golpeia com uma mão só.
+   */
+  _batPose(dt, player, look, ph, sprint, yawRate, busyHands) {
+    const b = this.b;
+    const out = this.equip === 'bat';
+    const leaving = this.swap >= 0 && this.swapTo !== 'bat';
+    b.bat = damp(b.bat, out && !leaving && !busyHands && !player.sliding && !player.rolling ? 1 : 0, 9, dt);
+    if (!out) return;
+    const P = BAT_POSES.ready.slice();
+    const mix = (Q, w) => { if (w > 0.001) for (let i = 0; i < 6; i++) P[i] = lerp(P[i], Q[i], w); };
+    mix(BAT_POSES.sprint, sprint * (1 - this._batK));
+    mix(this._batP, this._batK);
+    // perto de parede: recolhe e levanta
+    P[2] -= 0.14 * b.obstruct;
+    P[3] += 0.4 * b.obstruct;
+    // balanço do passo, respiração e atraso ao girar
+    P[1] += Math.sin(ph * 2) * 0.012 * b.move + Math.sin(this.t * 1.4) * 0.004;
+    P[0] += Math.sin(ph) * 0.01 * b.move;
+    const yawOff = -Math.max(-0.1, Math.min(0.1, yawRate * 0.015)) * (1 - this._batK);
+    const pos = this._batPos ?? (this._batPos = new THREE.Vector3());
+    const q = this._batQ ?? (this._batQ = new THREE.Quaternion());
+    this._eyeSpace(P, yawOff, look, player, pos, q);
+    if (b.bat < 0.999) this._fromMount(this.batMount, b.bat, pos, q, [0.12, -0.05]);
+    const B = this.bat;
+    B.position.copy(pos);
+    B.quaternion.copy(q);
+    B.updateMatrixWorld(true);
+    const wR = Math.min(1, b.bat * 6);
+    const qW = this._qW ?? (this._qW = new THREE.Quaternion());
+    solveArmIK(this.armR, B.localToWorld(this._t1.copy(WRIST_R_BAT)), this._v.set(0.6, -0.6, 0.3), wR, WRIST);
+    setHandWorld(this.armR, qW.multiplyQuaternions(B.quaternion, HAND_R_BAT), wR);
+    if (!this._heldFlash) {
+      const wL = smoothstep(0.6, 1, b.bat);
+      solveArmIK(this.armL, B.localToWorld(this._t1.copy(WRIST_L_BAT)), this._v.set(-0.5, -0.8, 0.3), wL, WRIST);
+      setHandWorld(this.armL, qW.multiplyQuaternions(B.quaternion, HAND_L_BAT), wL);
+    }
+  }
+
+  /**
+   * Sacar/guardar: a mão direita vai até o coldre (revólver), a bainha (faca), as costas
+   * (espingarda e besta) ou o cinto (taco), pega/solta o item no meio da troca e volta.
+   * Entre dois itens guardados, passa de um lugar ao outro.
    */
   _swapPose() {
     if (this.swap < 0) return;
     const from = this._swapFrom, to = this.swapTo, s = this.swap;
-    const stored = (it) => it === 'gun' || it === 'knife';
-    const where = (it, v) => (it === 'gun' ? this.gunHolster.getWorldPosition(v) : this.sheath.localToWorld(v.set(0, 0.005, 0)));
+    const stored = (it) => it !== 'hands';
+    const where = (it, v) => {
+      if (it === 'knife') return this.sheath.localToWorld(v.set(0, 0.005, 0));
+      return (it === 'bat' ? this.batMount : this.mounts[it]).getWorldPosition(v);
+    };
+    this.root.updateMatrixWorld(true);
     let tgt;
     if (stored(from) && stored(to)) {
       const a = where(from, this._t1), bp = where(to, new THREE.Vector3());
@@ -1013,11 +1272,14 @@ export class Character {
     if (s < 0.5) w = stored(from) ? smoothstep(0.3, 0.5, s) : smoothstep(0, 0.42, s);
     else w = stored(to) ? 1 - smoothstep(0.5, 0.6, s) : 1 - smoothstep(0.55, 1, s);
     if (w < 0.001) return;
-    this.root.updateMatrixWorld(true);
-    solveArmIK(this.armR, tgt, this._v.set(0.55, -0.1, 1), w);
-    // o corpo acompanha: ombro desce e o tronco gira de leve para o lado
-    this.torso.rotation.z -= 0.08 * w;
-    this.torso.rotation.y -= 0.12 * w;
+    const it = s < 0.5 ? from : to;
+    // cotovelo: para cima (pegar nas costas por cima do ombro), para fora (cinto do outro lado)
+    const pole = { shotgun: [0.45, 0.9, -0.15], crossbow: [0.7, -0.3, 0.7], bat: [0.6, -0.3, -0.7] }[it] ?? [0.55, -0.1, 1];
+    solveArmIK(this.armR, tgt, this._v.set(pole[0], pole[1], pole[2]), w);
+    // o corpo acompanha: ombro desce/gira para o lado do item
+    if (it === 'bat') { this.torso.rotation.y += 0.2 * w; this.torso.rotation.x += 0.06 * w; }
+    else if (it === 'shotgun') { this.torso.rotation.z += 0.05 * w; this.torso.rotation.y -= 0.18 * w; }
+    else { this.torso.rotation.z -= 0.08 * w; this.torso.rotation.y -= 0.12 * w; }
   }
 
   /** Mãos apoiadas na borda (IK) durante as escaladas, pernas subindo. */

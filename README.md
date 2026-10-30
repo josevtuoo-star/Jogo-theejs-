@@ -18,7 +18,8 @@ Jogo de sobrevivência em primeira pessoa (estilo DayZ / Minecraft / The Walking
 
 ### Corpo, câmera e animações
 - **1ª pessoa de verdade**: a câmera fica nos olhos do próprio corpo. Braços, mãos, faca e lanterna que aparecem em 1ª pessoa são os mesmos da 3ª pessoa, fazendo o mesmo movimento
-- Ciclo de passo realista (andar, trotar, correr, agachado): joelhos, tornozelos, quadril subindo/descendo e girando, ombros em contrarrotação, braços com cotovelo, inclinação com a velocidade
+- **Captura de movimento real** (CMU Graphics Lab Motion Capture Database): andar, trotar, correr e andar agachado vêm de gravações de pessoas de verdade, adaptadas ao esqueleto do personagem (quadril, tronco, coxas, joelhos, tornozelos e braços) e tocadas no ritmo do passo do jogo — o som da pisada cai na pisada; os clipes se misturam pela velocidade
+- Ciclo de passo procedural por baixo (de lado, de costas, transições): joelhos, tornozelos, quadril subindo/descendo e girando, ombros em contrarrotação, braços com cotovelo, inclinação com a velocidade
 - **IK de braço**: as mãos se apoiam de verdade na borda ao escalar e nos degraus da escada
 - Parado muda o peso de perna, dá passinhos ao girar; inclina nas curvas; amortece pousos
 - 3ª pessoa (`V`) com colisão da câmera
@@ -30,6 +31,12 @@ Jogo de sobrevivência em primeira pessoa (estilo DayZ / Minecraft / The Walking
 - **Golpe forte**: segurar o botão carrega (o braço vai para trás) e soltar desfere — soco giratório ou facada de cima para baixo, com passo à frente
 - Guarda alta com os punhos durante a briga, punho fechado segurando a faca
 - Impacto com peso: congelamento rápido no acerto, tranco da câmera, vibração, partículas e som por material
+- **6 itens** (`1`–`6`, rodinha, botão **TROCAR** ou a **barra de armas** na tela): mãos livres, faca, revólver, espingarda, besta e taco
+- **Espingarda de cano duplo calibre 12** (`4`), pendurada nas costas: nove bagos de chumbo num cone por tiro, dois canos (dois tiros seguidos), recuo forte, clarão e fumaça; **recarga animada**: abre a báscula (os canos caem), os cartuchos vazios saltam e quicam no chão, a mão esquerda pega dois cartuchos no cinto, põe nas câmaras e fecha com um tranco
+- **Besta** (`5`), pendurada nas costas: mira de ponto vermelho, **virote que voa com gravidade** (é preciso compensar a queda de longe), crava em madeira, terra e nos bonecos (fica preso e treme), ricocheteia em metal/concreto — e **dá para recolher** os virotes (`F`); recarga: aponta para baixo, puxa a corda até o trinco e põe o virote no trilho
+- **Taco com arame farpado** (`6`), preso no cinto: golpes com as duas mãos no cabo — arco horizontal → golpe de volta → estocada com a ponta; segurando, **golpe forte de cima para baixo**; o arame rasga a lona dos bonecos, pancada que volta pelo cabo nas paredes
+- Armas longas se sacam por cima do ombro (a mão vai às costas, puxa e traz para frente); com a lanterna ligada, ela fica presa no peito iluminando (as duas mãos estão na arma)
+- Munição separada por arma, caixas de **.357**, **cartuchos cal. 12** e **feixes de virotes** espalhadas pelo mapa
 - **Revólver .357** (`3`), guardado no coldre da coxa: sacar/guardar animado, arma baixa e pronta, **mirar pela alça e massa** (`botão direito` / **MIRAR** / `LT`) com zoom, recuo com o cano subindo, tambor que gira a cada tiro, cão que arma, clarão e fumaça
 - **Sacar e guardar animados** (revólver e faca): a mão vai até o coldre/bainha, segura, puxa para cima, gira e traz para frente; guardar faz o caminho inverso
 - Mãos de verdade na arma: a direita envolve a empunhadura com o polegar por cima, a esquerda apoia por baixo
@@ -75,14 +82,14 @@ Jogo de sobrevivência em primeira pessoa (estilo DayZ / Minecraft / The Walking
 | Olhar | Mouse | Arrastar no lado direito | Analógico direito |
 | Andar devagar | `X` (alterna) | Joystick pouco empurrado | `→` (direcional) |
 | Correr | `Shift` | **CORRER** ou joystick no limite | `L3` (alterna) / `LT` |
-| Mãos livres / faca | `1` / `2` | **✊⇄🔪** | `←` (direcional) |
+| Mãos livres / faca / revólver / espingarda / besta / taco | `1` – `6` | Barra de armas no topo ou **TROCAR** | `←` (direcional) |
 | Pular / escalar | `Espaço` | **PULAR** | `A` |
 | Escada de mão | `W` / `S` (Espaço solta) | Joystick | Analógico |
 | Agachar / deslizar (correndo) / rolar (caindo) | `C` (alterna) / `Ctrl` (segurar) | **AGACHAR** | `B` |
 | Inclinar (espiar) | `Q` / `E` | — | `LB` / `RB` |
-| Soco / golpe de faca (combo) | Clique esquerdo | 👊 / 🔪 | `RT` |
+| Soco / golpe de faca / taco (combo) | Clique esquerdo | 👊 / 🔪 | `RT` |
 | Golpe forte | Segurar e soltar o clique | Segurar 👊 / 🔪 | Segurar `RT` |
-| Revólver / trocar item | `3` / rodinha do mouse | **TROCAR** (mãos → faca → revólver) | `←` |
+| Trocar item | Rodinha do mouse | **TROCAR** (próximo item) | `←` |
 | Mirar / atirar / recarregar | Botão direito / clique / `R` | **MIRAR** / **ATIRAR** / **RECARR.** (arrastar sobre ATIRAR/MIRAR gira a câmera) | `LT` / `RT` / `↓` |
 | Usar / porta | `F` | **USAR** (aparece perto da porta) | `X` |
 | Lanterna | `L` | 🔦 | `↑` (direcional) |
@@ -124,11 +131,13 @@ js/physics.js       objetos soltos com física (latas, garrafas, baldes...)
 js/playerModel.js   carrega os modelos 3D (personagem com pesos automáticos no esqueleto, faca)
 js/dummies.js       bonecos de treino (balanço com mola, marcas de corte e furos)
 js/revolver.js      revólver: modelo, tambor, cão, clarão, cápsulas
+js/weapons.js       espingarda de cano duplo, besta (corda, virote) e taco com arame farpado
+js/mocap.js         clipes de captura de movimento (andar, trotar, correr, agachado) e mistura
 js/textures.js      texturas procedurais (canvas)
 js/photoAssets.js   texturas fotográficas, material do terreno (mistura por altura) e céu HDRI
 js/icons.js         ícones SVG dos botões touch
 js/trees.js         copas de árvore com cartões de galhos/folhas (texturas desenhadas em canvas)
-assets/             sons gravados (sfx/), texturas (tex/), céu HDRI (env/) e CREDITS.md
+assets/             sons gravados (sfx/), texturas (tex/), céu HDRI (env/), animações de captura de movimento (anim/) e CREDITS.md
 models/             carl.glb (personagem) e faca.glb
 js/audio.js         sons procedurais (Web Audio)
 ```
@@ -140,15 +149,16 @@ No console do navegador, `window.game` dá acesso ao jogador e ao mundo para dep
 2. Inventário e itens no chão (coletar)
 3. Fome, sede e temperatura
 4. Zumbis com IA (patrulha, perseguição, ataque)
-5. Combate corpo a corpo / armas
 6. Construção e coleta de recursos (estilo Minecraft)
 7. Ciclo dia/noite e salvamento
 
-## Créditos dos sons, texturas e céu
+## Créditos dos sons, texturas, céu e animações
 
-Gravações reais (Kenney, The Free Firearm Sound Library — CC0; Godot demos — MIT), texturas
-fotográficas do Poly Haven (CC0) e do three.js (MIT) e céu HDRI do Poly Haven (CC0). Lista
-completa, com links e o que foi alterado em cada arquivo: [`assets/CREDITS.md`](assets/CREDITS.md).
+Gravações reais (Kenney, The Free Firearm Sound Library, Shotgun Reload Sound Effects — CC0;
+Godot demos — MIT), texturas fotográficas do Poly Haven (CC0) e do three.js (MIT), céu HDRI do
+Poly Haven (CC0) e captura de movimento da CMU Graphics Lab Motion Capture Database
+(mocap.cs.cmu.edu). Lista completa, com links e o que foi alterado em cada arquivo:
+[`assets/CREDITS.md`](assets/CREDITS.md).
 
 ## Créditos dos modelos 3D
 

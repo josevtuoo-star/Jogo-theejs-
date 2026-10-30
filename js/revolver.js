@@ -166,6 +166,10 @@ export class Revolver {
     this.flashT = 0;
 
     // estado
+    this.kind = 'revolver';
+    this.capacity = CAPACITY;
+    this.sightY = SIGHT_Y;
+    this.longGun = false;
     this.loaded = CAPACITY;
     this.reserve = 12;
     this.cylAngle = 0;

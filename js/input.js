@@ -66,9 +66,12 @@ export class Input {
       KeyV: 'view',
       KeyF: 'use',
       KeyL: 'light',
-      Digit1: 'equipHands',
-      Digit2: 'equipKnife',
-      Digit3: 'equipGun',
+      Digit1: 'equip_hands',
+      Digit2: 'equip_knife',
+      Digit3: 'equip_gun',
+      Digit4: 'equip_shotgun',
+      Digit5: 'equip_crossbow',
+      Digit6: 'equip_bat',
       KeyR: 'reload',
       KeyX: 'walkToggle',
     };
@@ -178,7 +181,7 @@ export class Input {
     });
 
     const ui = document.getElementById('touch-ui');
-    const isOnButton = (e) => e.target instanceof Element && e.target.closest('.tbtn');
+    const isOnButton = (e) => e.target instanceof Element && e.target.closest('.tbtn, .wslot');
 
     window.addEventListener('pointerdown', (e) => {
       if (!this.enabled || e.pointerType === 'mouse' || isOnButton(e)) return;

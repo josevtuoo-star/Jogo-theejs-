@@ -535,25 +535,26 @@ export class GameAudio {
   }
 
   /** Tiro: amostra sintetizada + eco do vale ao ar livre (dentro de casa o reverb faz o papel). */
-  gunshot(indoor = 0) {
+  gunshot(indoor = 0, shotgun = false) {
     if (!this.ctx) return;
     const ctx = this.ctx, t = ctx.currentTime;
     const bufs = this._shotBuffers();
     const g = ctx.createGain();
     g.connect(this.sfx);
-    // tiro gravado de verdade (pistola, CC0), um pouco mais grave para soar como .357,
-    // somado à pancada grave sintetizada; sem a gravação, só o sintetizado
-    const rec = this._play('gun_shot', { gain: 1.0, rate: 0.84, vary: 0.03, dest: g });
+    // tiro gravado de verdade (CC0): pistola um pouco mais grave para soar como .357, ou a
+    // espingarda calibre 12; somado à pancada grave sintetizada; sem a gravação, só o sintetizado
+    const rec = shotgun ? this._play('sg_shot', { gain: 1.0, rate: 0.93, vary: 0.03, dest: g }) : this._play('gun_shot', { gain: 1.0, rate: 0.84, vary: 0.03, dest: g });
     const src = ctx.createBufferSource();
     src.buffer = bufs[Math.floor(Math.random() * bufs.length)];
-    src.playbackRate.value = 0.95 + Math.random() * 0.1;
+    src.playbackRate.value = (shotgun ? 0.72 : 0.95) + Math.random() * 0.1;
     const sg = ctx.createGain();
-    sg.gain.value = rec ? 0.55 : 1.0;
+    sg.gain.value = rec ? (shotgun ? 0.7 : 0.55) : 1.0;
     src.connect(sg).connect(g);
     // eco: cópia abafada e atrasada, duas vezes (morro e floresta)
     const k = 1 - indoor;
     if (k > 0.05) {
-      for (const [delay, gain, freq] of [[0.28, 0.32, 900], [0.75, 0.18, 600], [1.4, 0.1, 400]]) {
+      const ek = shotgun ? 1.35 : 1;
+      for (const [delay, gain, freq] of [[0.28, 0.32 * ek, 900], [0.75, 0.18 * ek, 600], [1.4, 0.1 * ek, 400]]) {
         const dl = ctx.createDelay(2);
         dl.delayTime.value = delay + Math.random() * 0.05;
         const lp = ctx.createBiquadFilter();
@@ -566,7 +567,93 @@ export class GameAudio {
     }
     src.start(t);
     // mecanismo (cão batendo)
-    this._tone(5200 + Math.random() * 600, 0.04, 0.04, 'triangle', 0.005);
+    if (!shotgun) this._tone(5200 + Math.random() * 600, 0.04, 0.04, 'triangle', 0.005);
+  }
+
+  // ---------- espingarda ----------
+  /** Abrir a báscula: trava soltando e os canos caindo. */
+  breakOpen() {
+    if (this._play('metal_latch', { gain: 0.55, rate: 0.9 })) { this._play('sg_rack', { gain: 0.25, rate: 1.25, delay: 0.05 }); return; }
+    this._burst({ duration: 0.05, freq: 1800, q: 4, gain: 0.25, type: 'bandpass' });
+    this._tone(900, 0.1, 0.06, 'triangle', 0.04, 0.8);
+  }
+
+  /** Fechar: tranco seco do metal. */
+  breakClose() {
+    if (this._play('metal_click', { gain: 0.75, rate: 0.7 })) { this._play('metal_latch', { gain: 0.35, rate: 1.1, delay: 0.02 }); return; }
+    this._burst({ duration: 0.04, freq: 1500, q: 4, gain: 0.4, type: 'bandpass' });
+    this._tone(700, 0.12, 0.1, 'triangle', 0, 0.8);
+  }
+
+  /** Cartuchos saltando do extrator. */
+  shellsEject() {
+    if (this._play('sg_shell', { gain: 0.35, rate: 1.3 })) return;
+    this._burst({ duration: 0.06, freq: 2200, q: 2, gain: 0.1, type: 'bandpass' });
+  }
+
+  /** Cartucho entrando na câmara. */
+  shellIn(delay = 0) {
+    if (this._play('sg_shell', { gain: 0.5, delay })) return;
+    this._burst({ duration: 0.04, freq: 1600, q: 3, gain: 0.2, type: 'bandpass', delay });
+  }
+
+  /** Arma longa saindo/entrando na bandoleira das costas: tecido, correia e metal. */
+  sling(draw = true) {
+    if (this._play('cloth', { gain: 0.5 })) {
+      this._play('cloth_belt', { gain: 0.35, delay: 0.12 });
+      if (draw) this._play('gun_handle', { gain: 0.35, delay: 0.42 });
+      return;
+    }
+    this._burst({ duration: 0.3, freq: 1200, q: 1, gain: 0.12, type: 'bandpass', attack: 0.06 });
+    this._tone(2400, 0.06, 0.04, 'triangle', 0.35);
+  }
+
+  // ---------- besta ----------
+  /** Disparo: estalo do gatilho, corda vibrando e o "vuup" do virote. */
+  crossbowShot() {
+    if (!this.ctx) return;
+    this._burst({ duration: 0.03, freq: 3200, q: 3, gain: 0.25, type: 'bandpass' });
+    // corda: tom grave que cai e treme
+    this._tone(118, 0.32, 0.2, 'sawtooth', 0, 0.82, 0, 900);
+    this._tone(236, 0.2, 0.06, 'triangle', 0.005, 0.85);
+    this._burst({ duration: 0.09, freq: 500, q: 1, gain: 0.35, type: 'lowpass' });
+    this._sweep(2400, 900, 0.22, 0.09, 2);
+  }
+
+  /** Puxar a corda até o trinco (estica e trava). */
+  crossbowCock() {
+    this._burst({ duration: 0.4, freq: 700, q: 2, gain: 0.06, type: 'bandpass', attack: 0.3 });
+    this._play('metal_click', { gain: 0.5, rate: 1.2, delay: 0.38 }) || this._burst({ duration: 0.03, freq: 3000, q: 4, gain: 0.25, type: 'bandpass', delay: 0.38 });
+  }
+
+  /** Virote encaixando no trilho. */
+  boltLoad() {
+    if (this._play('leather', { gain: 0.25, rate: 1.3 })) { this._play('metal_click', { gain: 0.2, rate: 1.6, delay: 0.1 }); return; }
+    this._burst({ duration: 0.05, freq: 2400, q: 3, gain: 0.12, type: 'bandpass' });
+  }
+
+  /** Virote cravando: pancada seca e a haste vibrando. */
+  boltHit(surface, pos) {
+    const rec = { metal: 'imp_metal_light', wood: 'imp_wood_heavy', concrete: 'imp_mining', sack: 'imp_soft_heavy' }[surface] ?? 'imp_soft_medium';
+    this._play(rec, { gain: 0.7, pos, rate: 0.9 });
+    this._at(pos, () => this._tone(160 + Math.random() * 40, 0.25, 0.08, 'triangle', 0.01, 0.95), 3);
+  }
+
+  // ---------- taco ----------
+  batSwing(heavy = false) {
+    this._sweep(heavy ? 900 : 1100, heavy ? 180 : 260, heavy ? 0.42 : 0.3, heavy ? 0.22 : 0.16, 1.2);
+    if (heavy) this.grunt(1); else if (Math.random() < 0.4) this.grunt(0.6);
+  }
+
+  batHit(surface, pos, power = 5) {
+    const rec = { metal: 'imp_metal_heavy', wood: 'imp_wood_heavy', concrete: 'imp_mining', sack: 'imp_punch_heavy' }[surface] ?? 'imp_wood_medium';
+    const k = Math.min(1, power / 8);
+    if (this._play(rec, { gain: 0.6 + k * 0.3, pos, rate: 0.85 })) {
+      this._play('imp_wood_medium', { gain: 0.4, pos, rate: 0.75 });
+      this._play('metal_pot', { gain: 0.08, pos, rate: 1.8, delay: 0.01 }); // arame chacoalhando
+      return;
+    }
+    this._at(pos, () => { this._tone(140, 0.15, 0.3 * k + 0.1, 'triangle', 0, 0.7); this._burst({ duration: 0.1, freq: 400, gain: 0.4 }); });
   }
 
   dryFire() {
