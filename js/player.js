@@ -849,6 +849,7 @@ export class Player {
     // olhando para a escada, "frente" sobe; de costas para ela, "frente" desce
     const facing = -(_lf.x * l.nx + _lf.z * l.nz) >= -0.2 ? 1 : -1;
     const vy = move.y * facing * LADDER_SPEED;
+    this.ladderVy = vy;
     const feet = this.collider.start.y - RADIUS;
     this.height = damp(this.height, STAND_HEIGHT, 14, dt);
 

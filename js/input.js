@@ -67,11 +67,7 @@ export class Input {
       KeyF: 'use',
       KeyL: 'light',
       Digit1: 'equip_hands',
-      Digit2: 'equip_knife',
-      Digit3: 'equip_gun',
-      Digit4: 'equip_shotgun',
-      Digit5: 'equip_crossbow',
-      Digit6: 'equip_bat',
+      Digit2: 'equip_pistol',
       KeyR: 'reload',
       KeyX: 'walkToggle',
     };

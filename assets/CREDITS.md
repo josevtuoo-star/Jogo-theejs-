@@ -1,6 +1,6 @@
 # Créditos dos assets
 
-Todos os arquivos desta pasta são livres para uso. Os sons foram cortados, normalizados e
+Todos os arquivos desta pasta são livres para uso (os modelos 3D CC BY 4.0 pedem o crédito abaixo). Os sons foram cortados, normalizados e
 convertidos para MP3; as texturas foram reduzidas e algumas envelhecidas — veja abaixo.
 
 ## Sons (`sfx/`)
@@ -9,15 +9,14 @@ convertidos para MP3; as texturas foram reduzidas e algumas envelhecidas — vej
 | --- | --- | --- |
 | `step_*`, `imp_*` | [Kenney — Impact Sounds](https://kenney.nl/assets/impact-sounds) (footsteps e impacts) | CC0 |
 | `door_*`, `creak_*`, `knife_*`, `cloth*`, `belt_handle_*`, `metal_*`, `drop_leather_*`, `chop_*`, `leather_*`, `coins_*`, `metal_pot_*` | [Kenney — RPG Audio](https://kenney.nl/assets/rpg-audio) | CC0 |
-| `gun_shot_*` | Walther PPQ 9mm (X_39P) da [The Free Firearm Sound Library](https://opengameart.org/content/the-free-firearm-sound-library), preparado no projeto [smokeem](https://github.com/mrellcrane/smokeem); tocado mais grave no jogo para soar como .357 | CC0 |
+| `gun_shot_*` | Walther PPQ 9mm (X_39P) da [The Free Firearm Sound Library](https://opengameart.org/content/the-free-firearm-sound-library), preparado no projeto [smokeem](https://github.com/mrellcrane/smokeem); tocado mais grave no jogo para soar como .45 | CC0 |
 | `gun_reload_*`, `gun_handle_*` | [Gun reload sounds](https://opengameart.org/content/gun-reload-sounds) (via smokeem) | CC0 |
 | `sg_shot_*` | Benelli Nova calibre 12 (O_21P) da [The Free Firearm Sound Library](https://opengameart.org/content/the-free-firearm-sound-library), preparado no [smokeem](https://github.com/mrellcrane/smokeem); somado a uma pancada grave sintetizada | CC0 |
-| `sg_shell_*`, `sg_rack_*` | "Shell in Chamber" e "Rack" de [Shotgun Reload Sound Effects](https://opengameart.org/content/shotgun-reload-sound-effects) (via smokeem) | CC0 |
+| `sg_shell_*`, `sg_rack_*` | "Shell in Chamber" e "Rack" de [Shotgun Reload Sound Effects](https://opengameart.org/content/shotgun-reload-sound-effects) (via smokeem); o "rack" mais agudo é o ferrolho da pistola fechando | CC0 |
 | `amb_birds`, `amb_insects` | `mood_sunrise.ogg` / `mood_sunset.ogg` do demo Truck Town, [godot-demo-projects](https://github.com/godotengine/godot-demo-projects) — emendados em loop | MIT (Copyright © 2014-present Godot Engine contributors) |
 
-O tiro também soma uma pancada grave e o eco sintetizados no próprio jogo; a corda e o virote da
-besta, o taco cortando o ar, vento, fogo, coração, corvos, respiração e alguns detalhes continuam
-sintetizados (Web Audio).
+O tiro também soma uma pancada grave e o eco sintetizados no próprio jogo; vento, fogo, coração,
+corvos, respiração e alguns detalhes continuam sintetizados (Web Audio).
 
 ## Texturas (`tex/`)
 
@@ -29,17 +28,18 @@ sintetizados (Web Audio).
 | `brick_*` | `brick_diffuse/bump/roughness.jpg` dos exemplos do [three.js](https://github.com/mrdoob/three.js) (escurecido) | MIT (Copyright © 2010-2024 three.js authors) |
 | `planks_*` | `hardwood2_diffuse/bump.jpg` dos exemplos do three.js, envelhecido (acinzentado, manchas) | MIT (three.js) |
 
-## Animações (`anim/`)
-
-| Arquivos | Origem | Licença |
-| --- | --- | --- |
-| `walk`, `jog`, `run`, `crouch`, `sneak`, `zombie` | Captura de movimento da [CMU Graphics Lab Motion Capture Database](http://mocap.cs.cmu.edu/) — sujeitos/tomadas 08_01 (andar), 02_03 (trotar), 09_11 (correr), 136_09 (agachado), 77_29 (andar furtivo) e 104_41 (andar de zumbi), na conversão BVH de Bruce Hahne (cgspeed) via [Shriinivas/cmubvh](https://github.com/Shriinivas/cmubvh). Cortados num ciclo de passada (pisada a pisada), adaptados ao esqueleto do personagem, reamostrados em 48 poses e com a altura do quadril corrigida para o pé tocar o chão | Uso livre — "The data used in this project was obtained from mocap.cs.cmu.edu. The database was created with funding from NSF EIA-0196217." |
-
-## Personagem (`../models/sobrevivente.glb`)
+## Modelos 3D (`../models/`)
 
 | Arquivo | Origem | Licença |
 | --- | --- | --- |
-| `sobrevivente.glb` | “Male 15” por elbolilloduro, com o esqueleto humano do [Mesh2Motion](https://github.com/Mesh2Motion/mesh2motion-app) (`static/models-variation/human/male_15.glb`). Suavizado para o jogo (subdivisão com triângulos curvos, dois níveis), mantendo textura e pesos de pele | CC0 |
+| `personagem.glb` | [“Cyberpunk Police bot [Animation ready]”](https://sketchfab.com/3d-models/cyberpunk-police-bot-animation-ready-b68e6cc1f2ce462bb0d34275adaa1110) por **everlasting17th** ([sketchfab.com/everlastinggrey](https://sketchfab.com/everlastinggrey)). No jogo: sem as armas e sem o pedestal, texturas reduzidas (1024, JPEG), escala em metros e as animações abaixo no lugar da original | [CC BY 4.0](http://creativecommons.org/licenses/by/4.0/) |
+| animações dentro de `personagem.glb` | Biblioteca de animações humanas do [Mesh2Motion](https://github.com/Mesh2Motion/mesh2motion-app) (`static/animations/human-base-animations.glb` e `human-addon-animations.glb`): Idle_A, Walk, Jog, Sprint, Walk_Backwards, Strafe_left/right, Crouch_Idle, Crouch_Walk, Walk_Stealth, Jump_Start/air/Land, Roll, Slide, Swim_Fwd, Swim_Idle, Punch_Jab, Punch_Cross, Melee_Hook, Fighting Idle, PickUp_Table, Interact, Hit_Chest, Pistol_Idle, Pistol_Aim_Neutral, ClimbUp_1m_RM, Climb Ladder, Ladder_Idle, Ledge Hang, Death_A, Idle Hurt, Tired Hunched. Convertidas (retarget) do esqueleto do Mesh2Motion para o esqueleto Mixamo do personagem, com o deslocamento tirado (o jogo move o corpo) | CC0 |
+| `zumbi.glb` | [“Zombie Walk Test”](https://sketchfab.com/3d-models/zombie-walk-test-165fd9342c364216bfdd8c2f1102223c) por **OSCAR CREATIVO** ([sketchfab.com/oscar_creativo](https://sketchfab.com/oscar_creativo)), com a animação de andar dele. No jogo: materiais convertidos para metal/rugosidade, texturas reduzidas, andar no lugar (o código move o zumbi) | [CC BY 4.0](http://creativecommons.org/licenses/by/4.0/) |
+| `fps_pistola.glb` | [“FPS pistol animations”](https://sketchfab.com/3d-models/fps-pistol-animations-0d7a343dcb6f401197a73c91aee93f6d) por **Cransh** ([sketchfab.com/ccransh](https://sketchfab.com/ccransh)): animações Idle, Walk, Fire, Reload_easy e Reload_full. No jogo ficam só o esqueleto, as animações e o carregador (mais estreito); os braços do arquivo foram trocados pelos do personagem (IK) e a pistola pela Colt | [CC BY 4.0](http://creativecommons.org/licenses/by/4.0/) |
+| `colt.glb` | [“Colt M1911”](https://sketchfab.com/3d-models/colt-m1911-26adfd631730494ab0fc80c806eada77) por **Ole Gunnar Isager** ([sketchfab.com/FrenchBaguette](https://sketchfab.com/FrenchBaguette)). No jogo: texturas reduzidas (2048, JPEG), em escala real (21,6 cm); ferrolho e gatilho acompanham as animações de FPS | [CC BY 4.0](http://creativecommons.org/licenses/by/4.0/) |
+
+Sacar e guardar a pistola (do coldre na coxa direita até a pose de tiro e de volta) são feitos no
+código, a partir da pose parada das animações de FPS.
 
 ## Céu (`env/`)
 

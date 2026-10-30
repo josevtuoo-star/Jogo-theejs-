@@ -683,6 +683,27 @@ export class GameAudio {
     this._burst({ duration: 0.03, freq: 2500, q: 3, gain: 0.12, type: 'bandpass', delay: draw ? 0.2 : 0.14 });
   }
 
+  /** Pistola: soltar o carregador (trava + o carregador escorregando). */
+  magOut() {
+    if (this._play('metal_click', { gain: 0.5, rate: 1.25 })) { this._play('gun_handle', { gain: 0.35, rate: 1.3, delay: 0.05 }); return; }
+    this._burst({ duration: 0.04, freq: 3200, q: 4, gain: 0.2, type: 'bandpass' });
+    this._tone(1600, 0.08, 0.05, 'triangle', 0.04, 0.8);
+  }
+
+  /** Carregador novo encaixando. */
+  magIn() {
+    if (this._play('metal_latch', { gain: 0.6, rate: 1.05 })) { this._play('metal_click', { gain: 0.3, rate: 0.95, delay: 0.02 }); return; }
+    this._burst({ duration: 0.035, freq: 2400, q: 4, gain: 0.3, type: 'bandpass' });
+    this._tone(1300, 0.09, 0.07, 'triangle', 0, 0.85);
+  }
+
+  /** Ferrolho fechando (recarga vazia). */
+  slideRelease() {
+    if (this._play('sg_rack', { gain: 0.45, rate: 1.45 })) return;
+    this._burst({ duration: 0.05, freq: 2000, q: 3, gain: 0.3, type: 'bandpass' });
+    this._burst({ duration: 0.03, freq: 3500, q: 4, gain: 0.25, type: 'bandpass', delay: 0.07 });
+  }
+
   cylinderOpen() {
     if (this._play('metal_latch', { gain: 0.5, rate: 1.15 })) return;
     this._burst({ duration: 0.04, freq: 3000, q: 4, gain: 0.2, type: 'bandpass' });

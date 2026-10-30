@@ -96,7 +96,7 @@ function terrainMaterial(T, hq) {
  */
 export async function applyPhotoAssets(world, renderer, { quality = 'high', base = 'assets/', hdr = 'env/forest_slope_1k.hdr' } = {}) {
   const hq = quality !== 'low';
-  const aniso = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+  const aniso = Math.min(16, renderer.capabilities.getMaxAnisotropy());
   const jobs = [];
   // terreno
   jobs.push((async () => {

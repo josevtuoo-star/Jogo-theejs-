@@ -1,10 +1,13 @@
 import * as THREE from 'three';
 
-// Câmera: em 1ª pessoa fica nos olhos do corpo animado (o balanço, o pouso, as escaladas e a
-// queda vêm da animação do corpo); em 3ª pessoa fica atrás do ombro, com colisão.
+// Câmera: em 1ª pessoa é uma GoPro presa na cabeça do corpo animado — grande-angular com
+// distorção de lente (ver lens.js) e o balanço/inclinação que a cabeça faz na animação; em 3ª
+// pessoa fica atrás do ombro, com colisão.
 // Também: inclinação ao espiar/andar de lado, FOV maior correndo, tremor com dano e morte.
 
 const SPRINT_FOV_BONUS = 9;
+const GOPRO_FOV_BONUS = 16; // a GoPro enxerga mais (a lente comprime as bordas)
+const GOPRO_LENS = 0.09;    // força da distorção barril
 
 function damp(a, b, lambda, dt) {
   return a + (b - a) * (1 - Math.exp(-lambda * dt));
@@ -40,6 +43,8 @@ export class CameraRig {
     this.climbPitch = 0;
     this.slideBlend = 0;
     this.ladderBlend = 0;
+    this.lensK = 0;
+    this.headSway = null;
   }
 
   /** Tranco da câmera (golpe dado ou recebido). */
@@ -90,7 +95,9 @@ export class CameraRig {
     const sprintActive = (player.sprinting && player.horizontalSpeed > 4) || player.sliding;
     // mirando com a arma: aproxima (zoom leve, mais forte pela alça e massa em 1ª pessoa)
     const aim = this.aim ?? 0;
-    const fovT = this.baseFov + (sprintActive ? SPRINT_FOV_BONUS : 0) + this.slideBlend * 3 - aim * (this.thirdPerson ? 12 : 22);
+    this.lensK = damp(this.lensK, this.thirdPerson ? 0 : GOPRO_LENS, 6, dt);
+    const fovT = this.baseFov + (sprintActive ? SPRINT_FOV_BONUS : 0) + this.slideBlend * 3 - aim * (this.thirdPerson ? 12 : 22) +
+      (this.lensK / GOPRO_LENS) * GOPRO_FOV_BONUS;
     this.fov = damp(this.fov, fovT, aim > 0.02 || Math.abs(this.fov - fovT) < 6 ? 12 : 4, dt);
     if (Math.abs(this.camera.fov - this.fov) > 0.01) {
       this.camera.fov = this.fov;
@@ -113,7 +120,10 @@ export class CameraRig {
       if (player.dead || player.rolling) this._fp.copy(headEye);
       this.camera.position.copy(this._fp);
       const d = this.deathBlend;
-      _euler.set(pitch * (1 - d) + d * 0.2, yaw, this.roll + extraRoll + d * 1.3);
+      // a câmera está presa na cabeça: sobe/desce e inclina junto com ela (menos mirando)
+      const sw = this.headSway, k = (this.bobEnabled ? 0.75 : 0.15) * (1 - aim * 0.7);
+      const swayP = sw ? sw.x * k : 0, swayR = sw ? sw.z * k : 0;
+      _euler.set((pitch + swayP) * (1 - d) + d * 0.2, yaw, this.roll + extraRoll + swayR + d * 1.3);
       this.camera.quaternion.setFromEuler(_euler);
     } else {
       this._fp = null;

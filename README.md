@@ -17,47 +17,28 @@ Jogo de sobrevivência em primeira pessoa (estilo DayZ / Minecraft / The Walking
 - Colisões com cápsula + Octree (chão, paredes, rampas, escadas, teto, portas)
 
 ### Corpo, câmera e animações
-- **1ª pessoa de verdade**: a câmera fica nos olhos do próprio corpo. Braços, mãos, faca e lanterna que aparecem em 1ª pessoa são os mesmos da 3ª pessoa, fazendo o mesmo movimento
-- **Captura de movimento real** (CMU Graphics Lab Motion Capture Database): andar, trotar, correr e andar agachado vêm de gravações de pessoas de verdade, adaptadas ao esqueleto do personagem (quadril, tronco, coxas, joelhos, tornozelos e braços) e tocadas no ritmo do passo do jogo — o som da pisada cai na pisada; os clipes se misturam pela velocidade
-- Ciclo de passo procedural por baixo (de lado, de costas, transições): joelhos, tornozelos, quadril subindo/descendo e girando, ombros em contrarrotação, braços com cotovelo, inclinação com a velocidade
-- **IK de braço e perna**: as mãos se apoiam de verdade na borda ao escalar e nos degraus da escada; na escada os pés também pisam nos degraus, alternando com as mãos
-- Parado muda o peso de perna, dá passinhos ao girar; inclina nas curvas; amortece pousos
-- 3ª pessoa (`V`) com colisão da câmera
+- **Personagem**: robô policial (“Cyberpunk Police bot”, CC BY 4.0) com esqueleto Mixamo e pesos de pele próprios; as armas que vinham na mão dele e o pedestal foram tirados
+- **Animações prontas** (biblioteca do Mesh2Motion, CC0), convertidas para o esqueleto do robô: parado, andar, trotar, correr, de costas, de lado, agachado parado/andando, andar furtivo, no ar, pouso, rolamento, deslizar, nadar, escada, escalar borda, pendurado, socos, levar dano, morte, ferido
+- Os clipes se misturam pela velocidade e direção (frente/trás/lados) com a passada sincronizada; cada clipe é dividido em **pernas** e **tronco/braços**, então os socos e reações trocam só a parte de cima enquanto as pernas continuam andando
+- O tronco e a cabeça acompanham o olhar para cima/baixo
+- **Câmera de 1ª pessoa estilo GoPro**: presa na cabeça do robô (balança e inclina com a animação), grande-angular com **distorção de lente** e leve escurecimento nas bordas; a cabeça some e o resto do corpo aparece (braços, peito, pernas)
+- 3ª pessoa (`V`) com colisão da câmera, sem distorção
+- **Zumbi de teste** (“Zombie Walk Test”, CC BY 4.0) andando de lá para cá na estrada, com a animação dele
 
 ### Itens e combate
-- **Personagem realista com esqueleto próprio** (`models/sobrevivente.glb`, CC0): jaqueta de couro e jeans, malha suavizada, pesos de pele de verdade (ombro, cotovelo e dedos deformam certo). O esqueleto do jogo (captura de movimento + IK) dirige os ossos do modelo a cada quadro: coluna em três vértebras, pescoço, clavículas que sobem/avançam com o braço e dedos que fecham na pegada; em 1ª pessoa só a cabeça some (você vê seu próprio corpo e as mangas da jaqueta)
-- **Interação com o cenário**: ao abrir/fechar uma porta a mão vai até a maçaneta, gira (trinco) e acompanha a porta empurrando; para pegar munição/virotes ele se abaixa e a mão vai até o objeto
-- **Mãos livres** ou **faca** (`1` / `2`): a faca fica guardada na bainha no quadril e é sacada com animação e som
-- **Combos**: mãos livres = jab → direto → gancho; faca = corte → corte de volta → estocada
-- **Golpe forte**: segurar o botão carrega (o braço vai para trás) e soltar desfere — soco giratório ou facada de cima para baixo, com passo à frente
-- Guarda alta com os punhos durante a briga, punho fechado segurando a faca
-- Impacto com peso: congelamento rápido no acerto, tranco da câmera, vibração, partículas e som por material
-- **6 itens** (`1`–`6`, rodinha, botão **TROCAR** ou a **barra de armas** na tela): mãos livres, faca, revólver, espingarda, besta e taco
-- **Espingarda de cano duplo calibre 12** (`4`), pendurada nas costas: nove bagos de chumbo num cone por tiro, dois canos (dois tiros seguidos), recuo forte, clarão e fumaça; **recarga animada**: abre a báscula (os canos caem), os cartuchos vazios saltam e quicam no chão, a mão esquerda pega dois cartuchos no cinto, põe nas câmaras e fecha com um tranco
-- **Besta** (`5`), pendurada nas costas: mira de ponto vermelho, **virote que voa com gravidade** (é preciso compensar a queda de longe), crava em madeira, terra e nos bonecos (fica preso e treme), ricocheteia em metal/concreto — e **dá para recolher** os virotes (`F`); recarga: aponta para baixo, puxa a corda até o trinco e põe o virote no trilho
-- **Taco com arame farpado** (`6`), preso no cinto: golpes com as duas mãos no cabo — arco horizontal → golpe de volta → estocada com a ponta; segurando, **golpe forte de cima para baixo**; o arame rasga a lona dos bonecos, pancada que volta pelo cabo nas paredes
-- Armas longas se sacam por cima do ombro (a mão vai às costas, puxa e traz para frente); com a lanterna ligada, ela fica presa no peito iluminando (as duas mãos estão na arma)
-- Munição separada por arma, caixas de **.357**, **cartuchos cal. 12** e **feixes de virotes** espalhadas pelo mapa
-- **Revólver .357** (`3`), guardado no coldre da coxa: sacar/guardar animado, arma baixa e pronta, **mirar pela alça e massa** (`botão direito` / **MIRAR** / `LT`) com zoom, recuo com o cano subindo, tambor que gira a cada tiro, cão que arma, clarão e fumaça
-- **Sacar e guardar animados** (revólver e faca): a mão vai até o coldre/bainha, segura, puxa para cima, gira e traz para frente; guardar faz o caminho inverso
-- Mãos de verdade na arma: a direita envolve a empunhadura com o polegar por cima, a esquerda apoia por baixo
-- **Lanterna com o revólver**: uma mão na arma e a outra segurando a lanterna ao lado, iluminando para onde se mira — atirando com uma mão só a arma balança mais, o recuo é maior e a precisão cai bastante
-- **Sons gravados de verdade** (CC0): passos por piso (grama com folhas secas, concreto, madeira), impactos de soco, metal, madeira, vidro e lata, portas rangendo, faca saindo da bainha, couro do coldre, roupa, tiro real (mais grave, com estrondo e eco sintetizados), recarga, ambiente de pássaros e insetos — variação aleatória sem repetir, tom e volume levemente diferentes a cada vez, som 3D
-- **Texturas fotográficas** (Poly Haven, CC0): terreno misturando grama, chão seco de outono com folhas e gravetos e rocha com musgo (mistura por altura, duas escalas para não repetir), terra escura nas trilhas, asfalto com pedriscos, tijolo real com relevo, tábuas velhas
-- **Iluminação de céu real** (HDRI do Poly Haven) ajustada para um dia nublado de outono
-- **Árvores de verdade**: pinheiros com verticilos de galhos de agulhas caindo com o peso e árvores de outono com cachos de folhas (cartões recortados em volta de um miolo escuro, normais "infladas" e sombra com os furos entre as folhas); arbustos idem
-- Clima de cinema: vinheta suave e granulado de filme leve
-- Câmera em 3ª pessoa sobe e se afasta do muro quando o personagem está pendurado/escalando
-- Passos sintetizados amostra a amostra por piso (grama/terra, concreto, madeira, metal), 6 variações cada, pé esquerdo/direito
-- Controles do celular refeitos: ícones desenhados (iguais em qualquer aparelho), layout de jogo de tiro, munição embaixo da vida
-- Som do tiro sintetizado amostra a amostra (estalo, explosão, pancada grave, cauda) com eco do vale; compressor no áudio para não estourar
-- **Recarga animada** (`R` / 🔄 / `↓`): abre o tambor, ejeta as cápsulas (que caem e tilintam no chão), pega o speedloader no cinto, carrega e fecha
-- Munição limitada (6 no tambor + reserva); **caixas de munição .357** espalhadas pelo mapa (`F` para pegar)
-- Bala com dispersão (precisa mirar para acertar longe), furos nas superfícies, faíscas no metal, ricochete, acerto nos bonecos e nos objetos (latas voam); marcador de acerto na mira
-- Mirando, o personagem anda devagar e não corre; em 3ª pessoa a câmera aproxima
-- **Andar de lado/diagonal** com o quadril e as pernas virando para a direção do passo e o tronco mirando para frente
-- **Bonecos de treino** de estopa: balançam conforme a força e direção do golpe, guardam as marcas de corte e soltam palha
-- **Lanterna** (`L`): presa no peito quando desligada; ligada, vai para a mão esquerda e a luz sai da lente (corpo serrilhado, clipe de bolso, refletor cromado e vidro)
+- **Mãos livres** (`1`) ou **pistola Colt M1911 .45** (`2`, rodinha, botão **TROCAR** ou a **barra de armas** na tela)
+- **Animações de FPS da pistola** (“FPS pistol animations”, CC BY 4.0): parada, andando, tiro e duas recargas (com bala na câmara e vazia). Os braços do arquivo foram trocados pelos do personagem: as mãos do rig viram alvos de IK para os braços do robô e os **dedos copiam a pegada**; a Colt fica no lugar da pistola do rig, em escala real, com **ferrolho e gatilho** acompanhando o tiro e o **carregador** saindo e entrando na recarga
+- **Sacar e guardar** (feitos no jogo): a mão vai até o **coldre na coxa direita**, puxa a Colt e traz num arco até a pose de tiro; a mão esquerda entra no fim; guardar faz o caminho inverso
+- **Mirar pela alça e massa** (`botão direito` / **MIRAR** / `LT`) com zoom; correndo, a arma baixa; pendurado, na escada ou nadando ela volta ao coldre e volta para a mão depois
+- 7 balas no carregador + reserva; **caixas de munição .45** pelo mapa (`F` para pegar); cápsulas de latão ejetadas que quicam e tilintam no chão; clarão e fumaça
+- Bala com dispersão (precisa mirar para acertar longe), furos nas superfícies, faíscas no metal, ricochete, acerto nos bonecos e nos objetos; marcador de acerto na mira
+- **Socos** (animações prontas): jab → direto alternando; segurar = **gancho** forte; congelamento rápido no acerto, tranco da câmera, partículas e som por material
+- **Interação com o cenário**: ao abrir/fechar uma porta a mão vai até a maçaneta (IK); para pegar munição ele se abaixa e a mão vai até a caixa
+- **Lanterna** (`L`) presa na alça do ombro esquerdo, iluminando para onde se olha
+- **Sons gravados de verdade** (CC0): passos por piso, impactos, portas rangendo, couro do coldre, tiro real (mais grave, com estrondo e eco sintetizados), carregador saindo/entrando, ferrolho, ambiente de pássaros e insetos — variação aleatória, som 3D
+- **Texturas fotográficas** (Poly Haven, CC0), **céu HDRI**, **árvores** com cartões de folhas
+- **Imagem nítida**: sem granulado; antisserrilhado MSAA numa passada final com **nitidez adaptativa** (tipo AMD CAS), filtragem anisotrópica 16x no chão
+- **Bonecos de treino** de estopa: balançam conforme a força e direção do golpe e soltam palha
 
 ### Mundo pós-apocalíptico
 - Carros abandonados enferrujados, queimados (só a carcaça), capotado, com pneus murchos, portas e capô abertos, vidros trincados
@@ -123,23 +104,23 @@ css/style.css       estilos (HUD, menu, controles touch)
 js/main.js          renderizador, loop do jogo, menu/pausa
 js/input.js         teclado, mouse, joystick virtual e toque
 js/player.js        física do personagem (cápsula, pulo, agachar, deslizar, escalar, escadas, rolar, dano)
-js/cameraRig.js     efeitos de câmera e câmera em 3ª pessoa
-js/character.js     corpo do personagem (1ª e 3ª pessoa): animação procedural, IK de braço, itens
+js/cameraRig.js     câmera GoPro (1ª pessoa, presa na cabeça) e câmera em 3ª pessoa
+js/character.js     personagem: clipes de animação (pernas/tronco), olhar, IK dos braços e dedos, socos, interações
+js/pistol.js        pistola: animações de FPS (rig invisível que guia os braços), Colt, sacar/guardar, mira, tiro, recarga
+js/zombie.js        zumbi de teste andando de lá para cá
+js/lens.js          passada final: lente de GoPro, nitidez adaptativa, tom e antisserrilhado
+js/modelLoader.js   carrega os modelos 3D (.glb, ou glTF .json + geometria em texto no artifact)
 js/world.js         mapa, céu, iluminação, relevo, vegetação e malha de colisão
 js/effects.js       partículas: poeira, fumaça, brasas, folhas caindo, fogueira
 js/flashlight.js    lanterna: modelo, luz que sai da lente, feixe e brilho
 js/physics.js       objetos soltos com física (latas, garrafas, baldes...)
-js/playerModel.js   carrega os modelos 3D (personagem com pesos automáticos no esqueleto, faca)
 js/dummies.js       bonecos de treino (balanço com mola, marcas de corte e furos)
-js/revolver.js      revólver: modelo, tambor, cão, clarão, cápsulas
-js/weapons.js       espingarda de cano duplo, besta (corda, virote) e taco com arame farpado
-js/mocap.js         clipes de captura de movimento (andar, trotar, correr, agachado) e mistura
 js/textures.js      texturas procedurais (canvas)
 js/photoAssets.js   texturas fotográficas, material do terreno (mistura por altura) e céu HDRI
 js/icons.js         ícones SVG dos botões touch
 js/trees.js         copas de árvore com cartões de galhos/folhas (texturas desenhadas em canvas)
-assets/             sons gravados (sfx/), texturas (tex/), céu HDRI (env/), animações de captura de movimento (anim/) e CREDITS.md
-models/             sobrevivente.glb (personagem com esqueleto) e faca.glb
+assets/             sons gravados (sfx/), texturas (tex/), céu HDRI (env/) e CREDITS.md
+models/             personagem.glb (robô + animações), zumbi.glb, fps_pistola.glb (animações de FPS), colt.glb
 js/audio.js         sons procedurais (Web Audio)
 ```
 
@@ -157,11 +138,13 @@ No console do navegador, `window.game` dá acesso ao jogador e ao mundo para dep
 
 Gravações reais (Kenney, The Free Firearm Sound Library, Shotgun Reload Sound Effects — CC0;
 Godot demos — MIT), texturas fotográficas do Poly Haven (CC0) e do three.js (MIT), céu HDRI do
-Poly Haven (CC0) e captura de movimento da CMU Graphics Lab Motion Capture Database
-(mocap.cs.cmu.edu). Lista completa, com links e o que foi alterado em cada arquivo:
+Poly Haven (CC0) e animações do Mesh2Motion (CC0). Lista completa, com links e o que foi alterado em cada arquivo:
 [`assets/CREDITS.md`](assets/CREDITS.md).
 
 ## Créditos dos modelos 3D
 
-- Personagem “Male 15” por **elbolilloduro**, do projeto [Mesh2Motion](https://github.com/Mesh2Motion/mesh2motion-app) (esqueleto humano do Mesh2Motion) — CC0. No jogo a malha foi suavizada (subdivisão com triângulos curvos, 920 → 14.720 triângulos) mantendo textura e pesos de pele.
-- “Faca de Ação” por **Wesley Pontes** — https://sketchfab.com/3d-models/faca-de-acao-07d233fb3a124bf8baf276e2f0fb730b — licença CC BY 4.0.
+- [“Cyberpunk Police bot [Animation ready]”](https://sketchfab.com/3d-models/cyberpunk-police-bot-animation-ready-b68e6cc1f2ce462bb0d34275adaa1110) por **everlasting17th** — CC BY 4.0 (personagem; sem as armas e o pedestal)
+- [“Zombie Walk Test”](https://sketchfab.com/3d-models/zombie-walk-test-165fd9342c364216bfdd8c2f1102223c) por **OSCAR CREATIVO** — CC BY 4.0 (zumbi e a animação de andar dele)
+- [“FPS pistol animations”](https://sketchfab.com/3d-models/fps-pistol-animations-0d7a343dcb6f401197a73c91aee93f6d) por **Cransh** — CC BY 4.0 (animações de FPS da pistola e o carregador)
+- [“Colt M1911”](https://sketchfab.com/3d-models/colt-m1911-26adfd631730494ab0fc80c806eada77) por **Ole Gunnar Isager** — CC BY 4.0 (pistola)
+- Animações do personagem: biblioteca do [Mesh2Motion](https://github.com/Mesh2Motion/mesh2motion-app) — CC0
