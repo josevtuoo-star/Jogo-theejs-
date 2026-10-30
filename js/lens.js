@@ -15,7 +15,8 @@ const vertexShader = /* glsl */`
 
 const fragmentShader = /* glsl */`
   uniform sampler2D tScene;
-  uniform float uK, uAspect, uSharp, uExposure;
+  uniform float uK, uAspect, uSharp, uExposure, uSat, uContrast;
+  uniform vec3 uTint;
   uniform vec2 uTexel;
   varying vec2 vUv;
 
@@ -52,6 +53,11 @@ const fragmentShader = /* glsl */`
     vec3 amp = sqrt(clamp(min(mn, 1.0 - mx) / max(mx, 1e-4), 0.0, 1.0));
     vec3 wgt = -amp * mix(0.125, 0.2, uSharp);
     vec3 col = (c + (n + s + e + w) * wgt) / (1.0 + 4.0 * wgt);
+    // gradação de cor: saturação, contraste suave (curva S) e tom (frio de noite, quente à tarde)
+    float l = dot(col, vec3(0.2126, 0.7152, 0.0722));
+    col = mix(vec3(l), col, uSat) * uTint;
+    col = clamp(col, 0.0, 1.0);
+    col = mix(col, col * col * (3.0 - 2.0 * col), uContrast);
     // leve escurecimento nas bordas da lente
     float vig = 1.0 - 0.18 * uK * 6.0 * smoothstep(0.6, 1.6, length(p));
     gl_FragColor = vec4(toSRGB(clamp(col * vig, 0.0, 1.0)), 1.0);
@@ -73,6 +79,7 @@ export class LensPass {
       uniforms: {
         tScene: { value: this.rt.texture }, uK: { value: 0 }, uAspect: { value: 1 }, uSharp: { value: 0.6 },
         uExposure: { value: renderer.toneMappingExposure }, uTexel: { value: new THREE.Vector2() },
+        uSat: { value: 1.05 }, uContrast: { value: 0.18 }, uTint: { value: new THREE.Vector3(1, 1, 1) },
       },
       vertexShader, fragmentShader, depthTest: false, depthWrite: false, toneMapped: false,
     });

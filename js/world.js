@@ -3,16 +3,37 @@ import { pineBranchTexture, leafClusterTexture, foliageCardMaterial, pineCardsGe
 import { Octree } from 'three/addons/math/Octree.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import * as TEX from './textures.js';
+import { buildPOIs } from './pois.js';
 
 // Constrói o cenário (vilarejo abandonado numa floresta de outono) e a malha de colisão.
 // Tudo que é sólido entra em `colliders`, que alimenta um Octree usado pela física do jogador.
 // Os objetos estáticos visíveis são fundidos por material no final (poucos draw calls = mais FPS).
 
-const WORLD_SIZE = 300;
-const WORLD_HALF = 140; // limite caminhável
+const WORLD_SIZE = 1200;
+const WORLD_HALF = 580; // limite caminhável
 const TOWN_RADIUS = 42; // área plana central
 const ROAD_X = -4;      // estrada norte-sul
 const ROAD_HALF = 4;
+const GRID = 320;       // células do relevo (3,75 m): a mesma grade desenha e colide
+const CELL = WORLD_SIZE / GRID;
+
+// Lugares do mapa (cada um numa área plana) e estradas ligando todos
+export const POIS = [
+  { name: 'VILAREJO', x: 0, z: 0, r: TOWN_RADIUS, kind: 'town', base: 0 },
+  { name: 'FAZENDA', x: 175, z: 150, r: 46, kind: 'farm' },
+  { name: 'VILA LESTE', x: 300, z: -235, r: 62, kind: 'village' },
+  { name: 'VILA OESTE', x: -330, z: -195, r: 56, kind: 'village' },
+  { name: 'BLOQUEIO MILITAR', x: ROAD_X, z: -430, r: 42, kind: 'military' },
+  { name: 'ENGAVETAMENTO', x: ROAD_X, z: 310, r: 34, kind: 'pileup' },
+  { name: 'TORRE DE RÁDIO', x: 400, z: 345, r: 24, kind: 'radio' },
+  { name: 'CABANAS', x: -265, z: 270, r: 44, kind: 'cabins' },
+];
+export const ROADS = [
+  [[ROAD_X, -235], [120, -240], [300, -235], [WORLD_HALF, -228]],
+  [[ROAD_X, -200], [-150, -206], [-330, -195], [-WORLD_HALF, -186]],
+  [[ROAD_X, 150], [90, 150], [175, 150]],
+  [[175, 150], [300, 250], [400, 345]],
+];
 
 // ---------- ruído para o relevo ----------
 function hash(x, z) {
@@ -30,26 +51,54 @@ function smoothstep(a, b, x) {
   const t = Math.min(Math.max((x - a) / (b - a), 0), 1);
   return t * t * (3 - 2 * t);
 }
-function naturalHeight(x, z) {
+function distToSegment(px, pz, ax, az, bx, bz) {
+  const dx = bx - ax, dz = bz - az;
+  const t = Math.max(0, Math.min(1, ((px - ax) * dx + (pz - az) * dz) / (dx * dx + dz * dz)));
+  return Math.hypot(px - (ax + dx * t), pz - (az + dz * t));
+}
+/** Distância até a estrada mais próxima (a principal e as secundárias). */
+export function roadDistance(x, z) {
+  let d = Math.abs(x - ROAD_X);
+  for (const r of ROADS) for (let i = 0; i < r.length - 1; i++) d = Math.min(d, distToSegment(x, z, ...r[i], ...r[i + 1]));
+  return d;
+}
+// relevo "selvagem": morros grandes (centenas de metros) + ondulações
+function bigHills(x, z) {
+  let h = 0, amp = 1, f = 0.0035;
+  for (let i = 0; i < 3; i++) { h += (valueNoise(x * f + 31, z * f - 17) - 0.5) * amp; amp *= 0.5; f *= 2.2; }
+  const away = smoothstep(70, 220, Math.hypot(x, z));
+  return h * 46 * away;
+}
+function smallHills(x, z) {
   let h = 0, amp = 1, freq = 0.02;
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < 3; i++) {
     h += (valueNoise(x * freq, z * freq) - 0.5) * amp;
     amp *= 0.5; freq *= 2.1;
   }
-  const dist = Math.hypot(x, z);
-  const flat = smoothstep(TOWN_RADIUS, TOWN_RADIUS + 35, dist);
-  // a estrada corta o relevo mais suave
-  const road = 0.25 + 0.75 * smoothstep(ROAD_HALF + 1, ROAD_HALF + 10, Math.abs(x - ROAD_X));
-  // morros mais altos perto da borda do mapa
-  const edge = smoothstep(WORLD_HALF - 40, WORLD_HALF + 10, Math.max(Math.abs(x), Math.abs(z)));
-  return h * 9 * flat * road + edge * 14;
+  return h * 9;
 }
+function naturalHeight(x, z) {
+  const big = bigHills(x, z);
+  let h = big + smallHills(x, z) * smoothstep(TOWN_RADIUS, TOWN_RADIUS + 35, Math.hypot(x, z));
+  // estradas: seguem só os morros grandes (sem calombos)
+  const road = smoothstep(ROAD_HALF + 1, ROAD_HALF + 12, roadDistance(x, z));
+  h = big + (h - big) * road;
+  // lugares: chão plano (na altura do centro de cada um)
+  for (const p of POIS) {
+    const w = 1 - smoothstep(p.r, p.r + 38, Math.hypot(x - p.x, z - p.z));
+    if (w > 0) h += ((p.baseY ?? 0) - h) * w;
+  }
+  // serras na borda do mapa
+  const edge = smoothstep(WORLD_HALF - 60, WORLD_HALF + 15, Math.max(Math.abs(x), Math.abs(z)));
+  return h + edge * 30;
+}
+for (const p of POIS) p.baseY = p.base ?? (bigHills(p.x, p.z) + smallHills(p.x, p.z) * 0.3);
 
 // lago na floresta (noroeste): margem exatamente no nível da água, fundo de até ~3,4 m
 export const LAKE = { x: -62, z: 50, r: 19, y: 0 };
 LAKE.y = naturalHeight(LAKE.x, LAKE.z) - 0.3;
 
-export function terrainHeight(x, z) {
+function rawHeight(x, z) {
   const h = naturalHeight(x, z);
   const d = Math.hypot(x - LAKE.x, z - LAKE.z);
   if (d > LAKE.r + 12) return h;
@@ -58,6 +107,20 @@ export function terrainHeight(x, z) {
   return h + (bed - h) * smoothstep(LAKE.r + 12, LAKE.r - 3, d);
 }
 
+// grade de alturas (calculada uma vez): o terreno desenhado usa exatamente estes vértices e a
+// altura em qualquer ponto é a do triângulo da malha — pés, objetos e física batem com o chão
+const HEIGHTS = new Float32Array((GRID + 1) * (GRID + 1));
+for (let iz = 0; iz <= GRID; iz++) for (let ix = 0; ix <= GRID; ix++) HEIGHTS[iz * (GRID + 1) + ix] = rawHeight(-WORLD_SIZE / 2 + ix * CELL, -WORLD_SIZE / 2 + iz * CELL);
+
+export function terrainHeight(x, z) {
+  const fx = Math.min(GRID - 1e-6, Math.max(0, (x + WORLD_SIZE / 2) / CELL)), fz = Math.min(GRID - 1e-6, Math.max(0, (z + WORLD_SIZE / 2) / CELL));
+  const ix = Math.floor(fx), iz = Math.floor(fz), u = fx - ix, v = fz - iz;
+  const W = GRID + 1, a = HEIGHTS[iz * W + ix], b = HEIGHTS[(iz + 1) * W + ix], c = HEIGHTS[(iz + 1) * W + ix + 1], d = HEIGHTS[iz * W + ix + 1];
+  // mesma diagonal da PlaneGeometry (b-d)
+  return u + v <= 1 ? a + (d - a) * u + (b - a) * v : c + (b - c) * (1 - u) + (d - c) * (1 - v);
+}
+export const TERRAIN = { size: WORLD_SIZE, grid: GRID, heights: HEIGHTS, half: WORLD_HALF };
+
 // trilhas de terra saindo das entradas da cerca
 const TRAILS = [
   [[36, 4], [55, 10], [75, 22], [100, 30], [128, 26]],
@@ -65,11 +128,6 @@ const TRAILS = [
   [[30, -22], [42, -40], [60, -55], [70, -80], [95, -110]],
   [[-30, 19], [-38, 28], [-44, 36], [-47, 40]], // até o lago
 ];
-function distToSegment(px, pz, ax, az, bx, bz) {
-  const dx = bx - ax, dz = bz - az;
-  const t = Math.max(0, Math.min(1, ((px - ax) * dx + (pz - az) * dz) / (dx * dx + dz * dz)));
-  return Math.hypot(px - (ax + dx * t), pz - (az + dz * t));
-}
 function trailMask(x, z) {
   let d = Infinity;
   for (const t of TRAILS) for (let i = 0; i < t.length - 1; i++) d = Math.min(d, distToSegment(x, z, ...t[i], ...t[i + 1]));
@@ -227,6 +285,9 @@ export class World {
     this.doors = [];
     this.firePositions = [];
     this.propSpots = [];
+    this.lootSpots = [];   // armários, caixas, porta-malas... (revistar)
+    this.hitboxMat = new THREE.MeshBasicMaterial({ visible: false });
+    this.lodChunks = [];   // blocos (árvores, construções) escondidos de longe
     this.windUniform = { value: 0 };
 
     this.mat = {
@@ -296,6 +357,7 @@ export class World {
     this._buildGasStation();
     this._buildTower();
     this._buildTown();
+    buildPOIs(this, POIS);
     this._buildCampfire();
     this._buildLake();
     this._buildForest();
@@ -414,6 +476,9 @@ export class World {
       uGround: { value: new THREE.Color(0x6e6858) },
       uSunColor: { value: new THREE.Color(0xffbf8a) },
       uTime: { value: 0 },
+      uNight: { value: 0 },
+      uMoonDir: { value: new THREE.Vector3(0.3, 0.6, 0.7).normalize() },
+      uCloudLight: { value: 1 },
     };
     const mat = new THREE.ShaderMaterial({
       uniforms,
@@ -428,8 +493,8 @@ export class World {
           gl_Position = p.xyww;
         }`,
       fragmentShader: `
-        uniform vec3 uSunDir, uZenith, uHorizon, uGround, uSunColor;
-        uniform float uTime;
+        uniform vec3 uSunDir, uZenith, uHorizon, uGround, uSunColor, uMoonDir;
+        uniform float uTime, uNight, uCloudLight;
         varying vec3 vDir;
         float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
         float noise(vec2 p) {
@@ -449,7 +514,15 @@ export class World {
             float c = fbm(uv * 1.4);
             float cover = smoothstep(0.42, 0.78, c) * smoothstep(0.0, 0.12, h);
             float shade = fbm(uv * 2.8 + 3.0);
-            vec3 cloud = mix(vec3(0.52, 0.53, 0.56), vec3(1.0, 0.92, 0.82), clamp(pow(sd, 3.0) * 0.9 + shade * 0.35, 0.0, 1.0));
+            // estrelas e lua (de noite), atrás das nuvens
+            if (uNight > 0.01) {
+              vec2 sp = d.xz / (h + 0.3) * 160.0;
+              float st = step(0.9975, hash(floor(sp))) * (0.5 + 0.5 * sin(uTime * 3.0 + hash(floor(sp) + 3.0) * 40.0));
+              col += vec3(st) * uNight * (1.0 - cover) * smoothstep(0.05, 0.3, h);
+              float md = dot(d, uMoonDir);
+              col += vec3(0.85, 0.9, 1.0) * (smoothstep(0.9993, 0.9996, md) * 1.6 + pow(max(md, 0.0), 60.0) * 0.12) * uNight * (1.0 - cover * 0.85);
+            }
+            vec3 cloud = mix(vec3(0.52, 0.53, 0.56), vec3(1.0, 0.92, 0.82), clamp(pow(sd, 3.0) * 0.9 + shade * 0.35, 0.0, 1.0)) * uCloudLight;
             col = mix(col, cloud, cover * 0.88);
             col += uSunColor * pow(sd, 700.0) * 5.0 * (1.0 - cover * 0.8);
           }
@@ -465,19 +538,19 @@ export class World {
     this.sky = sky;
     this.scene.add(sky);
     this.scene.background = new THREE.Color(0xb8b3a2);
-    this.scene.fog = new THREE.Fog(0x9f9a8a, 28, 200);
+    this.scene.fog = new THREE.Fog(0x9f9a8a, 40, 360);
   }
 
   _buildLights() {
-    const hemi = new THREE.HemisphereLight(0xa6b8c8, 0x4b4232, 0.55);
+    const hemi = this.hemi = new THREE.HemisphereLight(0xa6b8c8, 0x4b4232, 0.55);
     this.scene.add(hemi);
 
     const sun = new THREE.DirectionalLight(0xffd0a0, 2.3);
     sun.castShadow = true;
     const sm = this.quality === 'low' ? 1024 : 2048;
     sun.shadow.mapSize.set(sm, sm);
-    const r = 40;
-    Object.assign(sun.shadow.camera, { left: -r, right: r, top: r, bottom: -r, near: 1, far: 260 });
+    const r = 52;
+    Object.assign(sun.shadow.camera, { left: -r, right: r, top: r, bottom: -r, near: 1, far: 300 });
     sun.shadow.bias = -0.0004;
     sun.shadow.normalBias = 0.04;
     this.scene.add(sun);
@@ -494,22 +567,78 @@ export class World {
     pmrem.dispose();
   }
 
+  /**
+   * Hora do dia (0–24): sol andando no céu (cor de pôr do sol perto do horizonte), luar azulado
+   * de noite, céu/neblina/ambiente acompanhando. Os reflexos do céu HDRI escurecem junto.
+   */
+  setTimeOfDay(h) {
+    this.tod = ((h % 24) + 24) % 24;
+    const a = (this.tod - 6) / 12 * Math.PI;          // 0 no nascer, PI no pôr
+    const el = Math.sin(a) * 0.95;                      // altura do sol
+    const az = a * 0.9 - 0.6;
+    this.sunDir.set(Math.cos(az) * Math.cos(Math.asin(el)), el, Math.sin(az) * Math.cos(Math.asin(el)) - 0.35).normalize();
+    const day = smoothstep(-0.12, 0.3, this.sunDir.y), low = 1 - smoothstep(0.05, 0.45, this.sunDir.y);
+    this.dayK = day;
+    const night = 1 - smoothstep(-0.2, 0.05, this.sunDir.y);
+    const C = (hex) => new THREE.Color(hex);
+    const U = this.skyUniforms;
+    const pick = (dayC, duskC, nightC) => C(dayC).lerp(C(duskC), low * day).lerp(C(nightC), night);
+    U.uZenith.value.copy(pick(0x5a6874, 0x4a5466, 0x0b1220));
+    U.uHorizon.value.copy(pick(0xb3aa94, 0xd09a6a, 0x1b2230));
+    U.uGround.value.copy(pick(0x6e6858, 0x5a4a3a, 0x0e1014));
+    U.uSunColor.value.copy(pick(0xffbf8a, 0xff8a4a, 0x000000)).multiplyScalar(day);
+    U.uNight.value = night;
+    U.uCloudLight.value = 0.18 + 0.82 * day;
+    U.uMoonDir.value.set(-this.sunDir.x, Math.max(0.25, -this.sunDir.y), -this.sunDir.z).normalize();
+    // luz direta: sol (dourado ao entardecer) ou lua
+    const moon = night > 0.5;
+    this.lightDir = moon ? U.uMoonDir.value : this.sunDir;
+    this.sun.color.copy(moon ? C(0x8fa6d8) : C(0xffd0a0).lerp(C(0xff9a5a), low));
+    this.sun.intensity = moon ? 0.28 * night : 2.4 * day;
+    this.hemi.intensity = 0.1 + 0.48 * day + night * 0.06;
+    this.hemi.color.copy(C(0xa6b8c8).lerp(C(0x33405e), night));
+    this.hemi.groundColor.copy(C(0x4b4232).lerp(C(0x0d0f14), night));
+    const fog = U.uHorizon.value.clone().lerp(C(0x9f9a8a), day * 0.5);
+    this.scene.fog.color.copy(fog);
+    if (this.scene.background?.isColor) this.scene.background.copy(fog);
+    this.envK = 0.06 + 0.94 * day;
+    this.night = night;
+  }
+
+  /** Reflexos/luz do céu HDRI: mais fracos de noite (por material, sem recompilar). */
+  _applyEnvIntensity() {
+    if (!this._envMats || this._envScan-- <= 0) {
+      this._envScan = 20;
+      this._envMats = this._envMats ?? new Set();
+      this.scene.traverse((o) => { for (const m of o.material ? [o.material].flat() : []) if (m.envMapIntensity !== undefined && !this._envMats.has(m)) { m.userData.envBase = m.envMapIntensity; this._envMats.add(m); } });
+    }
+    for (const m of this._envMats) m.envMapIntensity = (m.userData.envBase ?? 1) * this.envK;
+  }
+
   /** Vento, nuvens e área de sombra centrada no jogador. */
   update(playerPos, time = 0) {
     this.windUniform.value = time;
     this.skyUniforms.uTime.value = time;
+    if (this.tod !== undefined) {
+      this._envT = (this._envT ?? 0) - 1;
+      if (this._envT <= 0) { this._envT = 15; this._applyEnvIntensity(); }
+    }
     if (this.waterMesh) this.waterMesh.material.normalMap.offset.set(time * 0.012, time * 0.007);
     const snap = 4; // reduz "tremido" da sombra
     const x = Math.round(playerPos.x / snap) * snap;
     const z = Math.round(playerPos.z / snap) * snap;
     this.sun.target.position.set(x, 0, z);
-    this.sun.position.set(x, 0, z).addScaledVector(this.sunDir, 120);
+    this.sun.position.set(x, 0, z).addScaledVector(this.lightDir ?? this.sunDir, 150);
     this.sky.position.set(playerPos.x, playerPos.y, playerPos.z);
-    // grama longe não aparece (some na neblina de qualquer jeito)
-    const maxD = this.grassDistance + 28;
-    for (const g of this.grassChunks) {
-      g.visible = Math.hypot(g.userData.center.x - playerPos.x, g.userData.center.y - playerPos.z) < maxD;
+    // tapete de grama acompanha o jogador (de bloco em bloco)
+    if (this.grass) {
+      const T = this.grassTile;
+      this.grassUniforms.uAnchor.value.set(Math.floor(playerPos.x / T) * T, Math.floor(playerPos.z / T) * T);
+      this.grassUniforms.uEye.value.copy(playerPos);
     }
+    // árvores e construções de longe não são desenhadas (somem na neblina de qualquer jeito)
+    const far = this.drawDistance ?? 380;
+    for (const c of this.lodChunks) c.visible = Math.hypot(c.userData.center.x - playerPos.x, c.userData.center.y - playerPos.z) < far + 90;
   }
 
   setShadowMapSize(size) {
@@ -540,11 +669,13 @@ export class World {
 
   // ---------- terreno ----------
   _buildTerrain() {
-    const seg = this.quality === 'low' ? 100 : 140;
-    const geo = new THREE.PlaneGeometry(WORLD_SIZE, WORLD_SIZE, seg, seg);
+    const geo = new THREE.PlaneGeometry(WORLD_SIZE, WORLD_SIZE, GRID, GRID);
     geo.rotateX(-Math.PI / 2);
     const pos = geo.attributes.position;
-    for (let i = 0; i < pos.count; i++) pos.setY(i, terrainHeight(pos.getX(i), pos.getZ(i)));
+    for (let i = 0; i < pos.count; i++) {
+      const ix = Math.round((pos.getX(i) + WORLD_SIZE / 2) / CELL), iz = Math.round((pos.getZ(i) + WORLD_SIZE / 2) / CELL);
+      pos.setY(i, HEIGHTS[iz * (GRID + 1) + ix]);
+    }
     geo.computeVertexNormals();
 
     // cores por vértice: grama verde/seca, manchas escuras, terra, trilhas e pedra nas encostas
@@ -587,16 +718,16 @@ export class World {
     geo.setAttribute('splat', new THREE.BufferAttribute(splat, 4));
     geo.setAttribute('tint', new THREE.BufferAttribute(tint, 1));
     const uv = geo.attributes.uv;
-    for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 90, uv.getY(i) * 90);
+    for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 90 * WORLD_SIZE / 300, uv.getY(i) * 90 * WORLD_SIZE / 300);
 
     const ground = new THREE.Mesh(geo, this.mat.ground);
     ground.receiveShadow = true;
     this.terrainMesh = ground;
     this.scene.add(ground);
-    this.colliders.add(new THREE.Mesh(geo, this.colliderMat));
+    // (o terreno não entra no Octree: a colisão com ele é pela grade de alturas — bem mais leve)
 
     // estrada de asfalto velho acompanhando o relevo, de ponta a ponta do mapa
-    const road = new THREE.PlaneGeometry(ROAD_HALF * 2, WORLD_HALF * 2, 1, 140);
+    const road = new THREE.PlaneGeometry(ROAD_HALF * 2, WORLD_HALF * 2, 1, 600);
     road.rotateX(-Math.PI / 2);
     const rp = road.attributes.position;
     for (let i = 0; i < rp.count; i++) {
@@ -610,6 +741,43 @@ export class World {
     roadMesh.receiveShadow = true;
     this.scene.add(roadMesh);
     this.noGrass.push([ROAD_X - ROAD_HALF - 0.4, -WORLD_HALF, ROAD_X + ROAD_HALF + 0.4, WORLD_HALF]);
+    // estradas secundárias: faixas que acompanham o relevo
+    for (const r of ROADS) {
+      const pts = [];
+      for (let i = 0; i < r.length - 1; i++) {
+        const [ax, az] = r[i], [bx, bz] = r[i + 1];
+        const n = Math.ceil(Math.hypot(bx - ax, bz - az) / 2);
+        for (let k = i ? 1 : 0; k <= n; k++) pts.push([ax + (bx - ax) * k / n, az + (bz - az) * k / n]);
+      }
+      const P = [], UV = [], I = [];
+      let along = 0;
+      for (let k = 0; k < pts.length; k++) {
+        const [x, z] = pts[k], [x0, z0] = pts[Math.max(0, k - 1)], [x1, z1] = pts[Math.min(pts.length - 1, k + 1)];
+        let tx = x1 - x0, tz = z1 - z0; const tl = Math.hypot(tx, tz) || 1; tx /= tl; tz /= tl;
+        if (k) along += Math.hypot(x - pts[k - 1][0], z - pts[k - 1][1]);
+        for (const sgn of [-1, 1]) {
+          const px = x - tz * sgn * ROAD_HALF * 0.85, pz = z + tx * sgn * ROAD_HALF * 0.85;
+          P.push(px, terrainHeight(px, pz) + 0.06, pz);
+          UV.push(sgn < 0 ? 0 : 1, along / 8);
+        }
+        if (k) { const a = (k - 1) * 2; I.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+      g.setAttribute('uv', new THREE.Float32BufferAttribute(UV, 2));
+      g.setIndex(I);
+      g.computeVertexNormals();
+      const m = new THREE.Mesh(g, this.mat.asphalt);
+      m.receiveShadow = true;
+      this.scene.add(m);
+    }
+  }
+
+  /** Sem grama/árvore perto das estradas e dos lugares. */
+  _nearRoadOrPoi(x, z, margin = 0) {
+    if (roadDistance(x, z) < ROAD_HALF + 1.5 + margin) return true;
+    for (const p of POIS) if (Math.hypot(x - p.x, z - p.z) < p.r * 0.8 + margin) return true;
+    return false;
   }
 
   // ---------- construções ----------
@@ -909,7 +1077,7 @@ export class World {
     }
   }
 
-  sandbags(x, z, rot) {
+  sandbags(x, z, rot, by = 0) {
     const c = Math.cos(rot), s = Math.sin(rot);
     for (let row = 0; row < 3; row++) {
       for (let i = 0; i < 5 - (row === 2 ? 1 : 0); i++) {
@@ -918,12 +1086,12 @@ export class World {
         g.rotateZ(Math.PI / 2);
         g.scale(1, 0.75, 1.15);
         const m = new THREE.Mesh(g, this.mat.sandbag);
-        m.position.set(x + c * off, 0.14 + row * 0.27, z - s * off);
+        m.position.set(x + c * off, by + 0.14 + row * 0.27, z - s * off);
         m.rotation.y = rot + (hash(row, i) - 0.5) * 0.15;
         this.solid(m, false);
       }
     }
-    this.invisibleCollider(new THREE.BoxGeometry(3.2, 0.85, 0.45), new THREE.Vector3(x, 0.42, z), new THREE.Euler(0, rot, 0));
+    this.invisibleCollider(new THREE.BoxGeometry(3.2, 0.85, 0.45), new THREE.Vector3(x, by + 0.42, z), new THREE.Euler(0, rot, 0));
   }
 
   stairs(xStart, zStart, xEnd, zEnd, height, width) {
@@ -1042,7 +1210,7 @@ export class World {
     if (flat.has('fr') || flat.has('rr')) roll -= 0.035;
     if (flat.has('fl') || flat.has('fr')) pitch -= 0.03;
     if (flat.has('rl') || flat.has('rr')) pitch += 0.03;
-    g.position.set(x, opts.flipped ? 1.72 : burnt ? -0.15 : 0, z);
+    g.position.set(x, (opts.y ?? 0) + (opts.flipped ? 1.72 : burnt ? -0.15 : 0), z);
     g.rotation.set(opts.flipped ? Math.PI : roll, rotY, opts.flipped ? 0 : pitch, 'YXZ');
     this.scene.add(g);
     g.updateMatrixWorld(true);
@@ -1221,16 +1389,16 @@ export class World {
     return [c, s];
   }
 
-  barrel(x, z, mat, lying = false) {
+  barrel(x, z, mat, lying = false, by = 0) {
     const m = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 1, 16), mat);
-    if (lying) { m.rotation.set(Math.PI / 2, 0.7, 0, 'YXZ'); m.position.set(x, 0.35, z); }
-    else m.position.set(x, 0.5, z);
+    if (lying) { m.rotation.set(Math.PI / 2, 0.7, 0, 'YXZ'); m.position.set(x, by + 0.35, z); }
+    else m.position.set(x, by + 0.5, z);
     this.solid(m);
     for (const y of [-0.3, 0.3]) { // aros
       if (lying) continue;
       const ring = new THREE.Mesh(new THREE.TorusGeometry(0.355, 0.02, 4, 16), this.mat.metal);
       ring.rotation.x = Math.PI / 2;
-      ring.position.set(x, 0.5 + y, z);
+      ring.position.set(x, by + 0.5 + y, z);
       this.solid(ring, false);
     }
   }
@@ -1345,7 +1513,7 @@ export class World {
   _buildForest() {
     const low = this.quality === 'low';
     const rand = makeRng(7);
-    const nPine = low ? 120 : 200, nBroad = low ? 70 : 120, nDead = low ? 25 : 40, nBush = low ? 140 : 280;
+    const nPine = low ? 2400 : 4800, nBroad = low ? 1400 : 2700, nDead = low ? 250 : 420, nBush = low ? 2000 : 4200;
     const up = new THREE.Vector3(0, 1, 0);
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3();
     const color = new THREE.Color();
@@ -1390,11 +1558,14 @@ export class World {
     const pinePalette = [0x2f4228, 0x34492a, 0x3b4f2c, 0x2b3a24];
     const broadPalette = [0x5a6a2c, 0x6f7230, 0x9a7a30, 0xa8622a, 0x8c3e1e, 0xb8903a, 0x4f5f2a];
 
+    // matas fechadas e campos abertos: a densidade segue um ruído grande
     const place = (minTown) => {
       for (;;) {
         const x = (rand() - 0.5) * WORLD_HALF * 2, z = (rand() - 0.5) * WORLD_HALF * 2;
         if (Math.hypot(x, z) < minTown) continue;
-        if (!this._isFree(x, z, 1.5) || trailMask(x, z) > 0.05) continue;
+        const dens = smoothstep(0.32, 0.62, valueNoise(x * 0.006 + 5, z * 0.006 - 3));
+        if (rand() > 0.12 + 0.88 * dens && Math.hypot(x, z) > 160) continue;
+        if (!this._isFree(x, z, 1.5) || trailMask(x, z) > 0.05 || this._nearRoadOrPoi(x, z, 2)) continue;
         return [x, z];
       }
     };
@@ -1471,12 +1642,11 @@ export class World {
     for (const im of [trunks, ...pineLevels, ...crownGeos, broadCards, branches, bushes, bushCards]) {
       im.castShadow = true;
       im.receiveShadow = true;
-      im.instanceMatrix.needsUpdate = true;
-      this.scene.add(im);
+      this._chunkInstances(im, 120);
     }
 
     // pedras e troncos caídos
-    for (let i = 0; i < 55; i++) {
+    for (let i = 0; i < (low ? 220 : 400); i++) {
       const [x, z] = place(14);
       const sc = 0.4 + rand() * 1.3;
       const r = new THREE.Mesh(lumpy(new THREE.DodecahedronGeometry(1, 1), 0.35, i), this.mat.rock);
@@ -1485,7 +1655,7 @@ export class World {
       r.position.set(x, terrainHeight(x, z) + sc * 0.1, z);
       this.solid(r);
     }
-    for (let i = 0; i < 18; i++) {
+    for (let i = 0; i < (low ? 70 : 130); i++) {
       const [x, z] = place(TOWN_RADIUS + 2);
       const len = 3 + rand() * 4, rad = 0.22 + rand() * 0.15, a = rand() * Math.PI;
       const y = Math.max(terrainHeight(x + Math.cos(a) * len / 2, z - Math.sin(a) * len / 2),
@@ -1495,95 +1665,161 @@ export class World {
   }
 
   // ---------- grama (instanciada, balança com o vento) ----------
+  /**
+   * Divide um InstancedMesh espalhado pelo mapa em blocos (size m): cada bloco é descartado
+   * fora da tela (frustum) e de longe (distância), em vez de desenhar o mapa inteiro sempre.
+   */
+  _chunkInstances(im, size) {
+    const groups = new Map();
+    const m = new THREE.Matrix4(), p = new THREE.Vector3(), c = new THREE.Color();
+    for (let i = 0; i < im.count; i++) {
+      im.getMatrixAt(i, m);
+      p.setFromMatrixPosition(m);
+      const key = Math.floor(p.x / size) + ',' + Math.floor(p.z / size);
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(i);
+    }
+    for (const [key, ids] of groups) {
+      const part = new THREE.InstancedMesh(im.geometry, im.material, ids.length);
+      part.customDepthMaterial = im.customDepthMaterial;
+      part.castShadow = im.castShadow;
+      part.receiveShadow = im.receiveShadow;
+      ids.forEach((id, k) => {
+        im.getMatrixAt(id, m); part.setMatrixAt(k, m);
+        if (im.instanceColor) { im.getColorAt(id, c); part.setColorAt(k, c); }
+      });
+      part.computeBoundingSphere();
+      const [cx, cz] = key.split(',').map((v) => (Number(v) + 0.5) * size);
+      part.userData.center = new THREE.Vector2(cx, cz);
+      this.scene.add(part);
+      this.lodChunks.push(part);
+    }
+  }
+
+  /**
+   * Grama: um tapete de tufos em volta do jogador, num único desenho. Os tufos ficam presos
+   * ao chão do mundo (o tapete anda de bloco em bloco de 16 m) e a altura de cada um vem de
+   * uma textura com o relevo; outra textura diz onde não pode ter grama (estradas, casas,
+   * lago). Tamanho, giro e cor variam pela posição — não se nota repetição.
+   */
   _buildGrass() {
-    const count = this.quality === 'low' ? 8000 : 20000;
-    // um tufo = 5 folhas finas; cada folha tem os dois lados com normal para cima
-    // (iluminada como o chão, sem lado escuro)
+    const low = this.quality === 'low';
+    const TILE = 16, TILES = low ? 8 : 11;
+    const perTile = low ? 220 : 380;
     const pos = [];
     for (let i = 0; i < 5; i++) {
       const a = (i / 5) * Math.PI * 2 + i;
       const r = 0.05 + (i % 2) * 0.03;
-      const bx = Math.cos(a) * r, bz = Math.sin(a) * r;  // base da folha
+      const bx = Math.cos(a) * r, bz = Math.sin(a) * r;
       const w = 0.018;
-      const px = -Math.sin(a) * w, pz = Math.cos(a) * w; // largura perpendicular
+      const px = -Math.sin(a) * w, pz = Math.cos(a) * w;
       const tipX = bx * 2.2, tipZ = bz * 2.2, tipY = 0.26 + (i % 3) * 0.06;
       const A = [bx - px, 0, bz - pz], B = [bx + px, 0, bz + pz], C = [tipX, tipY, tipZ];
       pos.push(...A, ...B, ...C, ...B, ...A, ...C);
     }
-    const geo = new THREE.BufferGeometry();
+    const geo = new THREE.InstancedBufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     geo.setAttribute('normal', new THREE.Float32BufferAttribute(new Array(pos.length / 3).fill([0, 1, 0]).flat(), 3));
-
+    const n = TILES * TILES * perTile;
+    const offs = new Float32Array(n * 3);
+    let k = 0;
+    for (let ty = 0; ty < TILES; ty++) for (let tx = 0; tx < TILES; tx++) {
+      const r2 = makeRng(1234); // o mesmo padrão em todos os blocos (o tapete anda sem "pular")
+      for (let i = 0; i < perTile; i++) {
+        offs[k * 3] = (tx - TILES / 2) * TILE + r2() * TILE;
+        offs[k * 3 + 1] = r2();
+        offs[k * 3 + 2] = (ty - TILES / 2) * TILE + r2() * TILE;
+        k++;
+      }
+    }
+    geo.setAttribute('aOffset', new THREE.InstancedBufferAttribute(offs, 3));
+    geo.instanceCount = n;
+    // relevo e máscara em texturas
+    const W = GRID + 1;
+    const hTex = new THREE.DataTexture(HEIGHTS, W, W, THREE.RedFormat, THREE.FloatType);
+    hTex.needsUpdate = true;
+    const MS = 1024, mask = new Uint8Array(MS * MS).fill(255);
+    const toM = (v) => Math.round((v + WORLD_SIZE / 2) / WORLD_SIZE * MS);
+    const fillRect = (x0, z0, x1, z1) => {
+      for (let z = Math.max(0, toM(z0)); z < Math.min(MS, toM(z1)); z++) mask.fill(0, z * MS + Math.max(0, toM(x0)), z * MS + Math.min(MS, toM(x1)));
+    };
+    for (const [x0, z0, x1, z1] of this.noGrass) fillRect(x0, z0, x1, z1);
+    for (let z = 0; z < MS; z++) for (let x = 0; x < MS; x++) {
+      const wx = (x + 0.5) / MS * WORLD_SIZE - WORLD_SIZE / 2, wz = (z + 0.5) / MS * WORLD_SIZE - WORLD_SIZE / 2;
+      if (Math.abs(wx - ROAD_X) < ROAD_HALF + 0.6 || Math.hypot(wx - LAKE.x, wz - LAKE.z) < LAKE.r + 1) mask[z * MS + x] = 0;
+    }
+    // estradas secundárias e trilhas: desenhadas como linhas grossas
+    const stamp = (x, z, r, v) => {
+      const cx = toM(x), cz = toM(z), rr = Math.ceil(r / WORLD_SIZE * MS);
+      for (let dz = -rr; dz <= rr; dz++) for (let dx = -rr; dx <= rr; dx++) {
+        const X = cx + dx, Z = cz + dz;
+        if (X < 0 || Z < 0 || X >= MS || Z >= MS || dx * dx + dz * dz > rr * rr) continue;
+        mask[Z * MS + X] = Math.min(mask[Z * MS + X], v);
+      }
+    };
+    const line = (pts, r, v) => {
+      for (let i = 0; i < pts.length - 1; i++) {
+        const [ax, az] = pts[i], [bx, bz] = pts[i + 1], L = Math.hypot(bx - ax, bz - az);
+        for (let d = 0; d <= L; d += 0.8) stamp(ax + (bx - ax) * d / L, az + (bz - az) * d / L, r, v);
+      }
+    };
+    for (const r of ROADS) line(r, ROAD_HALF + 0.6, 0);
+    for (const t of TRAILS) line(t, 1.2, 60);
+    const mTex = new THREE.DataTexture(mask, MS, MS, THREE.RedFormat, THREE.UnsignedByteType);
+    mTex.magFilter = THREE.LinearFilter; mTex.minFilter = THREE.LinearFilter; mTex.needsUpdate = true;
     const mat = new THREE.MeshLambertMaterial();
-    this.addWind(mat, 0.25, 1.0);
-
-    // a grama é dividida em blocos: cada bloco só é desenhado se estiver na tela e perto
-    const CHUNK = 40;
-    const chunks = new Map();
-    const rand = makeRng(99);
-    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), p = new THREE.Vector3();
-    const color = new THREE.Color();
-    const up = new THREE.Vector3(0, 1, 0);
-    let n = 0;
-    while (n < count) {
-      // mais densa perto do vilarejo
-      const r = rand() < 0.65 ? Math.sqrt(rand()) * 60 : Math.sqrt(rand()) * WORLD_HALF;
-      const a = rand() * Math.PI * 2;
-      const x = Math.cos(a) * r, z = Math.sin(a) * r;
-      if (!this._isFree(x, z) || trailMask(x, z) > 0.4 || Math.abs(x) > WORLD_HALF || Math.abs(z) > WORLD_HALF) continue;
-      const s = 0.7 + rand() * 0.8;
-      q.setFromAxisAngle(up, rand() * Math.PI * 2);
-      sc.set(s, s * (0.6 + rand() * 0.9), s);
-      m.compose(p.set(x, terrainHeight(x, z) - 0.02, z), q, sc);
-      // tons de verde e de palha, combinando com o chão
-      const dry = valueNoise(x * 0.035, z * 0.035);
-      color.setHSL(0.2 - dry * 0.07 + rand() * 0.03, 0.3 + rand() * 0.15, 0.14 + dry * 0.08 + rand() * 0.06);
-      const key = Math.floor(x / CHUNK) + ',' + Math.floor(z / CHUNK);
-      if (!chunks.has(key)) chunks.set(key, { matrices: [], colors: [], cx: (Math.floor(x / CHUNK) + 0.5) * CHUNK, cz: (Math.floor(z / CHUNK) + 0.5) * CHUNK });
-      const c = chunks.get(key);
-      c.matrices.push(m.clone());
-      c.colors.push(color.clone());
-      n++;
-    }
-    this.grassChunks = [];
-    for (const c of chunks.values()) {
-      const im = new THREE.InstancedMesh(geo, mat, c.matrices.length);
-      c.matrices.forEach((mm, i) => { im.setMatrixAt(i, mm); im.setColorAt(i, c.colors[i]); });
-      im.computeBoundingSphere();
-      im.receiveShadow = true;
-      im.userData.center = new THREE.Vector2(c.cx, c.cz);
-      im.userData.full = c.matrices.length;
-      this.scene.add(im);
-      this.grassChunks.push(im);
-    }
+    const U = this.grassUniforms = {
+      uAnchor: { value: new THREE.Vector2() }, uEye: { value: new THREE.Vector3() }, uDist: { value: low ? 58 : 84 },
+      uH: { value: hTex }, uMask: { value: mTex }, uSize: { value: WORLD_SIZE }, uGrid: { value: GRID }, uDensity: { value: 1 },
+    };
+    mat.onBeforeCompile = (shader) => {
+      Object.assign(shader.uniforms, U, { uTime: this.windUniform });
+      shader.vertexShader = `
+        uniform vec2 uAnchor; uniform vec3 uEye; uniform float uDist, uSize, uGrid, uTime, uDensity;
+        uniform sampler2D uH, uMask;
+        attribute vec3 aOffset;
+        varying vec3 vGrass;
+        float gh(vec2 cell) { return texture2D(uH, (cell + 0.5) / (uGrid + 1.0)).r; }
+        float terrainH(vec2 p) {
+          vec2 f = clamp((p + uSize * 0.5) / (uSize / uGrid), vec2(0.0), vec2(uGrid - 0.001));
+          vec2 i = floor(f), t = f - i;
+          float a = gh(i), b = gh(i + vec2(0.0, 1.0)), c = gh(i + vec2(1.0, 1.0)), d = gh(i + vec2(1.0, 0.0));
+          return (t.x + t.y <= 1.0) ? a + (d - a) * t.x + (b - a) * t.y : c + (b - c) * (1.0 - t.x) + (d - c) * (1.0 - t.y);
+        }
+        float hs(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+      ` + shader.vertexShader.replace('#include <begin_vertex>', `
+        vec2 wp = uAnchor + aOffset.xz;
+        float r1 = hs(floor(wp * 4.0) + aOffset.y * 17.0), r2 = hs(wp.yx * 3.1 + 7.0);
+        float m = texture2D(uMask, (wp + uSize * 0.5) / uSize).r;
+        float dist = length(wp - uEye.xz);
+        float keep = step(aOffset.y, uDensity) * smoothstep(uDist, uDist - 18.0, dist) * smoothstep(0.2, 0.55, m);
+        float sc = (0.7 + r1 * 0.8) * keep;
+        float ang = r2 * 6.2832;
+        vec3 transformed = vec3(cos(ang) * position.x - sin(ang) * position.z, position.y * (0.6 + r2 * 0.9), sin(ang) * position.x + cos(ang) * position.z) * sc;
+        float ph = wp.x * 0.35 + wp.y * 0.25;
+        float sway = sin(uTime * 1.6 + ph) * 0.6 + sin(uTime * 3.7 + ph * 2.0) * 0.25;
+        transformed.x += sway * 0.25 * transformed.y;
+        transformed.z += cos(uTime * 1.3 + ph) * 0.15 * transformed.y;
+        transformed += vec3(wp.x, terrainH(wp) - 0.02, wp.y);
+        float dry = hs(floor(wp * 0.05));
+        vGrass = vec3(0.16 + r1 * 0.05 + dry * 0.08, 0.2 + r2 * 0.05 + dry * 0.02, 0.07 + dry * 0.02);
+      `);
+      shader.fragmentShader = 'varying vec3 vGrass;\n' + shader.fragmentShader.replace('vec4 diffuseColor = vec4( diffuse, opacity );', 'vec4 diffuseColor = vec4( diffuse * vGrass * 2.2, opacity );');
+    };
+    mat.customProgramCacheKey = () => 'grass-carpet';
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.frustumCulled = false;
+    mesh.receiveShadow = true;
+    this.scene.add(mesh);
+    this.grass = mesh;
+    this.grassTile = TILE;
     this.grassDensity = 1;
-    this.grassDistance = 75;
-
-    // mato crescendo nas rachaduras da estrada abandonada
-    const nW = this.quality === 'low' ? 500 : 1100;
-    const weeds = new THREE.InstancedMesh(geo, mat, nW);
-    const rw = makeRng(77);
-    for (let i = 0; i < nW; i++) {
-      // em linhas (rachaduras) e nas bordas
-      const edge = rw() < 0.5;
-      const x = ROAD_X + (edge ? (rw() < 0.5 ? -1 : 1) * (ROAD_HALF - 0.3 - rw() * 0.6) : (Math.round(rw() * 4 - 2) * 1.3 + (rw() - 0.5) * 0.3));
-      const z = (rw() - 0.5) * WORLD_HALF * 2;
-      const k = 0.5 + rw() * 0.9;
-      q.setFromAxisAngle(up, rw() * 6);
-      m.compose(p.set(x, terrainHeight(x, z) + 0.04, z), q, sc.set(k, k * (0.6 + rw() * 0.8), k));
-      weeds.setMatrixAt(i, m);
-      color.setHSL(0.13 + rw() * 0.08, 0.3, 0.16 + rw() * 0.1);
-      weeds.setColorAt(i, color);
-    }
-    weeds.receiveShadow = true;
-    weeds.computeBoundingSphere();
-    this.scene.add(weeds);
   }
 
   /** Fração da grama desenhada (qualidade gráfica). */
   setGrassDensity(k) {
     this.grassDensity = k;
-    for (const g of this.grassChunks) g.count = Math.floor(g.userData.full * k);
+    if (this.grassUniforms) this.grassUniforms.uDensity.value = k;
   }
 
   // ---------- limites do mapa ----------
@@ -1627,6 +1863,9 @@ export class World {
       const mesh = new THREE.Mesh(merged, mat);
       mesh.castShadow = true;
       mesh.receiveShadow = true;
+      merged.computeBoundingSphere();
+      mesh.userData.center = new THREE.Vector2(merged.boundingSphere.center.x, merged.boundingSphere.center.z);
+      this.lodChunks.push(mesh);
       const surface = this.surfaceOf.get(mat);
       if (surface) {
         mesh.userData.surface = surface;

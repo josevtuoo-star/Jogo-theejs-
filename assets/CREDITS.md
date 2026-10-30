@@ -1,6 +1,6 @@
 # Créditos dos assets
 
-Todos os arquivos desta pasta são livres para uso (os modelos 3D CC BY 4.0 pedem o crédito abaixo). Os sons foram cortados, normalizados e
+Todos os arquivos desta pasta são livres para uso (o modelo 3D CC BY 4.0 pede o crédito abaixo). Os sons foram cortados, normalizados e
 convertidos para MP3; as texturas foram reduzidas e algumas envelhecidas — veja abaixo.
 
 ## Sons (`sfx/`)
@@ -28,18 +28,12 @@ corvos, respiração e alguns detalhes continuam sintetizados (Web Audio).
 | `brick_*` | `brick_diffuse/bump/roughness.jpg` dos exemplos do [three.js](https://github.com/mrdoob/three.js) (escurecido) | MIT (Copyright © 2010-2024 three.js authors) |
 | `planks_*` | `hardwood2_diffuse/bump.jpg` dos exemplos do three.js, envelhecido (acinzentado, manchas) | MIT (three.js) |
 
-## Modelos 3D (`../models/`)
+## Modelo 3D (`../models/`)
 
 | Arquivo | Origem | Licença |
 | --- | --- | --- |
-| `personagem.glb` | [“Cyberpunk Police bot [Animation ready]”](https://sketchfab.com/3d-models/cyberpunk-police-bot-animation-ready-b68e6cc1f2ce462bb0d34275adaa1110) por **everlasting17th** ([sketchfab.com/everlastinggrey](https://sketchfab.com/everlastinggrey)). No jogo: sem as armas e sem o pedestal, texturas reduzidas (1024, JPEG), escala em metros e as animações abaixo no lugar da original | [CC BY 4.0](http://creativecommons.org/licenses/by/4.0/) |
-| animações dentro de `personagem.glb` | Biblioteca de animações humanas do [Mesh2Motion](https://github.com/Mesh2Motion/mesh2motion-app) (`static/animations/human-base-animations.glb` e `human-addon-animations.glb`): Idle_A, Walk, Jog, Sprint, Walk_Backwards, Strafe_left/right, Crouch_Idle, Crouch_Walk, Walk_Stealth, Jump_Start/air/Land, Roll, Slide, Swim_Fwd, Swim_Idle, Punch_Jab, Punch_Cross, Melee_Hook, Fighting Idle, PickUp_Table, Interact, Hit_Chest, Pistol_Idle, Pistol_Aim_Neutral, ClimbUp_1m_RM, Climb Ladder, Ladder_Idle, Ledge Hang, Death_A, Idle Hurt, Tired Hunched. Convertidas (retarget) do esqueleto do Mesh2Motion para o esqueleto Mixamo do personagem, com o deslocamento tirado (o jogo move o corpo) | CC0 |
-| `zumbi.glb` | [“Zombie Walk Test”](https://sketchfab.com/3d-models/zombie-walk-test-165fd9342c364216bfdd8c2f1102223c) por **OSCAR CREATIVO** ([sketchfab.com/oscar_creativo](https://sketchfab.com/oscar_creativo)), com a animação de andar dele. No jogo: materiais convertidos para metal/rugosidade, texturas reduzidas, andar no lugar (o código move o zumbi) | [CC BY 4.0](http://creativecommons.org/licenses/by/4.0/) |
-| `fps_pistola.glb` | [“FPS pistol animations”](https://sketchfab.com/3d-models/fps-pistol-animations-0d7a343dcb6f401197a73c91aee93f6d) por **Cransh** ([sketchfab.com/ccransh](https://sketchfab.com/ccransh)): animações Idle, Walk, Fire, Reload_easy e Reload_full. No jogo ficam só o esqueleto, as animações e o carregador (mais estreito); os braços do arquivo foram trocados pelos do personagem (IK) e a pistola pela Colt | [CC BY 4.0](http://creativecommons.org/licenses/by/4.0/) |
-| `colt.glb` | [“Colt M1911”](https://sketchfab.com/3d-models/colt-m1911-26adfd631730494ab0fc80c806eada77) por **Ole Gunnar Isager** ([sketchfab.com/FrenchBaguette](https://sketchfab.com/FrenchBaguette)). No jogo: texturas reduzidas (2048, JPEG), em escala real (21,6 cm); ferrolho e gatilho acompanham as animações de FPS | [CC BY 4.0](http://creativecommons.org/licenses/by/4.0/) |
-
-Sacar e guardar a pistola (do coldre na coxa direita até a pose de tiro e de volta) são feitos no
-código, a partir da pose parada das animações de FPS.
+| `personagem.glb` | [“enemy”](https://sketchfab.com/3d-models/enemy-15557449d29144c49e02942d87c7316f) por **DJMaesen** ([sketchfab.com/bumstrum](https://sketchfab.com/bumstrum)), com a pistola dele e as animações do arquivo (parado, arma pronta, corrida, andar mirando, agachado mirando, mirando parado — separadas do clipe único "allanims"). No jogo: ossos renomeados no padrão Mixamo, texturas em JPEG, escala em metros | [CC BY 4.0](http://creativecommons.org/licenses/by/4.0/) |
+| animações extras dentro de `personagem.glb` | Biblioteca de animações humanas do [Mesh2Motion](https://github.com/Mesh2Motion/mesh2motion-app) (`human-base-animations.glb` e `human-addon-animations.glb`): Walk, Sprint, Walk_Backwards, Strafe_left/right, Crouch_Idle, Crouch_Walk, Walk_Stealth, Jump_Start/air/Land, Roll, Slide, Swim_Fwd, Swim_Idle, Punch_Jab, Punch_Cross, PickUp_Table, Interact, Hit_Chest, Pistol_Reload, Pistol_Shoot, ClimbUp_1m_RM, Climb Ladder, Ladder_Idle, Ledge Hang, Death_A, Idle Hurt, Tired Hunched, Consume, Fixing_Kneeling. Convertidas (retarget) para o esqueleto do personagem, com o deslocamento tirado (o jogo move o corpo) | CC0 |
 
 ## Céu (`env/`)
 

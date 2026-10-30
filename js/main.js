@@ -3,13 +3,11 @@ import { World } from './world.js';
 import { Player, STAND_HEIGHT } from './player.js';
 import { Input, isTouchDevice } from './input.js';
 import { CameraRig } from './cameraRig.js';
-import { Character, FP_HIDDEN_LAYER, isFirearm, ITEMS } from './character.js';
+import { Character, FP_HIDDEN_LAYER } from './character.js';
 import { GameAudio } from './audio.js';
 import { Effects } from './effects.js';
-import { Flashlight } from './flashlight.js';
 import { PropSystem } from './physics.js';
 import { TrainingDummies } from './dummies.js';
-import { PatrolZombie } from './zombie.js';
 import { LensPass } from './lens.js';
 import { buttonHTML } from './icons.js';
 import { applyPhotoAssets } from './photoAssets.js';
@@ -53,27 +51,56 @@ const dummies = new TrainingDummies(scene, (x, z) => world.groundHeight(x, z), D
 const player = new Player(world.octree, world.spawn, world.ladders, {
   waterAt: (x, z) => world.waterAt(x, z),
   doors: [...world.doors, ...dummies.list],
+  heightAt: (x, z) => world.groundHeight(x, z),
 });
-// lanterna: a luz sai da lente do modelo na mão do personagem
-const flashlight = new Flashlight(scene);
 // objetos soltos com física
 const props = new PropSystem(scene, world.octree);
 props.extraColliders = [...world.doors, ...dummies.list];
+props.groundHeight = (x, z) => world.groundHeight(x, z);
 for (const p of world.propSpots) props.add(p.type, p.x, p.y, p.z);
 const rig = new CameraRig(camera, world.octree);
+rig.groundHeight = (x, z) => world.groundHeight(x, z);
 const character = new Character(scene);
 character.groundHeight = (x, z) => world.groundHeight(x, z);
-// zumbi de teste: anda de lá para cá na estrada, na frente do começo
-const zombie = new PatrolZombie(scene, (x, z) => world.groundHeight(x, z));
-// modelos 3D: personagem (com as animações), pistola (Colt + animações de FPS) e o zumbi
+// modelo 3D do personagem (com todas as animações)
 const modelsReady = Promise.allSettled([
   applyPhotoAssets(world, renderer, { quality }),
-  character.load('models/personagem.glb', 'models/fps_pistola.glb', 'models/colt.glb'),
-  zombie.load('models/zumbi.glb', new THREE.Vector3(-1.6, 0, 3), new THREE.Vector3(-1.2, 0, -9)),
+  character.load('models/personagem.glb'),
 ]).then((r) => r.forEach((x) => x.status === 'rejected' && console.warn('modelo não carregou:', x.reason)));
 const audio = new GameAudio();
 audio.preload(); // sons gravados (decodificados no primeiro toque)
 character.onShellClink = (p) => audio.shellClink(p);
+// oclusão do som: parede (Octree) ou morro entre o ouvido e a fonte abafa o som
+{
+  const r = new THREE.Ray(), a = new THREE.Vector3(), b = new THREE.Vector3();
+  audio.occluder = (from, to) => {
+    a.set(from.x, from.y, from.z); b.set(to.x, to.y, to.z);
+    const d = a.distanceTo(b);
+    r.set(a, b.clone().sub(a).normalize());
+    const hit = world.octree.rayIntersect(r);
+    if (hit && hit.distance < d - 0.4) return true;
+    const m = a.clone().lerp(b, 0.5);
+    return d > 20 && m.y < world.groundHeight(m.x, m.z) + 0.5;
+  };
+}
+// hora do dia: começa no fim da tarde; 1 minuto real = 1 hora (a noite passa mais rápido)
+let timeOfDay = 16.5;
+world.setTimeOfDay(timeOfDay);
+let todFrame = 0;
+function updateTime(dt) {
+  timeOfDay = (timeOfDay + dt / 60 * (world.night > 0.6 ? 2.4 : 1)) % 24;
+  if (++todFrame % 6) return;
+  world.setTimeOfDay(timeOfDay);
+  audio.night = world.night;
+  // gradação: noite fria e menos saturada, entardecer quente
+  const n = world.night, dusk = (1 - n) * (1 - Math.min(1, Math.abs(world.sunDir.y) / 0.35));
+  const U = lens.material.uniforms;
+  U.uSat.value = 1.06 - n * 0.32;
+  U.uTint.value.set(1 + dusk * 0.06 - n * 0.12, 1 - n * 0.05, 1 - dusk * 0.08 + n * 0.12);
+  const hh = Math.floor(timeOfDay), mm = Math.floor((timeOfDay - hh) * 60);
+  const txt = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+  if (ui.clock.textContent !== txt) ui.clock.textContent = txt;
+}
 props.onImpact = (kind, strength, pos) => audio.impact(kind, strength, pos);
 
 
@@ -84,7 +111,7 @@ const ui = {
   health: $('health-fill'), state: $('state-label'), fps: $('fps'),
   flash: $('damage-flash'), hurt: $('vignette-hurt'), crosshair: $('crosshair'),
   hint: $('hint'), compass: $('compass-strip'), underwater: $('underwater'), useBtn: $('btn-use'),
-  equip: $('equip-label'), attackBtn: $('btn-attack'), swapBtn: $('btn-swap'), aimBtn: $('btn-aim'), reloadBtn: $('btn-reload'),
+  equip: $('equip-label'), clock: $('clock'), attackBtn: $('btn-attack'), aimBtn: $('btn-aim'), reloadBtn: $('btn-reload'),
   ammo: $('ammo'), ammoLoaded: $('ammo-loaded'), ammoReserve: $('ammo-reserve'), ammoKind: $('ammo-kind'), toast: $('toast'), weaponBar: $('weapon-bar'),
   btnSize: $('btn-size'), btnSizeVal: $('btn-size-val'), haptics: $('haptics'),
   death: $('death'), deathReason: $('death-reason'), respawn: $('respawn-btn'),
@@ -116,8 +143,7 @@ function applyQuality(level) {
   world.setShadowMapSize(q.shadowSize);
   world.setGrassDensity(q.grass);
   // sombras (e o anel projetado) da lanterna só em qualidade média/alta
-  const flashChanged = flashlight.setShadows(q.shadows);
-  if (shadowChanged || flashChanged) {
+  if (shadowChanged) {
     // materiais precisam recompilar quando as sombras ligam/desligam
     scene.traverse((o) => {
       if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => { m.needsUpdate = true; });
@@ -304,6 +330,8 @@ function respawn() {
   ui.death.classList.add('hidden');
   player.respawn();
   lastHealth = player.health;
+  needs.food = needs.water = 100;
+  items.bandage = Math.max(items.bandage, 1); items.food = Math.max(items.food, 1); items.water = Math.max(items.water, 1);
   startGame();
 }
 ui.respawn.addEventListener('click', respawn);
@@ -342,7 +370,6 @@ window.addEventListener('orientationchange', () => setTimeout(onResize, 200));
 const clock = new THREE.Clock();
 let elapsed = 0;
 let fpsTimer = 0, fpsFrames = 0;
-let flashOn = false;
 let lastHealth = player.health;
 let ambientTimer = 0;
 let indoor = 0;
@@ -355,14 +382,11 @@ function handleActions() {
     character.setFirstPerson(!rig.thirdPerson);
     audio.click();
   }
-  if (input.wasPressed('light')) {
-    flashOn = flashlight.toggle();
-    $('btn-light')?.classList.toggle('on', flashOn);
-    audio.click();
-  }
-  if (input.wasPressed('use') && useTarget && !character.reach) {
-    // a mão vai até o objeto/maçaneta; a ação acontece quando ela encosta
-    if (useTarget.isPickup) {
+  const busy = player.isClimbing || player.onLadder || player.swimming || player.isHanging || player.sliding || player.rolling || player.dead;
+  if (input.wasPressed('use') && useTarget && !character.reach && !character.action) {
+    if (useTarget.isLoot) searchLoot(useTarget);
+    else if (useTarget.isPickup) {
+      // a mão vai até o objeto; ele é pego quando ela encosta
       const p = useTarget, obj = p.root ?? p.mesh;
       character.reachTo((v) => obj.getWorldPosition(v), { contact: 0.42, hold: 0.08, onContact: () => { if (pickups.includes(p.mesh)) pickUp(p); haptic(10); } });
     } else {
@@ -375,26 +399,76 @@ function handleActions() {
       } });
     }
   }
-  // mãos livres / pistola (teclas 1–2, rodinha ou botão de trocar)
-  let wantEquip = null;
-  for (const it of ITEMS) if (input.wasPressed('equip_' + it)) wantEquip = it;
-  const cur = ITEMS.indexOf(character.equip);
-  if (input.wasPressed('swapItem')) wantEquip = ITEMS[(cur + 1) % ITEMS.length];
-  if (input.wasPressed('swapPrev')) wantEquip = ITEMS[(cur + ITEMS.length - 1) % ITEMS.length];
-  if (wantEquip && character.setEquip(wantEquip) && !isFirearm(wantEquip)) input.clearTouchAim();
-  // armas de fogo: mirar, atirar, recarregar
-  const gunOut = isFirearm(character.swap >= 0 ? character.swapTo : character.equip);
-  input.gunMode = gunOut;
-  character.aiming = gunOut && input.aimHeld && !player.sprinting;
-  player.aiming = gunOut && character.b.aim > 0.4;
-  if (gunOut) {
-    attackHold = -1;
-    const busy = player.isClimbing || player.onLadder || player.swimming || player.isHanging || player.sliding || player.rolling || player.dead;
-    if (input.wasPressed('reload') && !busy) character.reload();
-    if (input.wasPressed('attack') && !busy) shoot();
-    return;
+  // itens: curativo, comida, água (1–3, barra de itens, direcional do controle)
+  for (const k of Object.keys(ITEM_DEF)) if (input.wasPressed('item_' + k)) useItem(k);
+  // pistola: mirar, atirar (também sem mirar: ele levanta a arma), recarregar; golpe
+  input.gunMode = true;
+  character.aiming = input.aimHeld && !player.sprinting;
+  player.aiming = character.b.aim > 0.4;
+  if (busy) return;
+  if (input.wasPressed('reload')) character.reload();
+  if (input.wasPressed('attack')) shoot();
+  if (input.wasPressed('melee')) character.attack(false);
+}
+
+// ---------- sobrevivência: fome, sede, itens, saque ----------
+const needs = { food: 100, water: 100 };
+const items = { bandage: 1, food: 1, water: 1 };
+const ITEM_DEF = {
+  bandage: { name: 'CURATIVO', icon: 'bandage', action: 'bandage', time: 3.0, ok: () => player.health < 100, full: 'VIDA CHEIA', use: () => { player.health = Math.min(100, player.health + 35); } },
+  food: { name: 'COMIDA', icon: 'food', action: 'eat', time: 2.6, ok: () => needs.food < 97, full: 'SEM FOME', use: () => { needs.food = Math.min(100, needs.food + 40); } },
+  water: { name: 'ÁGUA', icon: 'water', action: 'drink', time: 2.0, ok: () => needs.water < 97, full: 'SEM SEDE', use: () => { needs.water = Math.min(100, needs.water + 45); } },
+};
+let progress = null; // barra de progresso (usar item, revistar)
+function useItem(k) {
+  const d = ITEM_DEF[k];
+  if (player.dead || character.action) return;
+  if (!items[k]) { showToast(`SEM ${d.name}`); return; }
+  if (!d.ok()) { showToast(d.full); return; }
+  if (player.onLadder || player.swimming || player.isHanging || player.isClimbing) return;
+  if (character.playAction(d.action, { duration: d.time, onDone: () => { items[k]--; d.use(); showToast(`${d.name} USADO`); } })) {
+    progress = { t: 0, dur: d.time, cancel: () => !character.action };
+    audio.useItem(k);
   }
-  handleCombat();
+}
+const LOOT = {
+  cabinet: [['food', 0.5], ['water', 0.45], ['bandage', 0.35], ['ammo', 0.3]],
+  fridge: [['food', 0.65], ['water', 0.75]],
+  car: [['ammo', 0.45], ['bandage', 0.4], ['water', 0.35]],
+  locker: [['ammo', 0.9], ['ammo', 0.5], ['bandage', 0.6]],
+  tent: [['food', 0.5], ['water', 0.5], ['bandage', 0.45], ['ammo', 0.3]],
+  crate: [['food', 0.35], ['water', 0.35], ['ammo', 0.45], ['bandage', 0.3]],
+  bag: [['food', 0.7], ['water', 0.7], ['bandage', 0.6], ['ammo', 0.5]],
+};
+function searchLoot(spot) {
+  if (spot.searched) { showToast('JÁ REVISTADO — VAZIO'); return; }
+  if (character.playAction('search', { duration: 1.8, full: true, onDone: () => {
+    spot.searched = true;
+    const got = [];
+    for (const [k, p] of LOOT[spot.kind] ?? LOOT.crate) {
+      if (Math.random() > p) continue;
+      if (k === 'ammo') { const n = 6 + Math.floor(Math.random() * 10); character.gun.reserve += n; got.push(`+${n} BALAS`); }
+      else { items[k]++; got.push(`+1 ${ITEM_DEF[k].name}`); }
+    }
+    showToast(got.length ? got.join(' · ') : 'NADA AQUI');
+    if (got.length) audio.pickup();
+  } })) {
+    progress = { t: 0, dur: 1.8, cancel: () => !character.action };
+    audio.search(spot.kind);
+  }
+}
+function updateNeeds(dt) {
+  if (player.dead) return;
+  const run = player.sprinting && player.horizontalSpeed > 4;
+  needs.food = Math.max(0, needs.food - dt * (100 / (45 * 60)) * (run ? 1.6 : 1));
+  needs.water = Math.max(0, needs.water - dt * (100 / (28 * 60)) * (run ? 2 : 1));
+  if (needs.food <= 0 || needs.water <= 0) {
+    player.health = Math.max(0, player.health - dt * 0.4);
+    deathReason = needs.water <= 0 ? 'Você morreu de sede.' : 'Você morreu de fome.';
+  } else if (needs.food > 55 && needs.water > 55 && player.health < 100) {
+    player.health = Math.min(100, player.health + dt * 0.12); // descansado e alimentado, cicatriza devagar
+  }
+  player.staminaRegen = needs.food < 20 || needs.water < 20 ? 0.55 : 1;
 }
 
 // ---------- armas de fogo ----------
@@ -449,6 +523,22 @@ function shoot() {
 }
 
 
+/** Distância até o chão (relevo) ao longo de um raio, ou null. */
+function terrainRay(origin, dir, maxD) {
+  let prev = 0, step = 0.5;
+  for (let d = step; d <= maxD; d += step) {
+    const x = origin.x + dir.x * d, y = origin.y + dir.y * d, z = origin.z + dir.z * d;
+    if (y < world.groundHeight(x, z)) {
+      let a = prev, b = d; // refina
+      for (let k = 0; k < 8; k++) { const m = (a + b) / 2; if (origin.y + dir.y * m < world.groundHeight(origin.x + dir.x * m, origin.z + dir.z * m)) b = m; else a = m; }
+      return (a + b) / 2;
+    }
+    prev = d;
+    step = Math.min(3, 0.5 + d * 0.03);
+  }
+  return null;
+}
+
 /** A bala acerta o que estiver primeiro no caminho: boneco, objeto, porta ou o mundo. */
 function bulletImpact(origin, dir, { power = 7, quiet = false, range = 160 } = {}) {
   const RANGE = range;
@@ -465,7 +555,18 @@ function bulletImpact(origin, dir, { power = 7, quiet = false, range = 160 } = {
   if (ph && ph.distance > skip && (!best || ph.distance < best.d)) best = { kind: 'prop', d: ph.distance };
   const dh = raycaster.intersectObjects(doorSlabs, false)[0];
   if (dh && dh.distance > skip && (!best || dh.distance < best.d)) best = { kind: 'door', d: dh.distance };
+  const tg = terrainRay(origin, dir, RANGE);
+  if (tg !== null && tg > skip && (!best || tg < best.d)) best = { kind: 'terrain', d: tg };
   if (!best) return;
+  if (best.kind === 'terrain') {
+    const p = _tmp.copy(origin).addScaledVector(dir, best.d);
+    if (!quiet) audio.bulletHit('grass', p);
+    for (let i = 0; i < 8; i++) {
+      effects.dust.emit(p.x, p.y, p.z, (Math.random() - 0.5) * 1.2, 1 + Math.random() * 1.8, (Math.random() - 0.5) * 1.2,
+        { life: 0.9, size: 0.07, grow: 0.3, color: DUST.grass, alpha: 0.55, drag: 3, gravity: 2 });
+    }
+    return;
+  }
   if (best.kind === 'dummy') {
     dummies.hit(dm, dir, power, { bullet: true });
     if (!quiet) audio.bulletHit('sack', dm.point);
@@ -529,7 +630,7 @@ function ammoBoxTexture(bg = '#6e1f15', band = '#d9c38a', text = '.357 MAG') {
 }
 const hitboxMat = new THREE.MeshBasicMaterial({ visible: false });
 const AMMO = {
-  ammo45: { amount: 14, label: 'MUNIÇÃO .45', toast: 'BALAS .45 ACP', size: [0.1, 0.042, 0.07], tex: ['#2b3a52', '#d9c38a', '.45 ACP'] },
+  ammo45: { amount: 15, label: 'MUNIÇÃO 9MM', toast: 'BALAS 9MM', size: [0.1, 0.042, 0.07], tex: ['#2b3a52', '#d9c38a', '9MM'] },
 };
 {
   const a = AMMO.ammo45;
@@ -550,7 +651,7 @@ const AMMO = {
 }
 function pickUp(p) {
   const a = AMMO[p.kind];
-  character.guns.pistol.reserve += p.amount;
+  character.gun.reserve += p.amount;
   (p.root ?? p.mesh).removeFromParent();
   pickups.splice(pickups.indexOf(p.mesh), 1);
   audio.pickup();
@@ -563,26 +664,8 @@ function showToast(text) {
   toastT = 1.8;
 }
 
-// ---------- combate ----------
-// toque rápido = golpe leve (emenda combo); segurar = carrega o golpe forte, soltar = desfere
-const CHARGE_DELAY = 0.22, CHARGE_TIME = 0.55;
-let attackHold = -1;
+// ---------- golpes ----------
 let hitStop = 0;
-function handleCombat() {
-  const busy = player.isClimbing || player.onLadder || player.swimming || player.isHanging || player.sliding || player.rolling || player.dead;
-  if (busy) { attackHold = -1; character.setCharge(0); return; }
-  if (input.wasPressed('attack')) attackHold = 0;
-  if (attackHold < 0) return;
-  if (input.attackHeld) {
-    attackHold += frameDt;
-    if (attackHold > CHARGE_DELAY) character.setCharge(Math.min(1, (attackHold - CHARGE_DELAY) / CHARGE_TIME));
-    return;
-  }
-  if (attackHold > CHARGE_DELAY && character.charge > 0.3) character.attack(true);
-  else character.attack(false);
-  character.setCharge(0);
-  attackHold = -1;
-}
 
 /** Golpe começou: som, passo à frente e tranco da câmera. */
 function onSwing(m, name) {
@@ -623,7 +706,10 @@ function updateUseTarget() {
   if (hit) useTarget = hit.object.userData.door;
   const pk = raycaster.intersectObjects(pickups, false)[0];
   if (pk && (!hit || pk.distance < hit.distance)) useTarget = pk.object.userData.pickup;
+  const lt = raycaster.intersectObjects(lootMeshes, false)[0];
+  if (lt && (!useTarget || lt.distance < (pk?.distance ?? hit?.distance ?? Infinity))) useTarget = lt.object.userData.loot;
 }
+const lootMeshes = world.lootSpots.map((l) => l.mesh);
 
 const SPARK = [1, 0.7, 0.3];
 const STRAW = [0.78, 0.68, 0.42];
@@ -784,26 +870,20 @@ function updateUnderwater() {
   }
 }
 
-let lastEquipIcon = '';
-const ITEM_NAMES = { hands: 'MÃOS LIVRES', pistol: 'COLT M1911 .45' };
-const ITEM_ICONS = { hands: 'fist', pistol: 'gun' };
-// barra de armas: 1–2 no teclado, toque no celular
-ui.weaponBar.innerHTML = ITEMS.map((it, i) => `<button class="wslot" data-item="${it}" aria-label="${ITEM_NAMES[it]}"><span class="k">${i + 1}</span>${buttonHTML(ITEM_ICONS[it])}<span class="n"></span></button>`).join('');
+// barra de itens: 1–3 no teclado, toque no celular
+ui.weaponBar.innerHTML = Object.entries(ITEM_DEF).map(([k, d], i) => `<button class="wslot" data-item="${k}" aria-label="${d.name}"><span class="k">${i + 1}</span>${buttonHTML(d.icon)}<span class="n"></span></button>`).join('');
 ui.weaponBar.addEventListener('pointerdown', (e) => {
   const b = e.target instanceof Element && e.target.closest('.wslot');
   if (!b) return;
   e.preventDefault();
   e.stopPropagation();
-  input.pressed.add('equip_' + b.dataset.item);
+  input.pressed.add('item_' + b.dataset.item);
 });
-const wbCounts = [...ui.weaponBar.querySelectorAll('.n')];
-function updateWeaponBar() {
-  ITEMS.forEach((it, i) => {
-    const G = character.guns[it];
-    const txt = G ? `${G.loaded}/${G.reserve}` : '';
-    if (wbCounts[i].textContent !== txt) wbCounts[i].textContent = txt;
-  });
-}
+const itemSlots = [...ui.weaponBar.children];
+ui.attackBtn.innerHTML = buttonHTML('gun', 'ATIRAR');
+ui.ammoKind.textContent = '9MM';
+const statBars = { stamina: $('stamina-fill'), food: $('food-fill'), water: $('water-fill'), box: $('bars') };
+const progressEl = $('progress');
 function updateHud() {
   ui.health.style.width = player.health + '%';
   ui.state.textContent = player.state;
@@ -833,38 +913,44 @@ function updateHud() {
   }
   if (!hint && useTarget) {
     const key = input.pad.connected ? 'X' : isTouchDevice ? 'USAR' : 'F';
-    hint = `${key} — ${useTarget.isPickup ? useTarget.label : useTarget.isOpen ? 'FECHAR A PORTA' : 'ABRIR A PORTA'}`;
+    hint = `${key} — ${useTarget.isLoot ? (useTarget.searched ? 'JÁ REVISTADO' : useTarget.label) : useTarget.isPickup ? useTarget.label : useTarget.isOpen ? 'FECHAR A PORTA' : 'ABRIR A PORTA'}`;
   } else if (!hint && player.swimming) {
     hint = isTouchDevice ? 'AGACHAR — MERGULHAR · PULAR — SUBIR' : 'CTRL — MERGULHAR · ESPAÇO — SUBIR';
   }
   ui.hint.textContent = hint;
   ui.hint.classList.toggle('hidden', !hint);
   ui.useBtn?.classList.toggle('hidden', !useTarget);
-  const eq = character.swap >= 0 ? character.swapTo : character.equip;
-  const gunOut = isFirearm(eq);
-  ui.equip.textContent = ITEM_NAMES[eq] + (character.reloading ? ' · RECARREGANDO' : '') + (player.walkMode ? ' · ANDANDO DEVAGAR' : '');
-  if (eq !== lastEquipIcon) {
-    // ícone do botão de ataque = item na mão; o de troca mostra o próximo item
-    lastEquipIcon = eq;
-    ui.attackBtn.innerHTML = buttonHTML(ITEM_ICONS[eq], gunOut ? 'ATIRAR' : '');
-    ui.swapBtn.innerHTML = buttonHTML(ITEM_ICONS[ITEMS[(ITEMS.indexOf(eq) + 1) % ITEMS.length]], 'TROCAR');
-    ui.ammoKind.textContent = eq === 'pistol' ? '.45' : '';
-    for (const el of ui.weaponBar.children) el.classList.toggle('sel', el.dataset.item === eq);
+  ui.equip.textContent = 'PISTOLA 9MM' + (character.reloading ? ' · RECARREGANDO' : '') + (player.walkMode ? ' · ANDANDO DEVAGAR' : '') + (player.exhausted ? ' · SEM FÔLEGO' : '');
+  statBars.stamina.style.width = player.stamina.toFixed(0) + '%';
+  statBars.food.style.width = needs.food.toFixed(0) + '%';
+  statBars.water.style.width = needs.water.toFixed(0) + '%';
+  statBars.box.classList.toggle('exhausted', player.exhausted);
+  itemSlots.forEach((el) => {
+    const k = el.dataset.item, n = String(items[k]);
+    const nEl = el.querySelector('.n');
+    if (nEl.textContent !== n) nEl.textContent = n;
+    el.classList.toggle('empty', !items[k]);
+    el.classList.toggle('busy', character.action?.kind === ITEM_DEF[k].action);
+  });
+  const g = character.gun;
+  ui.ammoLoaded.textContent = g.loaded;
+  ui.ammoReserve.textContent = g.reserve;
+  ui.ammo.classList.toggle('empty', g.loaded === 0);
+  if (!hint && g.loaded === 0 && g.reserve === 0) hint = 'SEM MUNIÇÃO — REVISTE CASAS, CARROS E BARRACAS';
+  else if (!hint && g.loaded === 0 && !character.reloading) hint = (input.pad.connected ? '↓' : isTouchDevice ? '🔄' : 'R') + ' — RECARREGAR';
+  else if (!hint && needs.water < 15) hint = 'COM MUITA SEDE — BEBA ÁGUA (3)';
+  else if (!hint && needs.food < 15) hint = 'COM MUITA FOME — COMA ALGO (2)';
+  else if (!hint && player.health < 35 && items.bandage) hint = 'FERIDO — USE UM CURATIVO (1)';
+  ui.hint.textContent = hint;
+  ui.hint.classList.toggle('hidden', !hint);
+  // progresso de usar item / revistar
+  if (progress) {
+    progress.t += frameDt;
+    if (progress.t >= progress.dur || progress.cancel()) progress = null;
   }
-  updateWeaponBar();
-  ui.aimBtn?.classList.toggle('hidden', !gunOut);
-  ui.reloadBtn?.classList.toggle('hidden', !gunOut);
-  ui.ammo.classList.toggle('hidden', !gunOut);
-  if (gunOut) {
-    const g = character.guns[eq]; // (durante a troca já mostra a arma que está vindo)
-    ui.ammoLoaded.textContent = g.loaded;
-    ui.ammoReserve.textContent = g.reserve;
-    ui.ammo.classList.toggle('empty', g.loaded === 0);
-    if (g.loaded === 0 && g.reserve === 0 && !hint) hint = 'SEM MUNIÇÃO — PROCURE CAIXAS .45';
-    else if (g.loaded === 0 && !character.reloading && !hint) hint = (input.pad.connected ? '↓' : isTouchDevice ? '🔄' : 'R') + ' — RECARREGAR';
-    ui.hint.textContent = hint;
-    ui.hint.classList.toggle('hidden', !hint);
-  }
+  progressEl.classList.toggle('hidden', !progress);
+  if (progress) progressEl.firstChild.style.width = Math.min(100, progress.t / progress.dur * 100).toFixed(0) + '%';
+  const gunOut = true;
 
   // mira se abre com o movimento e no ar (e fecha quando mira com a arma)
   const aim = character.b.aim;
@@ -895,6 +981,8 @@ function frame() {
     player.update(dt, input);
     handleEvents(dt);
     input.endFrame();
+    updateNeeds(dt);
+    updateTime(dt);
     updateHud();
     updateAmbience(dt);
   } else if (!started) {
@@ -918,13 +1006,10 @@ function frame() {
   for (const e of character.events) {
     if (e.type === 'swing') onSwing(e.move, e.name);
     else if (e.type === 'hit' && playing) strikeHit(e.move, e.name);
-    else if (e.type === 'draw') audio.holster(true);
-    else if (e.type === 'holster') audio.holster(false);
     else if (e.type === 'magOut') audio.magOut();
     else if (e.type === 'magIn') audio.magIn();
     else if (e.type === 'slide') audio.slideRelease();
   }
-  zombie.update(dt);
   rig.aim = character.b.aim;
   character.events.length = 0;
   dummies.update(dt);
@@ -936,13 +1021,17 @@ function frame() {
   _ray.set(camera.position, _fwd);
   wallAhead = world.octree.rayIntersect(_ray);
 
-  // lanterna: a luz sai da lente da lanterna na mão do corpo e mira no centro da tela
-  character.getLensWorldPosition(_lens);
-  _aim.copy(camera.position).addScaledVector(_fwd, wallAhead ? Math.max(1.5, Math.min(25, wallAhead.distance)) : 25);
-  const lightK = flashlight.update(dt, _lens, _aim, { thirdPerson: rig.thirdPerson });
-  character.setFlashlight(flashOn, lightK);
+  // ponto para onde a mira aponta (o tronco gira até o cano apontar para lá)
+  {
+    raycaster.set(camera.position, _fwd); raycaster.far = 150;
+    let d = wallAhead ? Math.min(150, wallAhead.distance) : 150;
+    const tg = terrainRay(camera.position, _fwd, d);
+    if (tg !== null) d = tg;
+    if (rig.thirdPerson) d = Math.max(d, rig.currentTpDist + 1.5);
+    character.aimTarget.copy(camera.position).addScaledVector(_fwd, Math.max(2.5, d));
+  }
 
-  world.update(player.feetPosition, elapsed);
+    world.update(player.feetPosition, elapsed);
   effects.update(dt, player.feetPosition, (x, z) => world.groundHeight(x, z), renderer.domElement.height);
   updateUnderwater();
   _camUp.set(0, 1, 0).applyQuaternion(camera.quaternion);
@@ -970,4 +1059,4 @@ ui.play.classList.remove('hidden');
 frame();
 
 // para depuração no console
-window.game = { player, world, rig, input, character, effects, props, flashlight, renderer, scene, camera, dummies, audio, zombie, lens, STAND_HEIGHT };
+window.game = { player, world, rig, input, character, effects, props, renderer, scene, camera, dummies, audio, lens, needs, items, STAND_HEIGHT, setTime: (h) => { timeOfDay = h; world.setTimeOfDay(h); } };

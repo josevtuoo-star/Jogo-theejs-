@@ -4,7 +4,9 @@
 //                       └─ eco (convolução) ──────┤→ mestre → filtro "debaixo d'água" → saída
 //              vento, pássaros ───────────────────┘
 // O eco aumenta dentro de casas; debaixo d'água tudo fica abafado. Sons com posição no mundo
-// (fogueira, objetos, portas) passam por um PannerNode 3D que acompanha a câmera.
+// (fogueira, objetos, portas, tiros) passam por: filtro de absorção do ar (longe = sem agudos)
+// e oclusão (parede no caminho = abafado e mais baixo) → PannerNode HRTF que acompanha a câmera.
+// Dois reverbs: sala (dentro de casa) e exterior (reflexões do vale/mata, cauda longa e fraca).
 
 export class GameAudio {
   constructor() {
@@ -20,6 +22,10 @@ export class GameAudio {
     this.samples = {};       // gravações reais (assets/sfx): nome → [AudioBuffer]
     this._raw = null;        // arquivos baixados antes do primeiro toque (ainda não decodificados)
     this._last = {};
+    this.listenerPos = { x: 0, y: 0, z: 0 };
+    this.occluder = null;    // (a, b) => true se há parede entre a e b (dado pelo jogo)
+    this.night = 0;
+    this.farTimer = 40 + Math.random() * 60;
   }
 
   /**
@@ -139,6 +145,13 @@ export class GameAudio {
     this.convolver = ctx.createConvolver();
     this.convolver.buffer = this._impulse(1.4, 2.8);
     this.sfx.connect(this.reverbSend).connect(this.convolver).connect(this.master);
+    // exterior: reflexões espaçadas (árvores, morros, casas) e cauda longa baixa
+    this.outSend = ctx.createGain();
+    this.outSend.gain.value = 0.16;
+    this.outConv = ctx.createConvolver();
+    this.outConv.buffer = this._outdoorImpulse(3.2);
+    const outLP = ctx.createBiquadFilter(); outLP.type = 'lowpass'; outLP.frequency.value = 3200;
+    this.sfx.connect(this.outSend).connect(this.outConv).connect(outLP).connect(this.master);
 
     const len = ctx.sampleRate * 2;
     this.noise = ctx.createBuffer(1, len, ctx.sampleRate);
@@ -164,6 +177,24 @@ export class GameAudio {
     return buf;
   }
 
+  /** Reverb de exterior: ecos discretos (cada vez mais fracos e abafados) + cauda difusa. */
+  _outdoorImpulse(seconds) {
+    const rate = this.ctx.sampleRate, n = Math.floor(rate * seconds);
+    const buf = this.ctx.createBuffer(2, n, rate);
+    for (let c = 0; c < 2; c++) {
+      const d = buf.getChannelData(c);
+      for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 4) * 0.25;
+      let t = 0.05 + Math.random() * 0.03;
+      for (let k = 0; k < 14 && t < seconds - 0.2; k++) {
+        const amp = 0.9 * Math.pow(0.78, k), w = Math.floor(rate * (0.004 + k * 0.002));
+        const at = Math.floor(t * rate);
+        for (let j = 0; j < w; j++) d[at + j] += (Math.random() * 2 - 1) * amp * (1 - j / w);
+        t += 0.08 + Math.random() * 0.22 + k * 0.02;
+      }
+    }
+    return buf;
+  }
+
   setVolume(v) {
     this.volume = v;
     if (this.master) this.master.gain.value = v;
@@ -173,6 +204,7 @@ export class GameAudio {
 
   /** Atualiza a posição/orientação do "ouvido" (câmera). */
   setListener(pos, forward, up) {
+    this.listenerPos.x = pos.x; this.listenerPos.y = pos.y; this.listenerPos.z = pos.z;
     if (!this.ctx) return;
     const L = this.ctx.listener;
     const t = this.ctx.currentTime;
@@ -188,16 +220,29 @@ export class GameAudio {
 
   /** Nó 3D numa posição do mundo, ligado aos efeitos. */
   _panner(pos, refDistance = 2) {
-    const p = this.ctx.createPanner();
+    const ctx = this.ctx;
+    const p = ctx.createPanner();
     p.panningModel = 'HRTF';
     p.distanceModel = 'inverse';
     p.refDistance = refDistance;
-    p.maxDistance = 60;
+    p.maxDistance = 400;
     p.rolloffFactor = 1.2;
     if (p.positionX) { p.positionX.value = pos.x; p.positionY.value = pos.y; p.positionZ.value = pos.z; }
     else p.setPosition(pos.x, pos.y, pos.z);
+    // absorção do ar (longe perde os agudos) e oclusão (parede no caminho abafa)
+    const L = this.listenerPos;
+    const dist = Math.hypot(pos.x - L.x, pos.y - L.y, pos.z - L.z);
+    let cut = Math.max(1800, 20000 * Math.exp(-dist / 70)), g = 1;
+    if (dist > 1.5 && this.occluder?.(L, pos)) { cut = Math.min(cut, 650); g = 0.5; }
+    const f = ctx.createBiquadFilter();
+    f.type = 'lowpass'; f.frequency.value = cut; f.Q.value = 0.5;
+    const gn = ctx.createGain(); gn.gain.value = g;
+    f.connect(gn).connect(p);
     p.connect(this.sfx);
-    return p;
+    f._chain = [gn, p];
+    const orig = f.disconnect.bind(f);
+    f.disconnect = () => { orig(); for (const n of f._chain) n.disconnect(); };
+    return f;
   }
 
   /** Executa `fn` mandando os sons para uma posição 3D. */
@@ -1043,6 +1088,48 @@ export class GameAudio {
     }
   }
 
+  /** Usar item: curativo (pano rasgando, fita), comida (embalagem, mastigar), água (tampa, goles). */
+  useItem(kind) {
+    if (!this.ctx) return;
+    if (kind === 'bandage') {
+      this._play('cloth', { gain: 0.5, rate: 1.1 });
+      for (let i = 0; i < 3; i++) this._burst({ duration: 0.18, freq: 3500 + i * 500, q: 0.8, gain: 0.12, type: 'bandpass', delay: 0.5 + i * 0.55, attack: 0.03 });
+      this._play('cloth', { gain: 0.35, rate: 0.9, delay: 1.9 });
+    } else if (kind === 'food') {
+      this._play('cloth', { gain: 0.3, rate: 1.5 });
+      for (let i = 0; i < 3; i++) this._burst({ duration: 0.12, freq: 900, q: 1.2, gain: 0.3, type: 'bandpass', delay: 0.9 + i * 0.4 });
+      for (let i = 0; i < 4; i++) this._burst({ duration: 0.06, freq: 2600, q: 2, gain: 0.08, type: 'bandpass', delay: 0.95 + i * 0.37 });
+    } else {
+      this._play('metal_click', { gain: 0.25, rate: 1.6 });
+      for (let i = 0; i < 4; i++) {
+        this._tone(260 + Math.random() * 60, 0.13, 0.08, 'sine', 0.5 + i * 0.28, 0.6, 0, 700);
+        this._burst({ duration: 0.1, freq: 500, q: 2, gain: 0.12, type: 'bandpass', delay: 0.52 + i * 0.28 });
+      }
+    }
+  }
+
+  /** Revistar: gavetas/portas abrindo, coisas sendo mexidas. */
+  search(kind) {
+    if (!this.ctx) return;
+    const metal = kind === 'locker' || kind === 'car' || kind === 'fridge';
+    this._play(metal ? 'metal_latch' : 'creak', { gain: 0.45, rate: metal ? 0.9 : 1.2 });
+    for (let i = 0; i < 4; i++) {
+      this._play(metal ? 'imp_metal_light' : i % 2 ? 'imp_plank_medium' : 'imp_wood_light', { gain: 0.22, rate: 1 + Math.random() * 0.3, delay: 0.35 + i * 0.32 });
+      this._play('cloth', { gain: 0.2, rate: 1.2, delay: 0.5 + i * 0.3 });
+    }
+    if (Math.random() < 0.5) this._play('coins', { gain: 0.15, delay: 1.2 });
+  }
+
+  /** Tiroteio ao longe (atmosfera): estampidos abafados, com o eco do vale. */
+  _farGunfire() {
+    const n = 1 + Math.floor(Math.random() * 4);
+    const pan = this.ctx.createStereoPanner(); pan.pan.value = Math.random() * 1.8 - 0.9;
+    pan.connect(this.outConv);
+    pan.connect(this.master);
+    for (let i = 0; i < n; i++) this._play('gun_shot', { gain: 0.07 + Math.random() * 0.05, rate: 0.7, lowpass: 650, delay: i * (0.18 + Math.random() * 0.5), dest: pan });
+    setTimeout(() => pan.disconnect(), 8000);
+  }
+
   /** Corvo grasnando ao longe. */
   _crow() {
     const pan = Math.random() * 1.6 - 0.8;
@@ -1064,8 +1151,15 @@ export class GameAudio {
     this.under.frequency.setTargetAtTime(underwater ? 500 : 20000, t, 0.08);
     // ambiente gravado: pássaros e insetos somem dentro de casa e debaixo d'água
     const out = (1 - this.indoor * 0.8) * (underwater ? 0.1 : 1);
-    if (this.ambBirds) this.ambBirds.gain.setTargetAtTime(0.16 * out, t, 0.5);
-    if (this.ambInsects) this.ambInsects.gain.setTargetAtTime(0.07 * out, t, 0.5);
+    // de noite: sem pássaros, mais grilos/insetos
+    const nt = this.night;
+    if (this.ambBirds) this.ambBirds.gain.setTargetAtTime(0.16 * out * (1 - nt), t, 0.5);
+    if (this.ambInsects) this.ambInsects.gain.setTargetAtTime((0.07 + nt * 0.16) * out, t, 0.5);
+    this.outSend.gain.setTargetAtTime(0.16 * (1 - this.indoor * 0.7), t, 0.3);
+    if (!underwater) {
+      this.farTimer -= dt;
+      if (this.farTimer <= 0) { if (this.has('gun_shot')) this._farGunfire(); this.farTimer = 50 + Math.random() * 110; }
+    }
     if (this.windGain) {
       this.windGain.gain.value = 0.05 * (1 - this.indoor * 0.75) * (underwater ? 0.2 : 1);
       this.windFilter.Q.value = 0.6 + this.indoor * 1.5;

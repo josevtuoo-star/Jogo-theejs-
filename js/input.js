@@ -7,7 +7,8 @@ export const isTouchDevice =
   matchMedia('(pointer: coarse)').matches ||
   (navigator.maxTouchPoints > 0 && !matchMedia('(pointer: fine)').matches);
 
-const JOY_RADIUS = 55;
+const JOY_RADIUS = 62;
+const RUN_LOCK_PULL = 1.55; // arrastar o joystick bem acima do raio trava a corrida
 const PAD_DEAD = 0.18;
 const PAD_LOOK_SPEED = 3.0; // rad/s com o analógico no máximo
 
@@ -47,6 +48,7 @@ export class Input {
     this.touchHeld = new Set();      // botões segurados (pular)
     this.touchSprint = false;        // botão correr (alternar)
     this.touchCrouch = false;        // botão agachar (alternar)
+    this.autoRun = false;            // corrida travada (joystick puxado bem para cima)
 
     // controle (gamepad)
     this.pad = { connected: false, move: { x: 0, y: 0 }, sprintToggle: false, prev: [] };
@@ -65,9 +67,10 @@ export class Input {
       KeyC: 'crouchToggle',
       KeyV: 'view',
       KeyF: 'use',
-      KeyL: 'light',
-      Digit1: 'equip_hands',
-      Digit2: 'equip_pistol',
+      KeyG: 'melee',
+      Digit1: 'item_bandage',
+      Digit2: 'item_food',
+      Digit3: 'item_water',
       KeyR: 'reload',
       KeyX: 'walkToggle',
     };
@@ -100,6 +103,7 @@ export class Input {
       }
       if (e.button === 0) { this.mouseDown = true; this.pressed.add('attack'); }
       if (e.button === 2) this.mouseRight = true;
+      if (e.button === 1) { e.preventDefault(); this.pressed.add('melee'); }
     });
     this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     // rodinha do mouse: troca de item (para baixo = próximo, para cima = anterior)
@@ -188,6 +192,7 @@ export class Input {
       if (!ui || ui.classList.contains('hidden')) return;
       if (e.clientX < window.innerWidth * 0.45) {
         if (this.joy.id === null) {
+          this._setAutoRun(false); // tocar no joystick destrava a corrida
           this.joy.id = e.pointerId;
           this.joy.ox = e.clientX; this.joy.oy = e.clientY;
           this.joy.x = 0; this.joy.y = 0;
@@ -206,6 +211,9 @@ export class Input {
       if (e.pointerId === this.joy.id) {
         let dx = e.clientX - this.joy.ox;
         let dy = e.clientY - this.joy.oy;
+        // puxou bem para cima: trava a corrida (continua correndo depois de soltar)
+        if (dy < -JOY_RADIUS * RUN_LOCK_PULL && Math.abs(dx) < JOY_RADIUS * 0.8) this._setAutoRun(true);
+        this.joyBase.classList.toggle('lock-hint', dy < -JOY_RADIUS * 0.9);
         const len = Math.hypot(dx, dy);
         if (len > JOY_RADIUS) { dx *= JOY_RADIUS / len; dy *= JOY_RADIUS / len; }
         this.joy.x = dx / JOY_RADIUS;
@@ -215,15 +223,20 @@ export class Input {
         const dx = e.clientX - this.look.x;
         const dy = e.clientY - this.look.y;
         this.look.x = e.clientX; this.look.y = e.clientY;
-        this.lookDX += dx * this.touchSensitivity * this.sensitivity;
-        this.lookDY += dy * this.touchSensitivity * this.sensitivity * (this.invertY ? -1 : 1);
+        // aceleração: movimentos lentos são precisos, um arrasto rápido vira a câmera longe
+        const now = performance.now(), dtm = Math.max(4, now - (this.look.t ?? now - 16));
+        this.look.t = now;
+        const spd = Math.hypot(dx, dy) / dtm; // px/ms
+        const gain = 0.75 + Math.min(1.1, spd * 0.55);
+        this.lookDX += dx * gain * this.touchSensitivity * this.sensitivity;
+        this.lookDY += dy * gain * this.touchSensitivity * this.sensitivity * (this.invertY ? -1 : 1);
       }
     }, { passive: false });
 
     const end = (e) => {
       if (e.pointerId === this.joy.id) {
         this.joy.id = null; this.joy.x = 0; this.joy.y = 0;
-        this.joyBase.classList.remove('active');
+        this.joyBase.classList.remove('active', 'lock-hint');
         this.joyBase.style.left = '';
         this.joyBase.style.top = '';
         this._updateKnob();
@@ -233,6 +246,13 @@ export class Input {
     };
     window.addEventListener('pointerup', end);
     window.addEventListener('pointercancel', end);
+  }
+
+  _setAutoRun(on) {
+    if (this.autoRun === on) return;
+    this.autoRun = on;
+    document.getElementById('run-lock')?.classList.toggle('on', on);
+    if (on && navigator.vibrate) navigator.vibrate(15);
   }
 
   _updateKnob() {
@@ -261,6 +281,7 @@ export class Input {
       y += this.pad.move.y;
     }
 
+    if (this.autoRun && this.joy.id === null) y += 1;
     if (this.joy.id !== null) {
       const dead = 0.12;
       const jx = Math.abs(this.joy.x) > dead ? this.joy.x : 0;
@@ -275,7 +296,7 @@ export class Input {
 
   get sprint() {
     const joyFull = this.joy.id !== null && Math.hypot(this.joy.x, this.joy.y) > 0.95 && this.joy.y < -0.5;
-    return this.keys.has('ShiftLeft') || this.keys.has('ShiftRight') || this.touchSprint || joyFull ||
+    return this.keys.has('ShiftLeft') || this.keys.has('ShiftRight') || this.touchSprint || joyFull || this.autoRun ||
       this.pad.sprintToggle || (!this.gunMode && this._padHeld(PAD.LT));
   }
 
@@ -362,9 +383,11 @@ export class Input {
     if (down(PAD.A)) this.pressed.add('jump');
     if (down(PAD.B)) this.pressed.add('crouchToggle');
     if (down(PAD.X)) this.pressed.add('use');
-    if (down(PAD.UP)) this.pressed.add('light');
-    if (down(PAD.LEFT)) this.pressed.add('swapItem');
-    if (down(PAD.RIGHT)) this.pressed.add('walkToggle');
+    if (down(PAD.UP)) this.pressed.add('item_bandage');
+    if (down(PAD.LEFT)) this.pressed.add('item_food');
+    if (down(PAD.RIGHT)) this.pressed.add('item_water');
+    if (down(PAD.RB) && this._padHeld(PAD.LB)) this.pressed.add('melee');
+    if (down(PAD.L3) && this._padHeld(PAD.LB)) this.pressed.add('walkToggle');
     if (down(PAD.DOWN)) this.pressed.add('reload');
     if (down(PAD.Y)) this.pressed.add('view');
     if (down(PAD.RT)) this.pressed.add('attack');
@@ -379,5 +402,6 @@ export class Input {
     this.lookDX = this.lookDY = 0;
     this.mouseDown = false;
     this.mouseRight = false;
+    this._setAutoRun?.(false);
   }
 }

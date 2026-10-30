@@ -219,6 +219,17 @@ export class PropSystem {
         b.grounded = false;
         this._collideOctree(b, this.octree);
         for (const o of this.extraColliders) this._collideOctree(b, o.octree);
+        // chão do relevo (fora do Octree)
+        const gy = this.groundHeight ? this.groundHeight(b.pos.x, b.pos.z) : -Infinity;
+        if (b.pos.y - b.r < gy) {
+          b.pos.y = gy + b.r;
+          if (b.vel.y < 0) {
+            if (b.vel.y < -2.5 && b.soundCooldown <= 0) { this.onImpact?.(b.type.sound, Math.min(1, -b.vel.y / 8), b.pos); b.soundCooldown = 0.2; }
+            b.vel.y *= -0.25;
+            if (Math.abs(b.vel.y) < 0.4) b.vel.y = 0;
+          }
+          b.grounded = true;
+        }
       }
       if (b.grounded) {
         // atrito no chão (rolando perde menos velocidade)

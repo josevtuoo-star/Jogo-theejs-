@@ -28,18 +28,23 @@
     <div id="damage-flash" class="vignette"></div>
 
     <div id="compass"><div id="compass-strip"></div><div id="compass-needle"></div></div>
+    <div id="clock">16:30</div>
     <div id="vignette"></div>
     <div id="crosshair"><i></i><i></i><i></i><i></i></div>
     <div id="hint" class="hidden"></div>
 
     <div id="bars">
       <div class="bar"><span class="bar-label">VIDA</span><div class="bar-track"><div id="health-fill" class="bar-fill health"></div></div></div>
+      <div class="bar"><span class="bar-label">FÔLEGO</span><div class="bar-track"><div id="stamina-fill" class="bar-fill stamina"></div></div></div>
+      <div class="bar small"><span class="bar-label">FOME</span><div class="bar-track"><div id="food-fill" class="bar-fill food"></div></div></div>
+      <div class="bar small"><span class="bar-label">SEDE</span><div class="bar-track"><div id="water-fill" class="bar-fill water"></div></div></div>
     </div>
     <div id="state-label">PARADO</div>
     <div id="equip-label">MÃOS LIVRES</div>
     <div id="ammo" class="hidden"><span id="ammo-loaded">6</span><small> / <span id="ammo-reserve">12</span></small><em id="ammo-kind">.357</em></div>
     <div id="weapon-bar"></div>
     <div id="toast"></div>
+    <div id="progress" class="hidden"><i></i></div>
     <div id="fps"></div>
   </div>
 
@@ -57,14 +62,14 @@
     <div id="joy-base"><div id="joy-knob"></div></div>
     <button class="tbtn" id="btn-pause" data-action="pause" aria-label="Pausar" data-icon="pause"></button>
     <button class="tbtn" id="btn-view" data-action="view" aria-label="Trocar câmera" data-icon="view"></button>
-    <button class="tbtn" id="btn-light" data-action="light" aria-label="Lanterna" data-icon="light"></button>
     <button class="tbtn" id="btn-sprint" data-action="sprint" data-icon="sprint" data-label="CORRER"></button>
     <button class="tbtn" id="btn-crouch" data-action="crouch" data-icon="crouch" data-label="AGACHAR"></button>
     <button class="tbtn" id="btn-attack" data-action="attack" data-look="1" aria-label="Atacar" data-icon="fist"></button>
     <button class="tbtn hidden" id="btn-use" data-action="use" data-icon="use" data-label="USAR"></button>
-    <button class="tbtn" id="btn-swap" data-action="swapItem" aria-label="Trocar item" data-icon="knife" data-label="TROCAR"></button>
-    <button class="tbtn hidden" id="btn-aim" data-action="aim" data-look="1" data-icon="aim" data-label="MIRAR"></button>
-    <button class="tbtn hidden" id="btn-reload" data-action="reload" aria-label="Recarregar" data-icon="reload" data-label="RECARR."></button>
+    <button class="tbtn" id="btn-melee" data-action="melee" aria-label="Golpe" data-icon="fist" data-label="GOLPE"></button>
+    <button class="tbtn" id="btn-aim" data-action="aim" data-look="1" data-icon="aim" data-label="MIRAR"></button>
+    <button class="tbtn" id="btn-reload" data-action="reload" aria-label="Recarregar" data-icon="reload" data-label="RECARR."></button>
+    <div id="run-lock">CORRIDA TRAVADA</div>
     <button class="tbtn" id="btn-jump" data-action="jump" data-icon="jump" data-label="PULAR"></button>
   </div>
 
@@ -72,8 +77,8 @@
   <div id="menu">
     <div class="menu-card">
       <h1>SOBREVIVÊNCIA</h1>
-      <p class="subtitle">Etapa 1 — Personagem jogável</p>
-      <p class="tagline">Outono. A cidade está vazia há semanas. Explore, escale, sobreviva.</p>
+      <p class="subtitle">Mapa aberto · Sobrevivência</p>
+      <p class="tagline">Outono. A região está vazia há semanas. Explore as vilas, a fazenda, o bloqueio militar e a mata — revistando tudo para comer, beber e se curar.</p>
       <div id="loading">Carregando mundo...</div>
       <button id="play-btn" class="hidden">JOGAR</button>
 
@@ -101,57 +106,41 @@
         <div class="col pc-only">
           <h3>PC</h3>
           <ul>
-            <li><b>W A S D</b> mover (trotar) · <b>Mouse</b> olhar</li>
-            <li><b>Shift</b> correr · <b>X</b> andar devagar · <b>Espaço</b> pular</li>
-            <li><b>1</b> mãos livres · <b>2</b> pistola Colt · <b>rodinha</b> troca (saca/guarda no coldre)</li>
-            <li>Pistola: <b>botão direito</b> mirar · <b>clique</b> atirar · <b>R</b> recarregar</li>
-            <li><b>F</b> perto de caixas .357: pegar munição</li>
-            <li><b>Espaço</b> perto de obstáculo: passar por cima / subir / escalar</li>
-            <li>Pulando contra uma borda alta: agarra e fica pendurado</li>
-            <li><b>W</b> na escada de mão: subir</li>
-            <li><b>C</b> / <b>Ctrl</b> agachar (correndo: deslizar)</li>
-            <li><b>C</b> antes de cair no chão: rolar</li>
-            <li><b>Q</b> / <b>E</b> inclinar (espiar)</li>
-            <li><b>Clique</b> soco (cliques seguidos = jab e direto; segurar = gancho)</li>
-            <li><b>Segurar clique</b> carrega o golpe forte, soltar desfere</li>
-            <li><b>F</b> abrir/fechar porta</li>
-            <li><b>L</b> lanterna · <b>V</b> câmera</li>
-            <li>Na água: <b>Ctrl</b> mergulha, <b>Espaço</b> sobe</li>
-            <li><b>Esc</b> pausar</li>
+            <li><b>W A S D</b> mover · <b>Mouse</b> olhar · <b>Shift</b> correr (gasta fôlego) · <b>X</b> andar devagar</li>
+            <li><b>Botão direito</b> mirar · <b>Clique</b> atirar (sem mirar ele levanta a arma) · <b>R</b> recarregar</li>
+            <li><b>G</b> ou <b>botão do meio</b> golpe (jab / coronhada)</li>
+            <li><b>1</b> curativo · <b>2</b> comer · <b>3</b> beber</li>
+            <li><b>F</b> abrir portas, pegar munição, <b>revistar</b> armários, geladeiras, caixas, porta-malas e barracas</li>
+            <li><b>Espaço</b> pular / passar por cima / subir / escalar · pulando contra borda alta: fica pendurado</li>
+            <li><b>C</b> / <b>Ctrl</b> agachar (correndo: deslizar; antes de cair: rolar) · <b>Q</b>/<b>E</b> espiar</li>
+            <li><b>V</b> câmera (GoPro / 3ª pessoa) · na água: <b>Ctrl</b> mergulha, <b>Espaço</b> sobe · <b>Esc</b> pausar</li>
           </ul>
         </div>
         <div class="col touch-only">
           <h3>Android</h3>
           <ul>
-            <li><b>Lado esquerdo</b> joystick (pouco = andar, mais = trotar)</li>
-            <li><b>TROCAR</b> mãos livres ↔ pistola</li>
-            <li>Pistola: <b>MIRAR</b> (liga/desliga) · <b>ATIRAR</b> · <b>RECARR.</b></li>
-            <li>Arraste o dedo sobre <b>ATIRAR</b>/<b>MIRAR</b> para mirar sem soltar</li>
-            <li><b>Lado direito</b> arrastar para olhar</li>
-            <li>Joystick no limite = correr</li>
-            <li><b>PULAR</b> perto de obstáculo: escalar</li>
-            <li><b>AGACHAR</b> correndo: deslizar</li>
-            <li><b>USAR</b> aparece perto de portas</li>
-            <li><b>Botão de ataque</b>: toques seguidos = combo · segurar = golpe forte</li>
+            <li><b>Lado esquerdo</b>: joystick em qualquer lugar (pouco = andar, mais = trotar, no limite = correr)</li>
+            <li><b>Puxe o joystick bem para cima</b>: trava a corrida (toque nele de novo para destravar)</li>
+            <li><b>Lado direito</b>: arrastar para olhar (rápido gira mais, devagar é preciso)</li>
+            <li><b>ATIRAR</b> e <b>MIRAR</b>: arraste o dedo sobre eles para mirar sem soltar · <b>RECARR.</b> · <b>GOLPE</b></li>
+            <li>Barra de itens no topo: curativo, comida, água</li>
+            <li><b>USAR</b> aparece perto de portas, munição e coisas para revistar</li>
+            <li><b>PULAR</b> perto de obstáculo: escalar · <b>AGACHAR</b> correndo: deslizar</li>
           </ul>
         </div>
         <div class="col">
           <h3>Controle</h3>
           <ul>
-            <li><b>Analógicos</b> mover / olhar</li>
-            <li><b>A</b> pular/escalar · <b>B</b> agachar/deslizar</li>
-            <li><b>L3</b> ou <b>LT</b> correr · <b>RT</b> atacar (segurar = forte)</li>
-            <li>Pistola: <b>LT</b> mirar · <b>RT</b> atirar · <b>↓</b> recarregar</li>
-            <li><b>LB</b> / <b>RB</b> inclinar</li>
-            <li><b>X</b> usar/porta · <b>↑</b> lanterna · <b>Y</b> câmera</li>
-            <li><b>←</b> mãos/pistola · <b>→</b> andar devagar</li>
+            <li><b>Analógicos</b> mover / olhar · <b>L3</b> correr</li>
+            <li><b>A</b> pular/escalar · <b>B</b> agachar/deslizar · <b>X</b> usar/revistar · <b>Y</b> câmera</li>
+            <li><b>LT</b> mirar · <b>RT</b> atirar · <b>↓</b> recarregar · <b>LB+RB</b> golpe</li>
+            <li><b>↑</b> curativo · <b>←</b> comer · <b>→</b> beber · <b>LB</b>/<b>RB</b> espiar</li>
           </ul>
         </div>
-      </div>
     </div>
   </div>
 
-  <div id="credits">Modelos 3D (CC BY 4.0): “Cyberpunk Police bot” por everlasting17th · “Zombie Walk Test” por OSCAR CREATIVO · “FPS pistol animations” por Cransh · “Colt M1911” por Ole Gunnar Isager — Animações: Mesh2Motion (CC0) · Sons: Kenney, Free Firearm Sound Library (CC0), Godot demos (MIT) · Texturas e céu: Poly Haven (CC0), three.js (MIT)</div>
+  <div id="credits">Personagem: “enemy” por DJMaesen (CC BY 4.0) · Animações: Mesh2Motion (CC0) · Sons: Kenney, Free Firearm Sound Library (CC0), Godot demos (MIT) · Texturas e céu: Poly Haven (CC0), three.js (MIT)</div>
 
   <div id="rotate-hint">Gire o celular para a horizontal ↻</div>
 

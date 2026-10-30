@@ -70,6 +70,7 @@ const _v = new THREE.Vector3();
 const _forward = new THREE.Vector3();
 const _right = new THREE.Vector3();
 const _wish = new THREE.Vector3();
+const _tn = new THREE.Vector3();
 const _push = new THREE.Vector3();
 const _saveStart = new THREE.Vector3();
 const _saveEnd = new THREE.Vector3();
@@ -86,7 +87,8 @@ function damp(a, b, lambda, dt) {
 }
 
 export class Player {
-  constructor(octree, spawn, ladders = [], { waterAt = () => -Infinity, doors = [] } = {}) {
+  constructor(octree, spawn, ladders = [], { waterAt = () => -Infinity, doors = [], heightAt = null } = {}) {
+    this.heightAt = heightAt; // relevo do terreno (colisão analítica, fora do Octree)
     this.octree = octree;
     this.ladders = ladders;
     this.waterAt = waterAt;
@@ -132,6 +134,10 @@ export class Player {
 
     this.health = 100;
     this.dead = false;
+    this.stamina = 100;       // fôlego: correr, pular, escalar e ficar pendurado gastam
+    this.exhausted = false;   // zerou: só volta a correr com 30
+    this.staminaRegen = 1;    // multiplicador (fome/sede/dor reduzem)
+    this._staminaCd = 0;
 
     this.climb = null;        // animação de escalada em andamento
     this.ledgeAhead = null;   // obstáculo escalável à frente (para a dica na tela)
@@ -159,6 +165,8 @@ export class Player {
     this.pitch = 0;
     this.health = 100;
     this.dead = false;
+    this.stamina = 100;
+    this.exhausted = false;
     this.climb = null;
     this.slide = null;
     this.ladder = null;
@@ -310,8 +318,8 @@ export class Player {
     }
     this.height = newHeight;
 
-    // ---------- corrida (sem limite de fôlego) ----------
-    const canSprint = wantSprint && !this.crouched && this.stumble <= 0;
+    // ---------- corrida (gasta fôlego) ----------
+    const canSprint = wantSprint && !this.crouched && this.stumble <= 0 && !this.exhausted;
     this.sprinting = canSprint && (this.onFloor || this.sprinting);
 
     // ---------- velocidade horizontal desejada ----------
@@ -341,8 +349,15 @@ export class Player {
     _wish.multiplyScalar(speed);
     this.speedTarget = speed;
 
-    // cansaço só para a respiração ficar ofegante (não há barra de fôlego)
-    this.exertion = Math.max(0, Math.min(1, this.exertion + (this.sprinting && this.horizontalSpeed > 4 ? 0.07 : -0.05) * dt));
+    // fôlego: correr gasta; parado/andando recupera (depois de um instante)
+    if (this.sprinting && this.horizontalSpeed > 4) this.useStamina(13 * dt);
+    if (this.hang) this.useStamina(5 * dt);
+    if (this.swimming && this.horizontalSpeed > 1.5) this.useStamina(4 * dt);
+    this._staminaCd -= dt;
+    if (this._staminaCd <= 0) this.stamina = Math.min(100, this.stamina + (this.horizontalSpeed < 0.5 ? 24 : 15) * this.staminaRegen * dt);
+    if (this.exhausted && this.stamina > 30) this.exhausted = false;
+    // respiração ofegante acompanha o fôlego
+    this.exertion = Math.max(0, Math.min(1, damp(this.exertion, 1 - this.stamina / 100, 1.5, dt)));
 
     if (this.slide) {
       // deslizando: perde velocidade aos poucos, dá para mirar um pouco com o movimento lateral
@@ -390,7 +405,9 @@ export class Player {
         }
       }
       if (!this.crouched) {
-        this.velocity.y = JUMP_VELOCITY;
+        // sem fôlego o pulo sai mais baixo
+        this.velocity.y = JUMP_VELOCITY * (this.stamina > 10 ? 1 : 0.8);
+        this.useStamina(9);
         this.onFloor = false;
         this.timeSinceGround = COYOTE_TIME;
         this.jumpBuffer = 0;
@@ -684,6 +701,7 @@ export class Player {
   }
 
   _startClimb(ledge, input) {
+    this.useStamina(ledge.kind === 'climb' || ledge.kind === 'pullup' ? 14 : 6);
     this.climb = { ...ledge, seg: 0, t: 0, elapsed: 0, total: ledge.durations.reduce((a, b) => a + b, 0) };
     if (ledge.crouch) { this.crouched = true; this.crouchToggle = true; }
     this.jumpBuffer = 0;
@@ -739,6 +757,36 @@ export class Player {
    */
   _collide() {
     for (const oct of this._octrees) this._collideWith(oct);
+    this._collideTerrain();
+  }
+
+  /** Gasta fôlego (e segura a recuperação por um instante). */
+  useStamina(n) {
+    this.stamina = Math.max(0, this.stamina - n);
+    this._staminaCd = 0.9;
+    if (this.stamina <= 0) this.exhausted = true;
+  }
+
+  /** Terreno: esfera de baixo da cápsula contra o plano do relevo sob ela. */
+  _collideTerrain() {
+    if (!this.heightAt) return;
+    const c = this.collider.start, e = 0.35;
+    const h = this.heightAt(c.x, c.z);
+    if (c.y - h > RADIUS * 2) return;
+    _tn.set(this.heightAt(c.x - e, c.z) - this.heightAt(c.x + e, c.z), 2 * e, this.heightAt(c.x, c.z - e) - this.heightAt(c.x, c.z + e)).normalize();
+    const d = (c.y - h) * _tn.y;
+    if (d >= RADIUS) return;
+    const depth = RADIUS - d;
+    if (_tn.y >= MIN_FLOOR_NORMAL_Y) {
+      this.onFloor = true;
+      this.floorNormal.copy(_tn);
+      this.collider.translate(_push.set(0, depth / _tn.y, 0));
+      if (this.velocity.y < 0) this.velocity.y = 0;
+    } else {
+      const vn = this.velocity.dot(_tn);
+      if (vn < 0) this.velocity.addScaledVector(_tn, -vn);
+      this.collider.translate(_push.copy(_tn).multiplyScalar(depth));
+    }
   }
 
   _collideWith(octree) {

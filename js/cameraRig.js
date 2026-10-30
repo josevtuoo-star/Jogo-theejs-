@@ -142,6 +142,11 @@ export class CameraRig {
       // aproxima rápido, afasta devagar
       this.currentTpDist = dist < this.currentTpDist ? dist : damp(this.currentTpDist, dist, 4, dt);
       this.camera.position.copy(_pivot).addScaledVector(_dir, this.currentTpDist);
+      // o relevo não está no Octree: a câmera não entra no chão
+      if (this.groundHeight) {
+        const gy = this.groundHeight(this.camera.position.x, this.camera.position.z) + 0.35;
+        if (this.camera.position.y < gy) this.camera.position.y = gy;
+      }
     }
   }
 }

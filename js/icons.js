@@ -20,6 +20,9 @@ export const ICONS = {
   shotgun: svg('<path d="M1.5 9.2h13.8l.9-.9h6.3v2.6H11.4l-.9 1.3H8.3l-1.6 1.2-2.3 4.2H1.6l1.8-5.6H1.5z"/><path d="M14.5 10.9h8"/><path d="M8.6 12.2c.2 1.1 1 1.6 2 1.3"/>'),
   crossbow: svg('<path d="M12 21V8"/><path d="M3 9.5C5.5 6 9 4.5 12 4.5s6.5 1.5 9 5"/><path d="M3 9.5L12 15l9-5.5"/><path d="M12 4.5V2.5"/><path d="M10 17.5h4l-.8 3.5h-2.4z"/>'),
   bat: svg('<path d="M4.2 19.8l1.5 1.5"/><path d="M5 20.5L18 7.5c1.5-1.5 2.8-2.4 3.3-1.9s-.4 1.8-1.9 3.3L6.5 22"/><path d="M13.5 10.3l1.6 1.6M15.6 8.2l1.6 1.6M17.6 6.3l1.4 1.4"/>'),
+  bandage: svg('<rect x="2.5" y="8" width="19" height="8" rx="4" transform="rotate(-35 12 12)"/><path d="M9.5 9.5l5 5M11 11h.01M13 13h.01M11 13h.01M13 11h.01"/>'),
+  food: svg('<path d="M5 9h14v9.5a2.5 2.5 0 0 1-2.5 2.5h-9A2.5 2.5 0 0 1 5 18.5z"/><ellipse cx="12" cy="9" rx="7" ry="2.2"/><path d="M8 14h8"/>'),
+  water: svg('<path d="M10 2.5h4v2.5l1.5 2v13a1.5 1.5 0 0 1-1.5 1.5h-4A1.5 1.5 0 0 1 8.5 20V7L10 5z"/><path d="M8.5 11h7M8.5 16h7"/>'),
   swap: svg('<path d="M4 8h14l-3.5-3.5"/><path d="M20 16H6l3.5 3.5"/>'),
 };
 

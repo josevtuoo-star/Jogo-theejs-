@@ -241,18 +241,17 @@ body.playing #credits { display: none; }
 #btn-jump   { width: 76px; height: 76px; right: var(--R); bottom: 24px; }
 #btn-crouch { right: calc(var(--R) + 100px); bottom: 14px; }
 #btn-sprint { right: calc(var(--R) + 8px); bottom: 116px; }
-#btn-swap   { width: 56px; height: 56px; right: calc(var(--R) + 14px); bottom: 192px; }
+#btn-melee  { width: 56px; height: 56px; right: calc(var(--R) + 14px); bottom: 192px; }
 #btn-aim    { width: 64px; height: 64px; right: calc(var(--R) + 200px); bottom: 150px; }
 #btn-reload { width: 54px; height: 54px; right: calc(var(--R) + 204px); bottom: 76px; }
 #btn-use    { width: 66px; height: 66px; right: calc(var(--R) + 280px); bottom: 40px; border-color: #e6dcc0; background: rgba(120,100,50,0.55); }
 /* topo: pausa, câmera, lanterna */
-#btn-pause, #btn-view, #btn-light { width: 44px; height: 44px; top: 16px; bottom: auto; transform-origin: top right; }
+#btn-pause, #btn-view { width: 44px; height: 44px; top: 16px; bottom: auto; transform-origin: top right; }
 #btn-pause  { right: var(--R); }
 #btn-view   { right: calc(var(--R) + 52px); }
-#btn-light  { right: calc(var(--R) + 104px); }
-#btn-pause .ico, #btn-view .ico, #btn-light .ico { width: 52%; height: 52%; }
+#btn-pause .ico, #btn-view .ico { width: 52%; height: 52%; }
 /* munição no celular: embaixo da barra de vida (não cobre botões) */
-body.touch #ammo { bottom: auto; right: auto; top: 46px; left: max(18px, env(safe-area-inset-left)); text-align: left; font-size: 20px; }
+body.touch #ammo { bottom: auto; right: auto; top: 92px; left: max(18px, env(safe-area-inset-left)); text-align: left; font-size: 20px; }
 
 /* clima de cinema: vinheta suave e granulado de filme bem leve */
 #vignette { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(ellipse at center, transparent 55%, rgba(10,8,6,0.38) 100%); }
@@ -277,3 +276,27 @@ body.touch #ammo { bottom: auto; right: auto; top: 46px; left: max(18px, env(saf
 body.touch #weapon-bar { bottom: auto; top: 44px; gap: 4px; }
 body.touch .wslot { width: 40px; height: 40px; }
 body.touch .wslot .k { display: none; }
+
+/* fôlego, fome, sede */
+.bar-fill.stamina { background: linear-gradient(90deg, #c9b25a, #e8d78a); }
+.bar-fill.food { background: linear-gradient(90deg, #a8672e, #d79a52); }
+.bar-fill.water { background: linear-gradient(90deg, #3b7fa8, #6db4d8); }
+.bar.small .bar-track { height: 4px; }
+.bar.small .bar-label { font-size: 8px; }
+#bars.exhausted .stamina { animation: blink 0.6s steps(2) infinite; }
+@keyframes blink { 50% { opacity: 0.35; } }
+/* barra de itens (curativo, comida, água) */
+.wslot .n { font-size: 10px; }
+.wslot.empty { opacity: 0.4; }
+.wslot.busy { background: rgba(170,130,60,0.45); border-color: #f2dca2; }
+/* progresso de revistar/usar item */
+#progress { position: absolute; left: 50%; top: 58%; width: 180px; height: 5px; transform: translateX(-50%); background: rgba(0,0,0,0.45); border: 1px solid rgba(255,255,255,0.25); border-radius: 3px; overflow: hidden; }
+#progress i { display: block; height: 100%; width: 0; background: #e8d78a; }
+#progress.hidden { display: none; }
+/* corrida travada (celular: empurre o joystick bem para cima) */
+#run-lock { position: absolute; left: max(24px, env(safe-area-inset-left)); bottom: 210px; padding: 5px 10px; border-radius: 12px; font: 600 10px/1 system-ui, sans-serif; letter-spacing: 0.12em; color: #fff6dc; background: rgba(170,130,60,0.6); border: 1px solid #f2dca2; opacity: 0; transition: opacity 0.15s; pointer-events: none; }
+#run-lock.on { opacity: 1; }
+#joy-base.lock-hint::after { content: ''; position: absolute; left: 50%; top: -38px; width: 2px; height: 26px; background: linear-gradient(transparent, rgba(255,240,200,0.7)); transform: translateX(-50%); }
+
+#clock { position: absolute; left: 50%; top: 40px; transform: translateX(-50%); font: 600 11px/1 system-ui, sans-serif; letter-spacing: 0.15em; color: rgba(240,232,210,0.75); text-shadow: 0 1px 2px #000; }
+body.touch #clock { top: 90px; }
