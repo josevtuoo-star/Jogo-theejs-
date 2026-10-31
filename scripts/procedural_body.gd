@@ -16,6 +16,8 @@ var lean := Vector2.ZERO
 var look := Vector2.ZERO
 ## o próprio corpo físico (não pode ser "chão" dos raios dos pés)
 var exclude: Array[RID] = []
+## duração do quadro (o personagem atualiza): as suavizações não dependem do FPS
+var dt := 1.0 / 60.0
 
 const LEGS := [["thigh_l", "calf_l", "foot_l"], ["thigh_r", "calf_r", "foot_r"]]
 
@@ -94,12 +96,12 @@ func _feet(sk: Skeleton3D) -> void:
 		if not hit.is_empty() and hit.normal.y > 0.6:
 			off = clampf(hit.position.y - flat.y, -0.45, 0.45)
 			n = inv.basis * hit.normal
-		_foot_off[i] = lerpf(_foot_off[i], off, 0.35)
+		_foot_off[i] = lerpf(_foot_off[i], off, 1.0 - exp(-24.0 * dt))
 		# (lerp + normalizar: o slerp de vetores quase iguais perde precisão)
-		_foot_n[i] = _foot_n[i].lerp(n.normalized(), 0.3).normalized()
+		_foot_n[i] = _foot_n[i].lerp(n.normalized(), 1.0 - exp(-18.0 * dt)).normalized()
 		offs[i] = _foot_off[i]
 	# o quadril desce até o pé mais baixo alcançar o chão
-	_pelvis_off = lerpf(_pelvis_off, minf(minf(offs[0], offs[1]), 0.0), 0.3)
+	_pelvis_off = lerpf(_pelvis_off, minf(minf(offs[0], offs[1]), 0.0), 1.0 - exp(-14.0 * dt))
 	var pelvis := _bone("pelvis")
 	var keep := []
 	for i in 2:

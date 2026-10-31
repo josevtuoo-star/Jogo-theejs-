@@ -4,9 +4,9 @@ config_version=5
 
 [application]
 
-config/name="Sobrevivência 0.01"
+config/name="Sobrevivência 0.02"
 config/description="Primeiro protótipo jogável: personagem da Universal Animation Library (Quaternius), câmeras em 1ª e 3ª pessoa, controles de toque, física."
-config/version="0.01"
+config/version="0.02"
 run/main_scene="res://scenes/main.tscn"
 config/features=PackedStringArray("4.3", "GL Compatibility")
 config/icon="res://icon.svg"

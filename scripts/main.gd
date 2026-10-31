@@ -1,6 +1,6 @@
 extends Node3D
-## Cena principal: HUD com versão, FPS, câmera e estado do personagem, suprimentos e a dica
-## do botão USAR.
+## Cena principal: prepara controles e áudio; HUD com versão, FPS, câmera e estado do
+## personagem, suprimentos e a dica do botão USAR.
 
 @onready var player: CharacterBody3D = $Player
 @onready var info: Label = $HUD/Info
@@ -10,6 +10,8 @@ extends Node3D
 
 func _enter_tree() -> void:
 	Inputs.setup()
+	Audio.setup()
+	Sfx.warmup() # sons gerados em segundo plano
 
 
 func _ready() -> void:

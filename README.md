@@ -1,4 +1,4 @@
-# Sobrevivência — v0.01 (primeiro protótipo jogável)
+# Sobrevivência — v0.02
 
 Jogo de sobrevivência no estilo DayZ / The Walking Dead / Minecraft, feito no **Godot 4**
 para **Android** (funciona também no PC). Este protótipo foi montado do zero usando **apenas a
@@ -20,13 +20,33 @@ CC0). Todo o resto — mapa, materiais, céu, sons, controles — é gerado por 
 | Correr | empurre o dedo **além do anel externo** | Shift | apertar o analógico esquerdo |
 | Olhar | arraste no lado direito da tela | mouse (clique prende, Esc solta) | analógico direito |
 | Pular / nadar mais rápido | **PULAR** (segure para pular mais alto) | Espaço | A |
-| Agachar / rolar | **AGACHAR** (liga/desliga); correndo vira **ROLAR** | C ou Ctrl | B |
+| Agachar / rolar / mergulhar | **AGACHAR** (liga/desliga); correndo vira **ROLAR**; nadando, segure para **MERGULHAR** | C ou Ctrl | B |
 | Usar | **USAR** — o botão mostra a ação: **PEGAR**, **SENTAR**, **ABRIR PORTÃO**, **LEVANTAR** | E | Y |
 | Soco (combo) | **SOCO** — toque de novo no ritmo: jab → direto | clique esquerdo ou F | X |
 | 1ª / 3ª pessoa | **1ª/3ª** (canto superior direito) | V | analógico direito (apertar) |
 | Recomeçar | **↺** | R | Select |
 
 No PC, **F1** mostra os controles de toque.
+
+## Novidades da v0.02
+
+- **Animações mais suaves**: misturas mais longas entre parado/andar/trotar/correr, agachar,
+  ações e socos; o corpo gira com uma mola amortecida (acelera e desacelera a rotação, sem
+  "estalar"); pés, quadril e inclinação suavizados de forma independente do FPS.
+- **1ª pessoa mais imersiva**: cada passo chega na câmera (descida curta e leve balanço de
+  lado), a queda dobra os joelhos e a vista desce e volta, o pulo levanta; inclinação ao andar
+  de lado e nas curvas; respiração que mexe a câmera quando cansado; olhar suavizado (sem
+  "degraus" no toque); **mergulho** (segure AGACHAR nadando) com imagem ondulando, cor do lago
+  e som abafado.
+- **Física**: objetos **boiam** no lago (barril, caixa e bola boiando; jogue outros na água),
+  com arrasto e balanço das ondas; espirro de água quando algo cai nela; objetos fazem barulho
+  ao bater conforme o material e a força.
+- **Sons novos** (todos sintetizados, com variações sorteadas): passos **no ritmo dos pés da
+  animação** — grama (com estalos de folhas), concreto (calcanhar e ponta) e água; respiração
+  ofegante depois de correr/nadar; roupa; golpe no ar e no saco; batidas de madeira, metal e
+  borracha; espirros, braçadas e bolhas; motor e pancada do portão; **ambiente**: vento,
+  pássaros nas árvores e água do lago; **eco** dentro da garagem. Os sons são gerados em
+  segundo plano na abertura (prontos em ~2 s).
 
 ## O que dá para fazer
 
@@ -70,8 +90,11 @@ scripts/player.gd           movimento, física, ações, nado, socos, câmeras e
 scripts/procedural_body.gd  pés no chão (IK), inclinação, olhar, cabeça oculta em 1ª pessoa
 scripts/touch_controls.gd   analógico, botões com texto conforme o contexto, olhar por toque
 scripts/inputs.gd           ações de teclado/controle e estado compartilhado
-scripts/sfx.gd              sons gerados por código
-scripts/supply.gd, bench.gd, gate.gd, gate_button.gd, water.gd, punching_bag.gd   objetos
+scripts/sfx.gd              sons gerados por código (em segundo plano)
+scripts/audio.gd            barramento de áudio: eco em lugar fechado, abafado debaixo d'água
+scripts/ambience.gd         vento, pássaros e água do lago
+scripts/prop.gd             objetos com física: barulho ao bater e empuxo na água
+scripts/supply.gd, bench.gd, gate.gd, gate_button.gd, water.gd, interior.gd, punching_bag.gd   objetos
 scripts/main.gd             HUD
 shaders/                    grama, concreto, madeira, água, azulejo e cor final
 ```

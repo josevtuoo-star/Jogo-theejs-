@@ -7,7 +7,11 @@ extends CharacterBody3D
 ## - Empurrar caixas pesadas (animação de empurrar), socos em combo (jab e direto) que
 ##   empurram objetos com física, peso do corpo sobre o que estiver embaixo.
 ## - USAR: pegar suprimentos, sentar no banco, apertar o botão do portão.
-## - Câmeras em 3ª pessoa (por cima do ombro) e 1ª pessoa (nos olhos, corpo visível).
+## - Câmeras em 3ª pessoa (por cima do ombro) e 1ª pessoa (nos olhos, corpo visível) com
+##   impulsos dos passos, queda e pulo, respiração quando cansado, leve inclinação ao andar de
+##   lado; mergulho com visão e som abafados debaixo d'água.
+## - Sons: passos no ritmo dos pés da animação (grama, concreto ou água), respiração ofegante
+##   depois de correr/nadar, roupa, golpes e água.
 ## - Animações misturadas por uma AnimationTree montada aqui e, por cima, camadas procedurais
 ##   (procedural_body.gd): pés no chão, cabeça/tronco olhando para a câmera, inclinação.
 
@@ -79,6 +83,11 @@ var pushing := false
 var model_yaw := 0.0
 ## suprimentos coletados (HUD)
 var supplies := 0
+## cansaço (0 a 1): sobe correndo/nadando, desce parado. Só muda a respiração (som e câmera).
+var fatigue := 0.0
+var diving := false
+## passos dados (som/câmera) — usado pelos testes
+var steps := 0
 
 var _tree: AnimationTree
 var _skel: Skeleton3D
@@ -143,6 +152,21 @@ var _use_target: Node
 var _sfx := {}
 var _spark: CPUParticles3D
 var _splash: CPUParticles3D
+# suavização e câmera imersiva
+var _yaw_vel := 0.0
+var _phase := 0.0
+var _hz := 1.0
+var _floor_hard := false
+var _bob := Vector2.ZERO
+var _bob_vel := Vector2.ZERO
+var _roll := 0.0
+var _breath_t := 0.0
+var _breath_in := true
+var _breath_clock := 0.0
+var _look_pending := Vector2.ZERO
+var _under := 0.0
+var _bubble_t := 0.0
+var _post: CanvasItem
 
 
 func _ready() -> void:
@@ -182,6 +206,12 @@ func _physics_process(delta: float) -> void:
 			_move_swim(delta)
 	_footsteps(delta)
 	_update_use_target()
+	var gain := 0.0
+	if mode == Mode.NORMAL and sprinting and is_on_floor():
+		gain = 0.1
+	elif mode == Mode.SWIM:
+		gain = 0.06 if sprinting else 0.03
+	fatigue = clampf(fatigue + (gain if gain > 0.0 else -0.06) * delta, 0.0, 1.0)
 	_cur_pos = global_position
 
 
@@ -274,6 +304,7 @@ func _move_normal(delta: float) -> void:
 			_buffer = 0.0
 			_jump_held = true
 			_play("cloth", -6.0)
+			_bob_vel.y += 0.35
 	if not Input.is_action_pressed("jump"):
 		_jump_held = false
 	if not was_on_floor or velocity.y > 0.0:
@@ -447,10 +478,11 @@ func _start_roll(speed: float) -> void:
 	_roll_dir = hv.normalized() if hv.length() > 0.5 else _facing()
 	_roll_speed = clampf(speed, 3.0, 5.2)
 	model_yaw = atan2(_roll_dir.x, _roll_dir.z)
+	_yaw_vel = 0.0
 	_set_height(CROUCH_H)
 	crouching = false
 	_start_action("Roll", 1.0, 1.4, 0.06)
-	_play("thud", -6.0)
+	_play("land", -8.0)
 	_play("cloth", -4.0)
 
 
@@ -475,6 +507,7 @@ func sit(seat: Transform3D) -> void:
 	_sit_xform = seat
 	var fwd := -seat.basis.z
 	model_yaw = atan2(fwd.x, fwd.z)
+	_yaw_vel = 0.0
 	global_position = seat.origin + fwd * 0.3 + Vector3.DOWN * seat.origin.y + Vector3.UP * global_position.y
 	velocity = Vector3.ZERO
 	_start_action("Sitting_Enter", 1.25, 1.0, 0.2)
@@ -503,6 +536,7 @@ func _face(p: Vector3) -> void:
 	d.y = 0.0
 	if d.length() > 0.05:
 		model_yaw = atan2(d.x, d.z)
+		_yaw_vel = 0.0
 
 
 ## Procura o objeto de USAR mais perto, à frente do personagem.
@@ -525,7 +559,7 @@ func _update_use_target() -> void:
 		label = "LEVANTAR"
 	Inputs.use_label = label
 	Inputs.jump_label = "NADAR" if mode == Mode.SWIM else "PULAR"
-	Inputs.crouch_label = "ROLAR" if (mode == Mode.NORMAL and is_on_floor() and Vector2(velocity.x, velocity.z).length() > 4.0 and not crouching) \
+	Inputs.crouch_label = "MERGULHAR" if mode == Mode.SWIM else "ROLAR" if (mode == Mode.NORMAL and is_on_floor() and Vector2(velocity.x, velocity.z).length() > 4.0 and not crouching) \
 		else ("LEVANTAR" if crouching else "AGACHAR")
 
 
@@ -548,6 +582,8 @@ func set_water(area: Node3D) -> void:
 	_water = area
 	if area:
 		_water_y = area.surface_y
+		if velocity.y < -2.5:
+			area.splash(global_position, clampf(-velocity.y / 9.0, 0.3, 1.0))
 
 
 ## Quanto de água há acima dos pés (0 = fora da água).
@@ -561,9 +597,8 @@ func _start_swim() -> void:
 	mode = Mode.SWIM
 	_set_crouch(false)
 	_set_height(CROUCH_H)
-	_splash.global_position = Vector3(global_position.x, _water_y, global_position.z)
-	_splash.restart()
-	_play("splash", 0.0 if velocity.y < -3.0 else -6.0)
+	if velocity.y > -2.5 and _water:
+		_water.splash(global_position, 0.3)
 
 
 func _move_swim(delta: float) -> void:
@@ -574,8 +609,15 @@ func _move_swim(delta: float) -> void:
 	var hv := Vector3(velocity.x, 0.0, velocity.z).move_toward(target, 2.5 * delta)
 	velocity.x = hv.x
 	velocity.z = hv.z
-	# flutua com a cabeça para fora (a raiz do corpo fica na linha d'água)
-	var float_y := _water_y - 0.05
+	# flutua com a cabeça para fora (a raiz do corpo fica na linha d'água); segurando AGACHAR,
+	# mergulha (sem passar do fundo)
+	diving = Input.is_action_pressed("crouch")
+	var float_y := _water_y - (1.3 if diving else 0.05)
+	if diving:
+		var q0 := PhysicsRayQueryParameters3D.create(global_position + Vector3.UP * 0.5, global_position + Vector3.DOWN * 2.5, 1, [get_rid()])
+		var fl := get_world_3d().direct_space_state.intersect_ray(q0)
+		if not fl.is_empty():
+			float_y = maxf(float_y, fl.position.y + 0.35)
 	velocity.y = lerpf(velocity.y, (float_y - global_position.y) * 4.0, 1.0 - exp(-6.0 * delta))
 	move_and_slide()
 	_push_bodies(delta, target)
@@ -584,8 +626,9 @@ func _move_swim(delta: float) -> void:
 	var surf := Vector3(global_position.x, _water_y, global_position.z)
 	var q := PhysicsRayQueryParameters3D.create(surf, surf + Vector3.DOWN * 1.15, 1, [get_rid()])
 	var shallow := not get_world_3d().direct_space_state.intersect_ray(q).is_empty()
-	if _water == null or shallow:
+	if _water == null or (shallow and not diving):
 		mode = Mode.NORMAL
+		diving = false
 		_set_height(STAND_H)
 		velocity.y = 0.0
 
@@ -624,6 +667,7 @@ func _start_punch(idx: int) -> void:
 	if not _tree.get("parameters/punch/active"):
 		_tree.set("parameters/punch/request", AnimationNodeOneShot.ONE_SHOT_REQUEST_FIRE)
 	model_yaw = cam_yaw + PI # soca para onde a câmera olha
+	_yaw_vel = 0.0
 	_play("swish", -6.0)
 
 
@@ -656,7 +700,7 @@ func _do_hit(p: Dictionary) -> void:
 		_shake = 0.12 + p.force * 0.004
 		_play("punch", 0.0 if soft else -3.0)
 		if hard and not soft:
-			_play("wood", -6.0)
+			_play("knock", -4.0)
 		_do_hitstop(0.04 + p.force * 0.0012)
 
 
@@ -674,8 +718,11 @@ func _do_hitstop(t: float) -> void:
 
 func _on_land(fall_speed: float, hspeed: float) -> void:
 	var k := clampf((fall_speed - 2.0) / 10.0, 0.0, 1.0)
-	_play("thud", lerpf(-14.0, 2.0, k))
-	_shake = maxf(_shake, 0.05 + 0.3 * k)
+	_play("land", lerpf(-16.0, 1.0, k))
+	_play("step_hard" if _floor_hard else "step_grass", lerpf(-8.0, 0.0, k))
+	_shake = maxf(_shake, 0.03 + 0.25 * k)
+	# a queda chega na câmera: os joelhos dobram e a vista desce e volta
+	_bob_vel.y -= lerpf(0.4, 1.6, k)
 	if _water_depth() > 0.3:
 		return
 	if fall_speed > 10.5:
@@ -695,47 +742,74 @@ func _on_land(fall_speed: float, hspeed: float) -> void:
 
 # ================================================================== sons e efeitos
 
+## Nado e agachado: som por distância percorrida. (Em pé, os passos vêm da animação.)
 func _footsteps(delta: float) -> void:
 	var spd := Vector2(velocity.x, velocity.z).length()
+	var fc := get_last_slide_collision()
+	if is_on_floor() and fc != null:
+		var c := fc.get_collider() as Node
+		_floor_hard = c != null and c.is_in_group("piso_duro")
 	if mode == Mode.SWIM:
 		_step_dist += spd * delta
-		if _step_dist > 1.2:
+		if _step_dist > 1.3:
 			_step_dist = 0.0
-			_play("stroke", -10.0)
+			_play("stroke", -8.0 if not diving else -14.0)
 		return
-	if mode != Mode.NORMAL or not is_on_floor() or spd < 0.4:
-		_step_dist = minf(_step_dist, 0.3)
+	if mode != Mode.NORMAL or not is_on_floor() or spd < 0.3 or not crouching:
 		return
 	_step_dist += spd * delta
-	var stride := 0.6 if crouching else (0.9 if spd < 2.0 else (1.5 if spd < 4.5 else 1.85))
-	if _step_dist >= stride:
+	if _step_dist >= 0.55:
 		_step_dist = 0.0
-		var vol := -16.0 if crouching else lerpf(-12.0, -2.0, clampf(spd / sprint_speed, 0.0, 1.0))
-		if _water_depth() > 0.1:
-			_play("stroke", vol)
-		else:
-			# no chão de concreto/madeira o passo é seco; na grama, abafado
-			var fc := get_last_slide_collision()
-			var hard := fc != null and fc.get_collider() is Node and (fc.get_collider() as Node).is_in_group("piso_duro")
-			_play("step_hard" if hard else "step_grass", vol)
+		_step_sound(spd, 0.4)
+
+
+## Em pé: o pé toca o chão em fases fixas do ciclo (as animações de andar/trotar/correr foram
+## alinhadas para começar com o pé esquerdo à frente): esquerdo em ~0,03 e direito em ~0,53.
+func _anim_footsteps(delta: float) -> void:
+	if mode != Mode.NORMAL or not is_on_floor() or crouching or _moving < 0.15:
+		return
+	var prev := _phase
+	_phase = fposmod(_phase + _hz * delta, 1.0)
+	for contact in [0.03, 0.53]:
+		var hit: bool = (prev < contact and _phase >= contact) if _hz >= 0.0 else (prev > contact and _phase <= contact)
+		if hit or (_hz >= 0.0 and prev > _phase and contact < _phase):
+			_step_sound(Vector2(velocity.x, velocity.z).length(), _moving)
+			break
+
+
+func _step_sound(spd: float, weight: float) -> void:
+	steps += 1
+	var k := clampf(spd / sprint_speed, 0.0, 1.0)
+	var vol := lerpf(-16.0, -1.0, k) - (6.0 if crouching else 0.0) - (1.0 - weight) * 10.0
+	if _water_depth() > 0.1:
+		_play("step_water", vol + 2.0)
+	else:
+		_play("step_hard" if _floor_hard else "step_grass", vol)
+	if spd > 4.5:
+		_play("cloth", -18.0)
+	# o passo chega na câmera (1ª pessoa): uma descida curta
+	_bob_vel.y -= lerpf(0.05, 0.16, k)
+	_bob_vel.x += (0.02 if _phase < 0.5 else -0.02) * (0.5 + k)
 
 
 func _setup_sounds() -> void:
-	for key in ["step_grass", "step_hard", "thud", "punch", "swish", "splash", "stroke", "click", "cloth", "pickup", "wood"]:
+	for key in ["step_grass", "step_hard", "step_water", "land", "punch", "knock", "swish", "splash_small",
+			"stroke", "bubbles", "click", "cloth", "pickup", "breath_in", "breath_out"]:
 		var pl := AudioStreamPlayer3D.new()
 		pl.stream = Sfx.get_stream(key)
 		pl.max_polyphony = 3
 		pl.unit_size = 6.0
-		pl.position = Vector3.UP * (0.1 if key.begins_with("step") or key == "thud" else 1.2)
+		pl.bus = "Mundo"
+		pl.position = Vector3.UP * (0.1 if key.begins_with("step") or key == "land" else 1.55)
 		add_child(pl)
 		_sfx[key] = pl
 
 
 func _play(key: String, db := 0.0) -> void:
 	var pl: AudioStreamPlayer3D = _sfx.get(key)
-	if pl:
+	if pl and Sfx.ready:
 		pl.volume_db = db
-		pl.pitch_scale = randf_range(0.88, 1.12)
+		pl.pitch_scale = randf_range(0.94, 1.06)
 		pl.play()
 
 
@@ -795,8 +869,11 @@ func _process(delta: float) -> void:
 	# empurrando, o corpo recua para as mãos encostarem no objeto
 	visual.global_position = pos - _facing() * 0.24 * _push_amt
 
-	var look := Inputs.take_look() * touch_sensitivity + _mouse_look * mouse_sensitivity
+	# olhar: o movimento do dedo/mouse é aplicado em ~30 ms (sem "degraus" em telas rápidas)
+	_look_pending += Inputs.take_look() * touch_sensitivity + _mouse_look * mouse_sensitivity
 	_mouse_look = Vector2.ZERO
+	var look := _look_pending * (1.0 - exp(-35.0 * delta))
+	_look_pending -= look
 	look += Input.get_vector("look_left", "look_right", "look_up", "look_down") * pad_sensitivity * delta
 	cam_yaw = wrapf(cam_yaw - look.x, -PI, PI)
 	cam_pitch = clampf(cam_pitch - look.y, -1.3 if first_person else -1.2, 1.25 if first_person else 0.75)
@@ -836,7 +913,7 @@ func _process(delta: float) -> void:
 		elif spd > 0.3:
 			target_yaw = atan2(hv.x, hv.z)
 			turn = 12.0 if is_on_floor() or mode == Mode.SWIM else 4.0
-		model_yaw = lerp_angle(model_yaw, target_yaw, 1.0 - exp(-turn * delta))
+		_turn_to(target_yaw, turn, delta)
 	visual.rotation = Vector3(0.0, model_yaw, 0.0)
 
 	_update_animation(delta, hv)
@@ -871,7 +948,18 @@ func _process(delta: float) -> void:
 		if not hit.is_empty():
 			fp_pivot = from + (fp_pivot - from).normalized() * maxf(from.distance_to(hit.position) - 0.12, 0.0)
 	rig.global_position = tp_pivot.lerp(fp_pivot, e)
-	rig.rotation = Vector3(cam_pitch, cam_yaw, -_body.lean.y * 0.25 * e)
+	# 1ª pessoa: molas dos passos/queda, respiração e leve inclinação andando de lado
+	var k_spring := 170.0
+	var c_spring := 2.0 * sqrt(k_spring) * 0.55
+	_bob_vel += (-k_spring * _bob - c_spring * _bob_vel) * minf(delta, 0.05)
+	_bob += _bob_vel * minf(delta, 0.05)
+	_breath_clock += delta * lerpf(0.35, 1.25, fatigue) * TAU
+	var breath := (0.004 + 0.016 * fatigue) * e
+	var right := Vector3(cos(cam_yaw), 0.0, -sin(cam_yaw))
+	_roll = lerpf(_roll, -hv.dot(right) * 0.008 - _body.lean.y * 0.2, 1.0 - exp(-5.0 * delta))
+	rig.rotation = Vector3(cam_pitch + sin(_breath_clock) * breath, cam_yaw + sin(_breath_clock * 0.5) * breath * 0.4, _roll * e)
+	_breathing(delta)
+	_underwater(delta)
 	arm.spring_length = lerpf(tp_distance, 0.0, e)
 	arm.position = Vector3(lerpf(0.45, 0.0, e), 0.0, 0.0)
 	_body.hide_head = cam_blend > 0.5
@@ -879,12 +967,53 @@ func _process(delta: float) -> void:
 	cam.fov = lerpf(cam.fov, fov, 1.0 - exp(-6.0 * delta))
 	_shake = maxf(_shake - delta * 1.5, 0.0)
 	var s := _shake * _shake
-	cam.h_offset = (randf() - 0.5) * s * 0.6
-	cam.v_offset = (randf() - 0.5) * s * 0.6
+	cam.h_offset = (randf() - 0.5) * s * 0.6 + _bob.x * e
+	cam.v_offset = (randf() - 0.5) * s * 0.6 + _bob.y * e
+
+
+## Respiração ofegante depois de correr/nadar (inspira e expira alternando, mais rápido e
+## mais alto quanto mais cansado).
+func _breathing(delta: float) -> void:
+	if fatigue < 0.12 or _under > 0.5:
+		_breath_t = 0.0
+		return
+	_breath_t -= delta
+	if _breath_t <= 0.0:
+		var period := lerpf(1.7, 0.75, fatigue)
+		_play("breath_in" if _breath_in else "breath_out", lerpf(-26.0, -7.0, fatigue))
+		_breath_t = period * (0.42 if _breath_in else 0.58)
+		_breath_in = not _breath_in
+
+
+## Debaixo d'água: cor e som abafados, bolhas.
+func _underwater(delta: float) -> void:
+	var under := _water != null and cam.global_position.y < _water_y - 0.03
+	_under = move_toward(_under, 1.0 if under else 0.0, delta * 5.0)
+	Audio.underwater = under
+	if _post == null:
+		_post = get_tree().get_first_node_in_group("pos_processamento") as CanvasItem
+	if _post:
+		var m := _post.material as ShaderMaterial
+		m.set_shader_parameter("underwater", _under)
+		m.set_shader_parameter("fatigue", fatigue)
+	if under:
+		_bubble_t -= delta
+		if _bubble_t <= 0.0:
+			_bubble_t = randf_range(0.8, 2.0)
+			_play("bubbles", -10.0)
+
+
+## Giro do corpo com mola criticamente amortecida: acelera e desacelera a rotação (não estala).
+func _turn_to(target: float, omega: float, delta: float) -> void:
+	var d := wrapf(target - model_yaw, -PI, PI)
+	var dt := minf(delta, 0.05)
+	_yaw_vel += (omega * omega * d - 2.0 * omega * _yaw_vel) * dt
+	model_yaw = wrapf(model_yaw + _yaw_vel * dt, -PI, PI)
 
 
 ## Camadas procedurais: pés no chão, inclinação, tronco/cabeça olhando para a câmera.
 func _update_body(delta: float, hv: Vector3, view_yaw: float) -> void:
+	_body.dt = delta
 	var spd := hv.length()
 	var yaw_rate := wrapf(model_yaw - _last_yaw, -PI, PI) / maxf(delta, 0.001)
 	_last_yaw = model_yaw
@@ -972,7 +1101,7 @@ func _setup_animation() -> void:
 	bt.connect_node("land", 1, "land_ts")
 	# ações (uma por vez, por cima de tudo)
 	var act_sel := AnimationNodeTransition.new()
-	act_sel.xfade_time = 0.15
+	act_sel.xfade_time = 0.22
 	for i in ACTIONS.size():
 		act_sel.add_input(ACTIONS[i])
 		bt.add_node("a_" + ACTIONS[i], _anim(ACTIONS[i]))
@@ -994,8 +1123,8 @@ func _setup_animation() -> void:
 		bt.connect_node("punch_sel", i, PUNCHES[i].anim)
 	_ts(bt, "punch_ts", "punch_sel")
 	var punch := AnimationNodeOneShot.new()
-	punch.fadein_time = 0.06
-	punch.fadeout_time = 0.22
+	punch.fadein_time = 0.08
+	punch.fadeout_time = 0.3
 	bt.add_node("punch", punch)
 	bt.connect_node("punch", 0, "act")
 	bt.connect_node("punch", 1, "punch_ts")
@@ -1078,7 +1207,7 @@ func _gait(v: float) -> float:
 func _update_animation(delta: float, hv: Vector3) -> void:
 	var spd := hv.length()
 	var g := _gait(spd)
-	_blend = lerpf(_blend, g, 1.0 - exp(-8.0 * delta))
+	_blend = lerpf(_blend, g, 1.0 - exp(-5.0 * delta))
 	var cyc: float = LOCO.Walk
 	if _blend > 2.0:
 		cyc = lerpf(LOCO.Jog_Fwd, LOCO.Sprint, _blend - 2.0)
@@ -1092,17 +1221,19 @@ func _update_animation(delta: float, hv: Vector3) -> void:
 	if turning:
 		moving = maxf(moving, 0.45) # girando parado: passinhos no lugar
 		hz = 0.9
-	_moving = lerpf(_moving, moving, 1.0 - exp(-12.0 * delta))
-	var k := 1.0 - exp(-8.0 * delta)
+	_moving = lerpf(_moving, moving, 1.0 - exp(-8.0 * delta))
+	var k := 1.0 - exp(-6.0 * delta)
 	_crouch_amt = lerpf(_crouch_amt, 1.0 if crouching else 0.0, k)
 	var in_air := mode == Mode.NORMAL and not is_on_floor() and _air_time > 0.12
-	_air_amt = lerpf(_air_amt, 1.0 if in_air else 0.0, 1.0 - exp(-12.0 * delta))
+	_air_amt = lerpf(_air_amt, 1.0 if in_air else 0.0, 1.0 - exp(-10.0 * delta))
 	_swim_amt = lerpf(_swim_amt, 1.0 if mode == Mode.SWIM else 0.0, k)
 	_push_amt = lerpf(_push_amt, 1.0 if pushing else 0.0, k)
 	_act_amt = move_toward(_act_amt, _act_target, delta / maxf(_act_fade, 0.01))
 
 	_tree.set("parameters/move/blend_position", _blend)
 	_tree.set("parameters/move_ts/scale", hz * dirsign)
+	_hz = hz * dirsign
+	_anim_footsteps(delta)
 	_tree.set("parameters/moving/blend_amount", _moving)
 	_tree.set("parameters/crouch_bs/blend_position", clampf(spd / crouch_speed, 0.0, 1.0))
 	_tree.set("parameters/crouch_ts/scale", (clampf(spd * 2.0 / CROUCH_CYCLE, 0.6, 2.0) if spd > 0.2 else 1.0) * dirsign)
