@@ -3,7 +3,9 @@ extends Control
 ## - analógico flutuante no lado esquerdo (aparece onde o dedo encosta); empurrar o dedo
 ##   além do anel externo = correr;
 ## - arrastar no lado direito = olhar;
-## - botões: SOCO, PULAR, AGACHAR (liga/desliga), CÂMERA (1ª/3ª pessoa) e reiniciar.
+## - botões: SOCO, CHUTE, PULAR, AGACHAR (liga/desliga), CÂMERA (1ª/3ª pessoa) e reiniciar.
+##   PULAR e AGACHAR mudam de nome conforme o parkour possível (SUBIR, SALTAR, ESCALAR,
+##   DESLIZAR, SOLTAR...).
 ## Tudo funciona com vários dedos ao mesmo tempo.
 
 const JOY_R := 80.0
@@ -14,6 +16,7 @@ const BUTTONS := [
 	{"action": "punch", "label": "SOCO", "pos": Vector2(-140, -150), "r": 66.0},
 	{"action": "jump", "label": "PULAR", "pos": Vector2(-290, -92), "r": 54.0},
 	{"action": "crouch", "label": "AGACHAR", "pos": Vector2(-118, -310), "r": 46.0},
+	{"action": "kick", "label": "CHUTE", "pos": Vector2(-268, -238), "r": 42.0},
 	{"action": "camera", "label": "1ª/3ª", "pos": Vector2(-64, 64), "r": 38.0},
 	{"action": "reset", "label": "↺", "pos": Vector2(-152, 64), "r": 30.0},
 ]
@@ -173,5 +176,11 @@ func _draw() -> void:
 			or (b.action == "camera" and Inputs.first_person)
 		draw_circle(bc, b.r, Color(1, 0.75, 0.3, 0.45) if on else Color(0, 0, 0, 0.3))
 		draw_arc(bc, b.r, 0.0, TAU, 48, Color(1, 1, 1, 0.55), 2.5, true)
-		var fs := 22 if b.label == "↺" else (17 if b.r > 50.0 else 14)
-		draw_string(font, bc + Vector2(-b.r, fs * 0.35), b.label, HORIZONTAL_ALIGNMENT_CENTER, b.r * 2.0, fs, Color(1, 1, 1, 0.92))
+		var label: String = b.label
+		if b.action == "jump":
+			label = Inputs.jump_label
+		elif b.action == "crouch":
+			label = Inputs.crouch_label
+		var fs := 22 if label == "↺" else (17 if b.r > 50.0 else 14)
+		var hint: bool = b.action in ["jump", "crouch"] and label != b.label and label != "LEVANTAR"
+		draw_string(font, bc + Vector2(-b.r, fs * 0.35), label, HORIZONTAL_ALIGNMENT_CENTER, b.r * 2.0, fs, Color(1, 0.85, 0.4) if hint else Color(1, 1, 1, 0.92))

@@ -1,13 +1,13 @@
 [gd_scene load_steps=5 format=3]
 
-[ext_resource type="Script" path="res://scripts/player.gd" id="1_fnwmh"]
-[ext_resource type="PackedScene" path="res://assets/personagem.glb" id="2_x4n44"]
+[ext_resource type="Script" path="res://scripts/player.gd" id="1_7mdg7"]
+[ext_resource type="PackedScene" path="res://assets/personagem.glb" id="2_vgfyy"]
 
-[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_6xxb4"]
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_g37x7"]
 radius = 0.3
 height = 1.8
 
-[sub_resource type="SphereShape3D" id="SphereShape3D_n5dji"]
+[sub_resource type="SphereShape3D" id="SphereShape3D_gdls5"]
 radius = 0.15
 
 [node name="Player" type="CharacterBody3D"]
@@ -17,22 +17,23 @@ floor_constant_speed = true
 floor_max_angle = 0.802851
 floor_snap_length = 0.35
 safe_margin = 0.02
-script = ExtResource("1_fnwmh")
+script = ExtResource("1_7mdg7")
+body_mass = 75.0
 
 [node name="Collision" type="CollisionShape3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.9, 0)
-shape = SubResource("CapsuleShape3D_6xxb4")
+shape = SubResource("CapsuleShape3D_g37x7")
 
 [node name="Visual" type="Node3D" parent="."]
 top_level = true
 
-[node name="Model" type="Node3D" parent="Visual" instance=ExtResource("2_x4n44")]
+[node name="Model" type="Node3D" parent="Visual" instance=ExtResource("2_vgfyy")]
 
 [node name="CamRig" type="Node3D" parent="."]
 top_level = true
 
 [node name="SpringArm3D" type="SpringArm3D" parent="CamRig"]
-shape = SubResource("SphereShape3D_n5dji")
+shape = SubResource("SphereShape3D_gdls5")
 spring_length = 3.0
 margin = 0.12
 

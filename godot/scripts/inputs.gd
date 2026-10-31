@@ -11,15 +11,18 @@ static var touch_mode := false
 ## Estados para os botões da tela desenharem (o personagem atualiza).
 static var crouching := false
 static var first_person := false
+## Texto dos botões PULAR/AGACHAR conforme o contexto (SUBIR, SALTAR, ESCALAR, DESLIZAR...).
+static var jump_label := "PULAR"
+static var crouch_label := "AGACHAR"
 
 const KEYS := {
 	"move_forward": [KEY_W, KEY_UP], "move_back": [KEY_S, KEY_DOWN],
 	"move_left": [KEY_A, KEY_LEFT], "move_right": [KEY_D, KEY_RIGHT],
 	"jump": [KEY_SPACE], "crouch": [KEY_C, KEY_CTRL], "sprint": [KEY_SHIFT],
-	"punch": [KEY_F], "camera": [KEY_V], "reset": [KEY_R],
+	"punch": [KEY_F], "kick": [KEY_G], "camera": [KEY_V], "reset": [KEY_R],
 }
 const PAD_BUTTONS := {
-	"jump": JOY_BUTTON_A, "crouch": JOY_BUTTON_B, "punch": JOY_BUTTON_X,
+	"jump": JOY_BUTTON_A, "crouch": JOY_BUTTON_B, "punch": JOY_BUTTON_X, "kick": JOY_BUTTON_RIGHT_SHOULDER,
 	"camera": JOY_BUTTON_Y, "sprint": JOY_BUTTON_LEFT_STICK, "reset": JOY_BUTTON_BACK,
 }
 const PAD_AXES := {
@@ -57,6 +60,9 @@ static func setup() -> void:
 	var click := InputEventMouseButton.new()
 	click.button_index = MOUSE_BUTTON_LEFT
 	InputMap.action_add_event("punch", click)
+	var rclick := InputEventMouseButton.new()
+	rclick.button_index = MOUSE_BUTTON_RIGHT
+	InputMap.action_add_event("kick", rclick)
 	touch_mode = OS.has_feature("mobile") or DisplayServer.is_touchscreen_available()
 
 
