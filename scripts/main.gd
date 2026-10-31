@@ -11,7 +11,7 @@ extends Node3D
 func _enter_tree() -> void:
 	Inputs.setup()
 	Audio.setup()
-	Sfx.warmup() # sons gerados em segundo plano
+	Sfx.warmup() # sons gerados aos poucos nos primeiros segundos
 
 
 func _ready() -> void:

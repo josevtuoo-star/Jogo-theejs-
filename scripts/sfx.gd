@@ -19,13 +19,12 @@ const KINDS := ["step_grass", "step_hard", "step_water", "land", "cloth", "swish
 
 ## verdadeiro quando todos os sons já foram gerados
 static var ready := false
-static var _rendered := {}
-static var _done := false
+static var _queue := []
 static var _started := false
 
 
-## Som para tocar. Enquanto a geração em segundo plano não termina, devolve um "recipiente"
-## vazio que é preenchido depois (quem guardou a referência passa a tocar normalmente).
+## Som para tocar. Enquanto a geração não termina, devolve um "recipiente" vazio que é
+## preenchido depois (quem guardou a referência passa a tocar normalmente).
 static func get_stream(kind: String) -> AudioStream:
 	if not _cache.has(kind):
 		if kind in LOOPS:
@@ -38,51 +37,41 @@ static func get_stream(kind: String) -> AudioStream:
 	return _cache[kind]
 
 
-## Começa a gerar todos os sons numa linha de execução separada (não trava a abertura).
+## Prepara a fila de sons a gerar. A geração acontece aos poucos em poll(), na linha principal
+## (sem threads: no Android, gerar sons numa thread separada fechava o jogo).
 static func warmup() -> void:
 	if _started:
 		return
 	_started = true
 	for k in KINDS:
 		get_stream(k)
-	WorkerThreadPool.add_task(func(): _work())
+		for v in (1 if k in LOOPS else VARIANTS):
+			_queue.append([k, v])
 
 
-static func _work() -> void:
-	var out := {}
-	for k in KINDS:
-		if k in LOOPS:
-			out[k] = [_render(k, 0)]
-		else:
-			var list := []
-			for v in VARIANTS:
-				list.append(_render(k, v))
-			out[k] = list
-	_rendered = out
-	_done = true
-
-
-## Chamado todo quadro (na linha principal): quando a geração termina, preenche os recipientes.
+## Chamado todo quadro: gera alguns sons por vez (até ~4 ms por quadro) e, quando a fila
+## acaba, marca tudo como pronto.
 static func poll() -> void:
-	if ready or not _done:
+	if ready or not _started:
 		return
-	for k in _rendered:
-		var dst: AudioStream = get_stream(k)
+	var t0 := Time.get_ticks_usec()
+	while not _queue.is_empty() and Time.get_ticks_usec() - t0 < 4000:
+		var item: Array = _queue.pop_front()
+		var w := _render(item[0], item[1])
+		var dst: AudioStream = get_stream(item[0])
 		if dst is AudioStreamRandomizer:
-			for w in _rendered[k]:
-				(dst as AudioStreamRandomizer).add_stream(-1, w)
+			(dst as AudioStreamRandomizer).add_stream(-1, w)
 		else:
-			var src: AudioStreamWAV = _rendered[k][0]
 			var d := dst as AudioStreamWAV
-			d.format = src.format
-			d.mix_rate = src.mix_rate
-			d.stereo = src.stereo
-			d.data = src.data
-			d.loop_mode = src.loop_mode
-			d.loop_begin = src.loop_begin
-			d.loop_end = src.loop_end
-	_rendered = {}
-	ready = true
+			d.format = w.format
+			d.mix_rate = w.mix_rate
+			d.stereo = w.stereo
+			d.data = w.data
+			d.loop_mode = w.loop_mode
+			d.loop_begin = w.loop_begin
+			d.loop_end = w.loop_end
+	if _queue.is_empty():
+		ready = true
 
 
 static func _dur(kind: String) -> float:
@@ -90,7 +79,7 @@ static func _dur(kind: String) -> float:
 		"swish": 0.3, "punch": 0.22, "knock": 0.28, "wood": 0.32, "metal": 0.9, "rubber": 0.18,
 		"splash": 1.0, "splash_small": 0.45, "stroke": 0.5, "bubbles": 0.6, "click": 0.06,
 		"pickup": 0.3, "clunk": 0.35, "breath_in": 0.7, "breath_out": 0.8, "bird": 0.9,
-		"wind": 6.0, "water_lap": 4.0, "motor": 1.0}.get(kind, 0.2)
+		"wind": 3.0, "water_lap": 3.0, "motor": 1.0}.get(kind, 0.2)
 
 
 static func _render(kind: String, variant: int) -> AudioStreamWAV:
@@ -242,12 +231,12 @@ static func _render(kind: String, variant: int) -> AudioStreamWAV:
 				lp += (w - lp) * 0.025
 				lp2 += (w - lp2) * 0.12
 				lp3 += (lp2 - lp3) * 0.05
-				var gust := 0.55 + 0.25 * sin(TAU * t / 6.0 * 2.0) + 0.2 * sin(TAU * t / 6.0 * 3.0 + 1.3)
+				var gust := 0.55 + 0.25 * sin(TAU * t / 3.0) + 0.2 * sin(TAU * t / 3.0 * 2.0 + 1.3)
 				v = (lp * 3.2 + (lp2 - lp3) * 0.6 * gust) * gust
 			"water_lap":
 				lp += (w - lp) * 0.06
 				lp2 += (w - lp2) * 0.3
-				var wave := 0.5 + 0.5 * sin(TAU * t / 4.0 * 3.0) * sin(TAU * t / 4.0 * 2.0 + 0.7)
+				var wave := 0.5 + 0.5 * sin(TAU * t / 3.0 * 2.0) * sin(TAU * t / 3.0 + 0.7)
 				v = (lp * 2.0 + (lp2 - lp) * 0.4 * wave) * (0.4 + 0.6 * wave)
 				v += _bubbles(fmod(t, 1.3), bubbles, 0.08)
 			"motor":
