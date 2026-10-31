@@ -404,17 +404,17 @@ func respawn() -> void:
 # ================================================================== ações
 
 ## Toca uma ação que prende o corpo (rolar, aterrissagem pesada, pegar, interagir, sentar).
-func _start_action(name: String, dur: float, ts := 1.0, fade := 0.12) -> void:
+func _start_action(clip: String, dur: float, ts := 1.0, fade := 0.12) -> void:
 	mode = Mode.ACTION
-	_act = name
+	_act = clip
 	_act_t = 0.0
 	_act_dur = dur
 	_act_fired = false
-	_play_action(name, ts, fade)
+	_play_action(clip, ts, fade)
 
 
-func _play_action(name: String, ts: float, fade: float) -> void:
-	_tree.set("parameters/act_sel/transition_request", name)
+func _play_action(clip: String, ts: float, fade: float) -> void:
+	_tree.set("parameters/act_sel/transition_request", clip)
 	_tree.set("parameters/act_seek/seek_request", 0.0)
 	_tree.set("parameters/act_ts/scale", ts)
 	_act_target = 1.0
@@ -1062,17 +1062,17 @@ func _setup_animation() -> void:
 	move.min_space = 1.0
 	move.max_space = 3.0
 	move.sync = true
-	move.add_blend_point(_anim("loco/Walk"), 1.0)
-	move.add_blend_point(_anim("loco/Jog_Fwd"), 2.0)
-	move.add_blend_point(_anim("loco/Sprint"), 3.0)
+	_add_point(move, "loco/Walk", 1.0)
+	_add_point(move, "loco/Jog_Fwd", 2.0)
+	_add_point(move, "loco/Sprint", 3.0)
 	bt.add_node("move", move)
 	_ts(bt, "move_ts", "move")
 	bt.add_node("idle", _anim("Idle"))
 	_blend2(bt, "moving", "idle", "move_ts")
 	# agachado
 	var cm := AnimationNodeBlendSpace1D.new()
-	cm.add_blend_point(_anim("Crouch_Idle"), 0.0)
-	cm.add_blend_point(_anim("Crouch_Fwd"), 1.0)
+	_add_point(cm, "Crouch_Idle", 0.0)
+	_add_point(cm, "Crouch_Fwd", 1.0)
 	bt.add_node("crouch_bs", cm)
 	_ts(bt, "crouch_ts", "crouch_bs")
 	_blend2(bt, "crouch", "moving", "crouch_ts")
@@ -1082,8 +1082,8 @@ func _setup_animation() -> void:
 	_blend2(bt, "push", "crouch", "push_ts")
 	# nadando
 	var sw := AnimationNodeBlendSpace1D.new()
-	sw.add_blend_point(_anim("Swim_Idle"), 0.0)
-	sw.add_blend_point(_anim("Swim_Fwd"), 1.0)
+	_add_point(sw, "Swim_Idle", 0.0)
+	_add_point(sw, "Swim_Fwd", 1.0)
 	bt.add_node("swim_bs", sw)
 	_ts(bt, "swim_ts", "swim_bs")
 	_blend2(bt, "swim", "push", "swim_ts")
@@ -1140,32 +1140,48 @@ func _setup_animation() -> void:
 	_tree.set("parameters/land_ts/scale", 1.3)
 
 
-func _anim(name: String) -> AnimationNodeAnimation:
+## Ponto de mistura com nome (o Godot 4.6+ pede um nome; no 4.3 o método não aceita).
+static var _named_points := -1
+
+
+func _add_point(bs: AnimationRootNode, clip: String, pos: Variant) -> void:
+	if _named_points < 0:
+		_named_points = 0
+		for m in ClassDB.class_get_method_list("AnimationNodeBlendSpace1D", true):
+			if m.name == "add_blend_point" and m.args.size() >= 4:
+				_named_points = 1
+	if _named_points == 1:
+		bs.call("add_blend_point", _anim(clip), pos, -1, StringName(clip.get_file()))
+	else:
+		bs.call("add_blend_point", _anim(clip), pos)
+
+
+func _anim(clip: String) -> AnimationNodeAnimation:
 	var a := AnimationNodeAnimation.new()
-	a.animation = name
+	a.animation = clip
 	return a
 
 
-func _ts(bt: AnimationNodeBlendTree, name: String, input: String) -> void:
-	bt.add_node(name, AnimationNodeTimeScale.new())
-	bt.connect_node(name, 0, input)
+func _ts(bt: AnimationNodeBlendTree, clip: String, input: String) -> void:
+	bt.add_node(clip, AnimationNodeTimeScale.new())
+	bt.connect_node(clip, 0, input)
 
 
-func _blend2(bt: AnimationNodeBlendTree, name: String, a: String, b: String) -> void:
-	bt.add_node(name, AnimationNodeBlend2.new())
-	bt.connect_node(name, 0, a)
-	bt.connect_node(name, 1, b)
+func _blend2(bt: AnimationNodeBlendTree, clip: String, a: String, b: String) -> void:
+	bt.add_node(clip, AnimationNodeBlend2.new())
+	bt.connect_node(clip, 0, a)
+	bt.connect_node(clip, 1, b)
 
 
 ## Copia a animação para um ciclo de 1 s que começa com o pé esquerdo mais à frente.
-func _normalize_cycle(ap: AnimationPlayer, name: String) -> Animation:
-	var src := ap.get_animation(name)
+func _normalize_cycle(ap: AnimationPlayer, clip: String) -> Animation:
+	var src := ap.get_animation(clip)
 	var L := src.length
 	var bl := _skel.find_bone("ball_l")
 	var br := _skel.find_bone("ball_r")
 	var best := 0.0
 	var best_lead := -INF
-	ap.play(name)
+	ap.play(clip)
 	for i in 48:
 		var t := L * i / 48.0
 		ap.seek(t, true)

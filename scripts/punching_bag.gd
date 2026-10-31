@@ -20,9 +20,9 @@ func _process(_delta: float) -> void:
 		return
 	var a := anchor.global_position
 	var b := global_transform * Vector3(0, 0.62, 0)
-	var len := a.distance_to(b)
-	if len < 0.01:
+	var dist := a.distance_to(b)
+	if dist < 0.01:
 		return
-	var up := (a - b) / len
+	var up := (a - b) / dist
 	var side := up.cross(Vector3.FORWARD if absf(up.z) < 0.9 else Vector3.RIGHT).normalized()
-	rope.global_transform = Transform3D(Basis(side, up * len, side.cross(up)), (a + b) * 0.5)
+	rope.global_transform = Transform3D(Basis(side, up * dist, side.cross(up)), (a + b) * 0.5)

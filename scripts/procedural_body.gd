@@ -33,6 +33,13 @@ func _bone(n: String) -> int:
 	return _bones[n]
 
 
+## Godot 4.5+: recebe o tempo do quadro.
+func _process_modification_with_delta(delta: float) -> void:
+	dt = delta
+	_process_modification()
+
+
+## Godot 4.3/4.4.
 func _process_modification() -> void:
 	var sk := get_skeleton()
 	if sk == null:
