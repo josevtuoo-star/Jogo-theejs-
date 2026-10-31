@@ -1,4 +1,10 @@
-# Jogo-theejs- — Sobrevivência (Three.js)
+# Jogo-theejs- — Sobrevivência
+
+> **O projeto passou para o Godot 4 (Android).** O protótipo novo está na pasta
+> [`godot/`](godot/) — veja [godot/README.md](godot/README.md). O jogo em Three.js abaixo
+> fica guardado só como referência.
+
+## Versão antiga em Three.js
 
 Jogo de sobrevivência em primeira pessoa (estilo DayZ / Minecraft / The Walking Dead) feito com **Three.js**, rodando direto no navegador em **PC e Android**. Não precisa instalar nada nem compilar: o Three.js é carregado por CDN.
 
