@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://ct7njv25g4s0m"
-path="res://.godot/imported/personagem.glb-0b39881153eb15d84748f8218bfabc09.scn"
+uid="uid://c0t6a3dvj8s3d"
+path="res://.godot/imported/policial.glb-1babd1e6b79ba3029893128f3ebf8cea.scn"
 
 [deps]
 
-source_file="res://assets/personagem.glb"
-dest_files=["res://.godot/imported/personagem.glb-0b39881153eb15d84748f8218bfabc09.scn"]
+source_file="res://assets/personagens/policial.glb"
+dest_files=["res://.godot/imported/policial.glb-1babd1e6b79ba3029893128f3ebf8cea.scn"]
 
 [params]
 

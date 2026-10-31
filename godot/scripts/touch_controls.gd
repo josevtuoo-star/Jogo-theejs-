@@ -5,7 +5,7 @@ extends Control
 ## - arrastar no lado direito = olhar;
 ## - botões: SOCO, CHUTE, PULAR, AGACHAR (liga/desliga), CÂMERA (1ª/3ª pessoa) e reiniciar.
 ##   PULAR e AGACHAR mudam de nome conforme o parkour possível (SUBIR, SALTAR, ESCALAR,
-##   DESLIZAR, SOLTAR...).
+##   DESLIZAR, SOLTAR...). DEITAR liga/desliga rastejar; TROCAR muda o personagem.
 ## Tudo funciona com vários dedos ao mesmo tempo.
 
 const JOY_R := 80.0
@@ -17,6 +17,8 @@ const BUTTONS := [
 	{"action": "jump", "label": "PULAR", "pos": Vector2(-290, -92), "r": 54.0},
 	{"action": "crouch", "label": "AGACHAR", "pos": Vector2(-118, -310), "r": 46.0},
 	{"action": "kick", "label": "CHUTE", "pos": Vector2(-268, -238), "r": 42.0},
+	{"action": "prone", "label": "DEITAR", "pos": Vector2(-210, -405), "r": 40.0},
+	{"action": "character", "label": "TROCAR", "pos": Vector2(-236, 64), "r": 30.0},
 	{"action": "camera", "label": "1ª/3ª", "pos": Vector2(-64, 64), "r": 38.0},
 	{"action": "reset", "label": "↺", "pos": Vector2(-152, 64), "r": 30.0},
 ]
@@ -173,7 +175,7 @@ func _draw() -> void:
 		var b: Dictionary = BUTTONS[i]
 		var bc := _btn_center(b)
 		var on: bool = held.has(i) or (b.action == "crouch" and Inputs.crouching) \
-			or (b.action == "camera" and Inputs.first_person)
+			or (b.action == "camera" and Inputs.first_person) or (b.action == "prone" and Inputs.prone)
 		draw_circle(bc, b.r, Color(1, 0.75, 0.3, 0.45) if on else Color(0, 0, 0, 0.3))
 		draw_arc(bc, b.r, 0.0, TAU, 48, Color(1, 1, 1, 0.55), 2.5, true)
 		var label: String = b.label

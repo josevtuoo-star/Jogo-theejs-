@@ -7,8 +7,12 @@ extends CharacterBody3D
 ##   agarra bordas altas no ar, fica pendurado e sobe; desliza correndo (agachar), rola ao
 ##   cair de alto em movimento; queda alta parado = aterrissagem pesada.
 ## - Soco em combo (jab, direto, gancho) e chute frontal que empurram objetos com física.
-## - Câmera em 3ª pessoa (braço que não atravessa paredes) e 1ª pessoa estilo bodycam
-##   (na cabeça, balança com o corpo, lente grande-angular olho de peixe).
+## - Deitar e rastejar (como no DayZ); em pé, agachado ou deitado.
+## - Câmera em 3ª pessoa por cima do ombro (não atravessa paredes) e 1ª pessoa nos olhos,
+##   com o corpo visível e balanço natural do passo (estabilizado).
+## - Camadas procedurais por cima das animações (procedural_body.gd): pés apoiados no chão,
+##   inclinação nas curvas, cabeça olhando para onde a câmera olha, passinhos ao girar parado.
+## - Dois personagens (policial e sobrevivente) com o mesmo esqueleto e animações.
 ## - Animações misturadas por uma AnimationTree montada aqui; as de andar/correr são
 ##   reamostradas para o mesmo ciclo e fase (os pés não "trocam" ao misturar).
 
@@ -20,7 +24,9 @@ enum Mode { NORMAL, MANTLE, HANG, SLIDE, ROLL, ACTION }
 @export var sprint_speed := 5.8
 @export var crouch_speed := 1.2
 ## 1ª pessoa: velocidade máxima andando de lado ou para trás
-@export var side_speed := 1.7
+@export var side_speed := 1.4
+## velocidade rastejando (deitado)
+@export var prone_speed := 0.75
 @export var accel_ground := 14.0
 @export var decel_ground := 18.0
 @export var accel_air := 3.0
@@ -42,14 +48,18 @@ enum Mode { NORMAL, MANTLE, HANG, SLIDE, ROLL, ACTION }
 @export var mouse_sensitivity := 0.0025
 @export var touch_sensitivity := 0.0055
 @export var pad_sensitivity := 3.0
-@export var tp_distance := 3.0
-@export var tp_fov := 70.0
-## 1ª pessoa (bodycam): campo de visão bem aberto; a lente do pós-processamento curva as bordas
-@export var fp_fov := 98.0
+@export var tp_distance := 2.4
+@export var tp_fov := 65.0
+@export var fp_fov := 78.0
 
 const STAND_H := 1.8
 const CROUCH_H := 1.15
 const SLIDE_H := 0.8
+const PRONE_H := 0.6
+## velocidade natural da animação de rastejar (m/s)
+const ANIM_CRAWL := 0.55
+const CHARACTERS := ["res://assets/personagens/policial.glb", "res://assets/personagens/sobrevivente.glb"]
+const CHARACTER_NAMES := ["Policial", "Sobrevivente"]
 const RADIUS := 0.3
 const SKEL := "Scene/Armature_15_M/Skeleton3D:"
 ## altura das mãos acima dos pés na pose pendurada
@@ -75,7 +85,7 @@ const KICK := {"hit": 0.72, "end": 1.45, "force": 42.0, "reach": 0.85, "height":
 ## animações que fazem parkour/ações (tocadas por cima de tudo, uma de cada vez)
 const PK := ["climb_up", "ledge_hang", "slide_start", "slide", "slide_exit", "roll", "land_hard", "kick"]
 const LOOPS := ["idle", "walk", "jog", "sprint", "walk_back", "strafe_left", "strafe_right",
-	"crouch_idle", "crouch_walk", "jump_air", "run_jump", "fight_idle", "idle_hurt", "ledge_hang", "slide", "climb_wall"]
+	"crouch_idle", "crouch_walk", "jump_air", "run_jump", "fight_idle", "idle_hurt", "ledge_hang", "slide", "crawl", "walk_stealth"]
 
 const SFX := "res://assets/sfx/"
 
@@ -92,6 +102,9 @@ var cam_pitch := -0.2
 var first_person := false
 var cam_blend := 0.0 # 0 = 3ª pessoa, 1 = 1ª pessoa
 var crouching := false
+## deitado (rastejando)
+var prone := false
+var character_index := 0
 var crouch_amt := 0.0
 var air_amt := 0.0
 var combat := 0.0 # postura de luta depois de socar (vai sumindo)
@@ -103,9 +116,14 @@ var hits := 0
 var _tree: AnimationTree
 var _skel: Skeleton3D
 var _head_bone := -1
-var _chest_bone := -1
-var _head_hider: Node
-var _post: CanvasItem
+var _body: Node # procedural_body.gd
+var _prone_col: CollisionShape3D
+var _prone_amt := 0.0
+var _turning := false
+var _turn_in_place := false
+var _eye_y := 0.0
+var _last_yaw := 0.0
+var _last_speed := 0.0
 var _capsule: CapsuleShape3D
 var _hit_shape := SphereShape3D.new()
 var _coyote := 0.0
@@ -155,9 +173,6 @@ var _prev_pos := Vector3.ZERO
 var _cur_pos := Vector3.ZERO
 var _pivot_y := 0.0
 var _head_off := Vector3(0, 1.6, 0)
-var _chest_off := Vector3(0, 1.4, 0)
-var _sway := Vector2.ZERO
-var _sway_base := Vector2.ZERO
 var _blend_pos := Vector2.ZERO
 var _moving_amt := 0.0
 var _spawn: Transform3D
@@ -182,6 +197,7 @@ func _ready() -> void:
 	_cur_pos = global_position
 	_pivot_y = global_position.y
 	arm.add_excluded_object(get_rid())
+	_prone_col = get_node_or_null("ColisaoDeitado")
 	_setup_animation()
 	_setup_sounds()
 	_setup_particles()
@@ -237,7 +253,17 @@ func _move_normal(delta: float) -> void:
 	var inp: Vector2 = r[2]
 	var hv := Vector3(velocity.x, 0.0, velocity.z)
 
-	if Input.is_action_just_pressed("crouch"):
+	if Input.is_action_just_pressed("prone") and was_on_floor:
+		if prone:
+			_stand_from_prone(false)
+		elif _punch_t < 0.0:
+			_set_prone(true)
+	if prone and Input.is_action_just_pressed("jump"):
+		_stand_from_prone(false)
+		_buffer = 0.0
+	if Input.is_action_just_pressed("crouch") and prone:
+		_stand_from_prone(true)
+	elif Input.is_action_just_pressed("crouch"):
 		if not was_on_floor:
 			_crouch_tap = 0.4 # no ar: prepara o rolamento
 		elif hv.length() > 4.2 and not crouching and _punch_t < 0.0:
@@ -249,16 +275,18 @@ func _move_normal(delta: float) -> void:
 			_set_crouch(true)
 	_crouch_tap -= delta
 
-	if Input.is_action_just_pressed("kick") and was_on_floor and _punch_t < 0.0 and not crouching:
+	if Input.is_action_just_pressed("kick") and was_on_floor and _punch_t < 0.0 and not crouching and not prone:
 		_start_action("kick")
 		return
 
 	# velocidade desejada
 	var forwardness := -inp.y / maxf(mag, 0.001) # 1 = para frente da câmera
-	sprinting = Input.is_action_pressed("sprint") and mag > 0.5 and not crouching \
+	sprinting = Input.is_action_pressed("sprint") and mag > 0.5 and not crouching and not prone \
 		and (not first_person or forwardness > 0.6) and _punch_t < 0.0
 	var target_speed: float
-	if crouching:
+	if prone:
+		target_speed = prone_speed * mag
+	elif crouching:
 		target_speed = crouch_speed * mag
 	elif sprinting:
 		target_speed = sprint_speed
@@ -266,8 +294,10 @@ func _move_normal(delta: float) -> void:
 		target_speed = walk_speed * mag / 0.6
 	else:
 		target_speed = lerpf(walk_speed, jog_speed, (mag - 0.6) / 0.4)
-	if first_person and forwardness < 0.5:
+	if first_person and forwardness < 0.5 and not prone:
 		target_speed = minf(target_speed, side_speed)
+	if _prone_amt > 0.0 and _prone_amt < 1.0:
+		target_speed *= 0.3 # deitando/levantando
 	if was_on_floor:
 		# ladeira: subindo cansa (mais devagar), descendo embala um pouco
 		var n := get_floor_normal()
@@ -309,7 +339,7 @@ func _move_normal(delta: float) -> void:
 		_buffer = jump_buffer
 	else:
 		_buffer -= delta
-	if _buffer > 0.0:
+	if _buffer > 0.0 and not prone:
 		if was_on_floor and _punch_t < 0.0 and _try_parkour(dir if mag > 0.2 else Vector3.ZERO):
 			_buffer = 0.0
 			return
@@ -340,7 +370,11 @@ func _move_normal(delta: float) -> void:
 		if velocity.y < 2.5 and _grab_cd <= 0.0 and _air_time > 0.08:
 			_try_grab()
 
-	_update_punch(delta)
+	if not prone:
+		_update_punch(delta)
+	if _prone_col:
+		_prone_col.rotation = Vector3(PI / 2.0, model_yaw, 0.0)
+		_prone_col.position = Vector3(sin(model_yaw), 0.0, cos(model_yaw)) * 0.15 + Vector3.UP * 0.22
 
 
 func _facing() -> Vector3:
@@ -360,6 +394,33 @@ func _set_crouch(on: bool) -> void:
 	crouching = on
 	_set_height(CROUCH_H if on else STAND_H)
 	Inputs.crouching = on
+
+
+## Deitar: colisão baixa (passa por baixo de 0,6 m) e um corpo comprido deitado no chão.
+func _set_prone(on: bool) -> void:
+	prone = on
+	if on:
+		crouching = false
+		Inputs.crouching = false
+		_set_height(PRONE_H)
+		_play("cloth", -4.0)
+		_play("land", -14.0)
+	if _prone_col:
+		_prone_col.disabled = not on
+	Inputs.prone = on
+
+
+## Levantar de deitado: em pé se couber; senão agachado; senão continua deitado.
+func _stand_from_prone(to_crouch: bool) -> void:
+	if not to_crouch and _fits(global_position, STAND_H):
+		_set_prone(false)
+		_set_crouch(false)
+	elif _fits(global_position, CROUCH_H):
+		_set_prone(false)
+		_set_crouch(true)
+	else:
+		return
+	_play("cloth", -6.0)
 
 
 ## Levanta se houver espaço acima da cabeça. Devolve se conseguiu.
@@ -420,6 +481,7 @@ func respawn() -> void:
 	_prev_pos = global_position
 	_cur_pos = global_position
 	_pivot_y = global_position.y
+	_set_prone(false)
 	_set_crouch(false)
 
 
@@ -711,7 +773,7 @@ func _move_action(delta: float) -> void:
 
 ## Texto dos botões de toque conforme o que dá para fazer agora.
 func _update_hints() -> void:
-	var jump := "PULAR"
+	var jump := "LEVANTAR" if prone else "PULAR"
 	var crouch := "LEVANTAR" if crouching else "AGACHAR"
 	match mode:
 		Mode.HANG:
@@ -721,7 +783,7 @@ func _update_hints() -> void:
 			crouch = "LEVANTAR"
 		Mode.NORMAL:
 			var hv := Vector3(velocity.x, 0.0, velocity.z)
-			if is_on_floor():
+			if is_on_floor() and not prone:
 				if hv.length() > 4.2 and not crouching:
 					crouch = "DESLIZAR"
 				var r := _read_move()
@@ -823,7 +885,7 @@ func _do_hitstop(t: float) -> void:
 # ------------------------------------------------------------------ pulo / queda
 
 func _on_jump() -> void:
-	_tree.set("parameters/jump/request", AnimationNodeOneShot.ONE_SHOT_REQUEST_FIRE)
+	# (sem a animação de impulso: ela começa agachada e dava um "afundar" estranho no pulo)
 	_play("cloth", -6.0)
 
 
@@ -864,6 +926,11 @@ func _footsteps(delta: float) -> void:
 		_step_dist = minf(_step_dist, 0.3)
 		return
 	_step_dist += spd * delta
+	if prone:
+		if _step_dist >= 0.45:
+			_step_dist = 0.0
+			_play("cloth", -12.0)
+		return
 	var stride := 0.55 if crouching else (0.85 if spd < 2.0 else (1.55 if spd < 4.5 else 1.95))
 	if _step_dist >= stride:
 		_step_dist = 0.0
@@ -973,75 +1040,88 @@ func _process(delta: float) -> void:
 	var pad := Input.get_vector("look_left", "look_right", "look_up", "look_down")
 	look += pad * pad_sensitivity * delta
 	cam_yaw = wrapf(cam_yaw - look.x, -PI, PI)
-	var min_p := -1.35 if first_person else -1.2
-	var max_p := 1.3 if first_person else 0.75
+	var min_p := -1.3 if first_person else -1.2
+	var max_p := 1.25 if first_person else 0.75
 	cam_pitch = clampf(cam_pitch - look.y, min_p, max_p)
 
 	if Input.is_action_just_pressed("camera"):
 		first_person = not first_person
 		Inputs.first_person = first_person
+	if Input.is_action_just_pressed("character"):
+		next_character()
 	cam_blend = move_toward(cam_blend, 1.0 if first_person else 0.0, delta * 4.0)
 	var e := smoothstep(0.0, 1.0, cam_blend)
 
-	# para onde o corpo olha: em 1ª pessoa e socando, para a câmera; senão, para onde anda
+	# para onde o corpo olha
 	var hv := Vector3(velocity.x, 0.0, velocity.z)
+	var spd := hv.length()
+	var view_yaw := cam_yaw + PI # o modelo olha para +Z: de frente para onde a câmera olha
+	_turning = false
 	if mode == Mode.NORMAL:
 		var target_yaw := model_yaw
 		var turn := 10.0
-		if first_person or _punch_t >= 0.0:
-			target_yaw = cam_yaw + PI
+		if _punch_t >= 0.0:
+			target_yaw = view_yaw
 			turn = 25.0
-		elif hv.length() > 0.3:
+		elif first_person:
+			if spd > 0.3 or prone:
+				target_yaw = view_yaw
+				turn = 14.0 if not prone else 3.0
+			else:
+				# parado em 1ª pessoa: a cabeça vira primeiro; passando de ~60° o corpo gira
+				# dando passinhos (como no DayZ)
+				var diff := wrapf(view_yaw - model_yaw, -PI, PI)
+				if absf(diff) > 1.05 or _turn_in_place:
+					_turn_in_place = absf(diff) > 0.12
+					target_yaw = view_yaw
+					turn = 6.0
+					_turning = _turn_in_place
+		elif spd > 0.3:
 			target_yaw = atan2(hv.x, hv.z)
-			turn = 12.0 if is_on_floor() else 4.0
+			turn = (12.0 if not prone else 3.0) if is_on_floor() else 4.0
 		model_yaw = lerp_angle(model_yaw, target_yaw, 1.0 - exp(-turn * delta))
 	visual.rotation = Vector3(0.0, model_yaw, 0.0)
 
 	_update_animation(delta, hv)
+	_update_body(delta, hv, view_yaw)
 
-	# 3ª pessoa: acima do ombro
+	# 3ª pessoa: por cima do ombro direito, mais perto (estilo DayZ)
 	_pivot_y = lerpf(_pivot_y, pos.y, 1.0 - exp(-14.0 * delta))
 	if absf(_pivot_y - pos.y) > 1.0 or mode == Mode.MANTLE:
 		_pivot_y = pos.y
 	var low := maxf(crouch_amt, _pk_amt if mode in [Mode.SLIDE, Mode.ROLL] else 0.0)
-	var tp_pivot := Vector3(pos.x, _pivot_y + lerpf(1.55, 1.0, low), pos.z)
-	# 1ª pessoa (bodycam): presa à cabeça; o balanço do tronco inclina a imagem
+	var pivot_h := lerpf(lerpf(1.6, 1.05, low), 0.55, _prone_amt)
+	var tp_pivot := Vector3(pos.x, _pivot_y + pivot_h, pos.z)
+	# 1ª pessoa: nos olhos. A cabeça animada leva a câmera junto (balanço natural do passo),
+	# mas a altura é estabilizada pela metade para não chacoalhar.
 	var cam_fwd := Vector3(-sin(cam_yaw), 0.0, -cos(cam_yaw))
-	var cam_right := Vector3(cos(cam_yaw), 0.0, -sin(cam_yaw))
-	if _chest_bone >= 0:
-		var chest_pose := _skel.get_bone_global_pose(_chest_bone)
-		var chest := _skel.global_transform * chest_pose.origin
-		_chest_off = _chest_off.lerp(chest - visual.global_position, 1.0 - exp(-30.0 * delta))
+	if _head_bone >= 0:
 		var head := _skel.global_transform * _skel.get_bone_global_pose(_head_bone).origin
 		_head_off = _head_off.lerp(head - visual.global_position, 1.0 - exp(-25.0 * delta))
-		var up_b := (_skel.global_transform.basis * chest_pose.basis).orthonormalized().y
-		var raw := Vector2(up_b.dot(cam_fwd), -up_b.dot(cam_right))
-		_sway_base = _sway_base.lerp(raw, 1.0 - exp(-1.5 * delta))
-		_sway = _sway.lerp((raw - _sway_base).clamp(Vector2(-0.25, -0.25), Vector2(0.25, 0.25)), 1.0 - exp(-12.0 * delta))
-	var model_fwd := _facing()
-	var fp_pivot := visual.global_position + _head_off + Vector3.UP * 0.07 + model_fwd * 0.1 \
-		+ cam_fwd * 0.1 * clampf(-cam_pitch, 0.0, 1.2)
+	var fp_pivot := visual.global_position + _head_off + Vector3.UP * 0.08 + cam_fwd * 0.11
+	if mode == Mode.NORMAL and not prone and is_on_floor():
+		var eye: float = pos.y + lerpf(1.7, 1.12, crouch_amt)
+		_eye_y = lerpf(_eye_y, eye, 1.0 - exp(-10.0 * delta))
+		fp_pivot.y = lerpf(fp_pivot.y, _eye_y, 0.55)
+	else:
+		_eye_y = fp_pivot.y
 	if e > 0.01:
-		# a câmera do peito nunca entra na parede (pendurado, encostado num muro...)
-		var from := global_position + Vector3.UP * minf(_head_off.y, _capsule.height - 0.15)
+		# a câmera nunca entra na parede (pendurado, encostado num muro...)
+		var from := global_position + Vector3.UP * minf(_head_off.y, maxf(_capsule.height - 0.15, 0.3))
 		var q := PhysicsRayQueryParameters3D.create(from, fp_pivot, 1 | 2, [get_rid()])
 		var hit := get_world_3d().direct_space_state.intersect_ray(q)
 		if not hit.is_empty():
 			fp_pivot = from + (fp_pivot - from).normalized() * maxf(from.distance_to(hit.position) - 0.12, 0.0)
 	rig.global_position = tp_pivot.lerp(fp_pivot, e)
-	rig.rotation = Vector3(cam_pitch - _sway.x * 0.5 * e, cam_yaw, _sway.y * 0.6 * e)
-	arm.spring_length = lerpf(tp_distance, 0.0, e)
-	arm.position = Vector3(lerpf(0.35, 0.0, e), 0.0, 0.0)
-	if _head_hider:
-		_head_hider.hide_head = cam_blend > 0.5
+	# um leve rolar da imagem ao inclinar o corpo nas curvas (só em 1ª pessoa)
+	rig.rotation = Vector3(cam_pitch, cam_yaw, -_body.lean.y * 0.25 * e)
+	arm.spring_length = lerpf(tp_distance, 0.0, e) * lerpf(1.0, 0.75, _prone_amt)
+	arm.position = Vector3(lerpf(0.45, 0.0, e), 0.0, 0.0)
+	_body.hide_head = cam_blend > 0.5
 	var fov := lerpf(tp_fov, fp_fov, e)
 	if sprinting or mode == Mode.SLIDE:
-		fov += 6.0
+		fov += 5.0
 	cam.fov = lerpf(cam.fov, fov, 1.0 - exp(-6.0 * delta))
-	if _post == null:
-		_post = get_tree().get_first_node_in_group("pos_processamento") as CanvasItem
-	if _post:
-		(_post.material as ShaderMaterial).set_shader_parameter("bodycam", e)
 	# tremida (impactos e quedas)
 	_shake = maxf(_shake - delta * 1.5, 0.0)
 	var s := _shake * _shake
@@ -1049,12 +1129,37 @@ func _process(delta: float) -> void:
 	cam.v_offset = (randf() - 0.5) * s * 0.6
 
 
+## Camadas procedurais: pés no chão, inclinação nas curvas/aceleração, cabeça olhando.
+func _update_body(delta: float, hv: Vector3, view_yaw: float) -> void:
+	var spd := hv.length()
+	var yaw_rate := wrapf(model_yaw - _last_yaw, -PI, PI) / maxf(delta, 0.001)
+	_last_yaw = model_yaw
+	var accel := (spd - _last_speed) / maxf(delta, 0.001)
+	_last_speed = spd
+	var free := mode == Mode.NORMAL and not prone and is_on_floor()
+	# pés no chão: parado, andando e agachado (correndo os pés mal tocam o chão)
+	var ik := 1.0 if (free and spd < 2.6) else 0.0
+	_body.ik_weight = move_toward(_body.ik_weight, ik, delta * 4.0)
+	var lean := Vector2.ZERO
+	if free:
+		lean = Vector2(clampf(accel * 0.012, -0.08, 0.12) + clampf(spd / sprint_speed, 0.0, 1.0) * 0.06,
+			clampf(-yaw_rate * spd * 0.03, -0.28, 0.28))
+	_body.lean = _body.lean.lerp(lean, 1.0 - exp(-6.0 * delta))
+	# cabeça: olha para onde a câmera aponta (se não estiver "atrás das costas")
+	var lk := Vector2.ZERO
+	if mode == Mode.NORMAL and not prone and _punch_t < 0.0:
+		var diff := wrapf(view_yaw - model_yaw, -PI, PI)
+		var fade := 1.0 - smoothstep(1.5, 2.1, absf(diff))
+		lk = Vector2(clampf(diff, -1.15, 1.15) * fade, clampf(cam_pitch + (0.0 if first_person else 0.2), -0.7, 0.6) * (1.0 if first_person else 0.6))
+	_body.look = _body.look.lerp(lk, 1.0 - exp(-8.0 * delta))
+
+
 # ------------------------------------------------------------------ animação
 
 func _setup_animation() -> void:
 	_skel = model.find_children("*", "Skeleton3D", true, false)[0]
 	_head_bone = _skel.find_bone("head")
-	_chest_bone = _skel.find_bone("spine_03")
+	_tune_materials()
 	var ap: AnimationPlayer = model.find_children("*", "AnimationPlayer", true, false)[0]
 	for n in LOOPS:
 		if ap.has_animation(n):
@@ -1074,8 +1179,9 @@ func _setup_animation() -> void:
 		lib.add_animation(n, _normalize_cycle(ap, n, LOCO[n][0]))
 	ap.add_animation_library("loco", lib)
 
-	_head_hider = load("res://scripts/head_hider.gd").new()
-	_skel.add_child(_head_hider)
+	_body = load("res://scripts/procedural_body.gd").new()
+	_body.exclude.append(get_rid())
+	_skel.add_child(_body)
 
 	var bt := AnimationNodeBlendTree.new()
 	# parado (normal ou postura de luta)
@@ -1113,6 +1219,13 @@ func _setup_animation() -> void:
 	bt.add_node("crouch", AnimationNodeBlend2.new())
 	bt.connect_node("crouch", 0, "moving")
 	bt.connect_node("crouch", 1, "crouch_ts")
+	# deitado: rastejando (parado = a mesma animação congelada)
+	bt.add_node("crawl", _anim("crawl"))
+	bt.add_node("crawl_ts", AnimationNodeTimeScale.new())
+	bt.connect_node("crawl_ts", 0, "crawl")
+	bt.add_node("prone", AnimationNodeBlend2.new())
+	bt.connect_node("prone", 0, "crouch")
+	bt.connect_node("prone", 1, "crawl_ts")
 	# no ar (pulo parado ou correndo)
 	bt.add_node("air_anim", _anim("jump_air"))
 	bt.add_node("run_jump", _anim("run_jump"))
@@ -1120,7 +1233,7 @@ func _setup_animation() -> void:
 	bt.connect_node("air_pose", 0, "air_anim")
 	bt.connect_node("air_pose", 1, "run_jump")
 	bt.add_node("air", AnimationNodeBlend2.new())
-	bt.connect_node("air", 0, "crouch")
+	bt.connect_node("air", 0, "prone")
 	bt.connect_node("air", 1, "air_pose")
 	# impulso do pulo e aterrissagem
 	bt.add_node("jump_anim", _anim("jump_start"))
@@ -1186,6 +1299,46 @@ func _setup_animation() -> void:
 	_tree.set("parameters/jump_ts/scale", 1.25)
 	_tree.set("parameters/land_ts/scale", 1.4)
 	_tree.set("parameters/pk_ts/scale", 1.0)
+
+
+## Troca para o próximo personagem (mesmo esqueleto, mesmas animações).
+func next_character() -> void:
+	set_character((character_index + 1) % CHARACTERS.size())
+
+
+func set_character(i: int) -> void:
+	character_index = i
+	var old := model
+	var m: Node3D = load(CHARACTERS[i]).instantiate()
+	m.name = "Model"
+	old.name = "Velho"
+	visual.add_child(m)
+	old.queue_free()
+	model = m
+	mode = Mode.NORMAL
+	_pk_amt = 0.0
+	_pk_target = 0.0
+	_punch_t = -1.0
+	_setup_animation()
+
+
+## Pele e roupa foscas e mais naturais (menos "plástico" sob o sol).
+func _tune_materials() -> void:
+	for mi in model.find_children("*", "MeshInstance3D", true, false):
+		var mesh: Mesh = mi.mesh
+		for i in mesh.get_surface_count():
+			var mat := mesh.surface_get_material(i) as StandardMaterial3D
+			if mat == null:
+				continue
+			mat = mat.duplicate()
+			mat.roughness = 0.88
+			mat.metallic = 0.0
+			mat.metallic_specular = 0.3
+			mat.rim_enabled = true
+			mat.rim = 0.15
+			mat.rim_tint = 0.6
+			mi.set_surface_override_material(i, mat)
+			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 
 
 ## Copia a animação de andar/correr para um ciclo de 1 s que começa com o pé esquerdo mais à
@@ -1286,14 +1439,24 @@ func _update_animation(delta: float, hv: Vector3) -> void:
 		var cyc_other: float = LOCO.walk_back[1] if d.y < 0.0 else LOCO.strafe_left[1]
 		var w := maxf(d.y, 0.0)
 		hz = clampf(spd / lerpf(cyc_other, cyc_fwd, w * w), 0.35, 3.0)
+	var moving := clampf(spd / 0.7, 0.0, 1.0)
+	if _turning:
+		# girando parado: passinhos curtos no lugar
+		target = Vector2(0, 1)
+		moving = 0.45
+		hz = 0.9
 	_blend_pos = _blend_pos.lerp(target, 1.0 - exp(-10.0 * delta))
-	_moving_amt = lerpf(_moving_amt, clampf(spd / 0.7, 0.0, 1.0), 1.0 - exp(-12.0 * delta))
+	_moving_amt = lerpf(_moving_amt, moving, 1.0 - exp(-12.0 * delta))
+	_prone_amt = move_toward(_prone_amt, 1.0 if prone else 0.0, delta * 2.2)
+	var crawl_dir := 1.0 if hv.dot(fwd) >= -0.1 else -1.0
+	_tree.set("parameters/crawl_ts/scale", crawl_dir * spd / ANIM_CRAWL if spd > 0.08 else 0.0)
+	_tree.set("parameters/prone/blend_amount", smoothstep(0.0, 1.0, _prone_amt))
 	var k := 1.0 - exp(-8.0 * delta)
 	crouch_amt = lerpf(crouch_amt, 1.0 if crouching else 0.0, k)
 	var in_air := mode == Mode.NORMAL and not is_on_floor() and _air_time > 0.1
 	air_amt = lerpf(air_amt, 1.0 if in_air else 0.0, 1.0 - exp(-12.0 * delta))
 	if _punch_t < 0.0 and mode != Mode.ACTION:
-		combat = maxf(combat - delta / 3.0, 0.0)
+		combat = maxf(combat - delta / 1.5, 0.0)
 	_pk_amt = move_toward(_pk_amt, _pk_target, delta / maxf(_pk_fade, 0.01))
 
 	_tree.set("parameters/move/blend_position", _blend_pos)
@@ -1327,7 +1490,7 @@ func state_text() -> String:
 			return "Rolando"
 		Mode.ACTION:
 			return "Chute" if _act == "kick" else "Aterrissagem pesada"
-	var s := "No ar" if not is_on_floor() else ("Agachado" if crouching else ("Correndo" if sprinting else "Em pé"))
+	var s := "No ar" if not is_on_floor() else ("Deitado" if prone else ("Agachado" if crouching else ("Correndo" if sprinting else "Em pé")))
 	if _punch_t >= 0.0:
 		s += " · " + ["Jab", "Direto", "Gancho"][_punch_idx]
 	return s

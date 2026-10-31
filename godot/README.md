@@ -1,7 +1,8 @@
-# Sobrevivência — Protótipo 0.2 (Godot 4, Android)
+# Sobrevivência — Protótipo 0.3 (Godot 4, Android)
 
-Protótipo focado em **jogabilidade, mecânicas, personagem, animações e física**, num pátio de
-treino com circuito de parkour.
+Jogo de sobrevivência no estilo DayZ / The Walking Dead / Minecraft. Este protótipo foca em
+**jogabilidade, mecânicas, personagem, animações e física**, num pátio de treino com circuito de
+parkour.
 
 ## Como abrir no celular (Godot para Android)
 
@@ -23,9 +24,11 @@ No PC funciona igual (Godot 4.3+ para Windows/Linux/Mac).
 | Olhar | arraste no lado direito da tela | mouse (clique para prender, Esc solta) | analógico direito |
 | Pular / parkour | **PULAR** — o botão vira **SALTAR**, **SUBIR** ou **ESCALAR** quando há obstáculo à frente | Espaço | A |
 | Agachar / deslizar | **AGACHAR** (liga/desliga); correndo vira **DESLIZAR**; pendurado vira **SOLTAR** | C ou Ctrl | B |
+| Deitar / rastejar | **DEITAR** (liga/desliga); deitado, PULAR levanta e AGACHAR fica agachado | Z | apertar o analógico direito |
 | Soco (combo) | **SOCO** — toque de novo no ritmo: jab → direto → gancho | clique esquerdo ou F | X |
 | Chute | **CHUTE** | botão direito do mouse ou G | RB |
 | 1ª / 3ª pessoa | **1ª/3ª** (canto superior direito) | V | Y |
+| Trocar personagem | **TROCAR** (policial ↔ sobrevivente) | P | — |
 | Recomeçar | **↺** | R | Select |
 
 No PC, **F1** mostra os controles de toque.
@@ -45,16 +48,24 @@ No PC, **F1** mostra os controles de toque.
 
 ## O que tem neste protótipo
 
-**Personagem e animações** — 31 animações misturadas por uma `AnimationTree` montada no
-código (`scripts/player.gd`):
-- andar, trotar e correr (e andar de lado/para trás em 1ª pessoa) **reamostradas para o mesmo
-  ciclo e a mesma fase** ao abrir o jogo: a mistura entre elas não "troca de pé" mais, e a
-  cadência acompanha a velocidade real (pés sem patinar);
-- parado e postura de luta depois de socar; agachado parado e andando;
-- pulo parado e **pulo correndo** (pose diferente), aterrissagem leve, pesada e rolamento;
-- parkour: subir/saltar obstáculo, pendurado na borda, deslize (entrada, deslizando, saída);
-- socos com o corpo todo (jab, direto e **gancho com recuperação** — volta à guarda suave) e
-  chute frontal.
+**Personagens** — dois sobreviventes realistas (texturas de foto) com o mesmo esqueleto e
+as mesmas animações: um **policial** (estilo xerife de The Walking Dead) e um **sobrevivente** de
+camisa polo e jeans. A malha foi suavizada e os materiais deixados foscos (sem cara de plástico).
+
+**Animações** — 31 animações de captura misturadas por uma `AnimationTree` montada no código
+(`scripts/player.gd`), e por cima delas **camadas procedurais** (`scripts/procedural_body.gd`)
+que deixam o corpo reagir ao mundo:
+- **pés no chão (IK)**: em escada, rampa ou caixa cada pé pousa na altura certa e acompanha a
+  inclinação; o quadril desce para o pé mais baixo alcançar (nada de pé flutuando ou
+  atravessando o degrau);
+- **cabeça e pescoço olham para onde a câmera aponta** (em 3ª e 1ª pessoa);
+- **inclinação do tronco** para dentro nas curvas e para frente ao acelerar/correr;
+- **girar parado com passinhos**: em 1ª pessoa, parado, a cabeça vira primeiro e, passando de
+  ~60°, o corpo gira dando passos (sem deslizar no lugar, como no DayZ);
+- andar, trotar e correr reamostradas para o mesmo ciclo e fase (sem troca de pé), cadência
+  acompanhando a velocidade real; agachado, **deitado rastejando** (para frente e para trás);
+- pulo sem o "afundar" no impulso, pulo correndo, aterrissagens, parkour, socos com o corpo
+  todo e chute; a guarda de luta some mais rápido depois de socar.
 
 **Física**
 - peso e inércia: acelera e freia; quanto mais rápido, mais aberta é a curva; meia-volta
@@ -71,11 +82,11 @@ código (`scripts/player.gd`):
 - saco de pancada pendurado por junta física, gangorra com dobradiça, 18 dominós em curva.
 
 **Câmeras**
-- 3ª pessoa acima do ombro, com braço de câmera que não atravessa paredes;
-- **1ª pessoa estilo bodycam**: lente grande-angular olho de peixe, aberração cromática nas
-  bordas, vinheta da lente, cor fria/lavada de câmera de corpo, letreiro **● REC** com data e
-  hora do aparelho; a câmera vai na cabeça e balança/inclina com o tronco (corrida, pulo,
-  rolamento); você vê seus braços, pernas e as mãos agarrando a borda; nunca atravessa parede.
+- 3ª pessoa por cima do ombro direito, mais perto (estilo DayZ), com braço de câmera que não
+  atravessa paredes; abaixa junto quando agacha ou deita;
+- **1ª pessoa realista**: nos olhos do personagem, imagem limpa (sem lente distorcida), campo de
+  visão natural (78°); o balanço do passo vem da cabeça animada mas é estabilizado pela metade;
+  você vê braços, pernas, os socos e as mãos agarrando a borda; nunca entra na parede.
 
 **Gráficos e luz**
 - céu real em foto 360° (HDRI) que também ilumina e reflete no cenário, sol na mesma direção do
@@ -83,7 +94,7 @@ código (`scripts/player.gd`):
 - chão de terra e grama com textura em duas escalas misturadas (sem "azulejo" repetido), muro de
   tijolos com relevo, caixas de madeira, concreto procedural (manchas, poros e relevo sem
   textura) nos blocos;
-- correção de cor final (contraste, saturação, vinheta) em todas as câmeras.
+- correção de cor final discreta (contraste, cor levemente fria/dessaturada, vinheta suave).
 
 **Mapa (60 × 60 m)**: circuito de parkour (muro de 0,6 m, muros de 1,0 e 1,2 m para saltar,
 bloco de 1,4 m, paredão de 3,3 m, torre de 5 m), paredão de 3,0 m para pendurar, barras para
@@ -93,10 +104,10 @@ saco de pancada, caixas, barris, bolas, gangorra e dominós.
 ## Ajustar
 
 Selecione o nó **Player** em `scenes/main.tscn` (ou abra `scenes/player.tscn`): no Inspetor
-estão velocidades, aceleração, pulo/gravidade, atrito do deslize, peso do corpo, força para
-empurrar, sensibilidade do olhar e campo de visão das câmeras. Socos e chute (força, alcance,
-tempo do impacto) ficam nas tabelas `PUNCHES` e `KICK` no começo de `scripts/player.gd`; a lente
-da bodycam fica em `shaders/post.gdshader` (`lens`).
+estão velocidades (inclusive rastejando), aceleração, pulo/gravidade, atrito do deslize, peso do
+corpo, força para empurrar, sensibilidade do olhar e campo de visão das câmeras. Socos e chute (força, alcance,
+tempo do impacto) ficam nas tabelas `PUNCHES` e `KICK` no começo de `scripts/player.gd`; a cor
+final fica em `shaders/post.gdshader`.
 
 ## Arquivos
 
@@ -107,13 +118,14 @@ scenes/player.tscn         personagem (colisão, modelo, câmera)
 scripts/player.gd          movimento, física, parkour, socos, câmeras e animações
 scripts/touch_controls.gd  analógico, botões (com texto conforme o contexto) e olhar por toque
 scripts/inputs.gd          ações de teclado/controle e estado compartilhado
-scripts/head_hider.gd      esconde a cabeça em 1ª pessoa
+scripts/procedural_body.gd pés no chão (IK), inclinação, cabeça olhando, cabeça oculta na 1ª pessoa
 scripts/punching_bag.gd    saco de pancada (contagem e corda)
-scripts/main.gd            HUD e letreiro da bodycam
-shaders/post.gdshader      bodycam (lente, aberração, vinheta) e correção de cor
+scripts/main.gd            HUD
+shaders/post.gdshader      correção de cor final
 shaders/ground.gdshader    chão sem repetição
 shaders/concrete.gdshader  concreto procedural
-assets/                    personagem com animações, texturas, céu e sons
+assets/personagens/        policial e sobrevivente (com as animações)
+assets/                    texturas, céu e sons
 ```
 
 Créditos dos assets em [CREDITOS.md](CREDITOS.md).

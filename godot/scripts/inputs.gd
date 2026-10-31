@@ -10,6 +10,7 @@ static var look_delta := Vector2.ZERO
 static var touch_mode := false
 ## Estados para os botões da tela desenharem (o personagem atualiza).
 static var crouching := false
+static var prone := false
 static var first_person := false
 ## Texto dos botões PULAR/AGACHAR conforme o contexto (SUBIR, SALTAR, ESCALAR, DESLIZAR...).
 static var jump_label := "PULAR"
@@ -20,10 +21,11 @@ const KEYS := {
 	"move_left": [KEY_A, KEY_LEFT], "move_right": [KEY_D, KEY_RIGHT],
 	"jump": [KEY_SPACE], "crouch": [KEY_C, KEY_CTRL], "sprint": [KEY_SHIFT],
 	"punch": [KEY_F], "kick": [KEY_G], "camera": [KEY_V], "reset": [KEY_R],
+	"prone": [KEY_Z], "character": [KEY_P],
 }
 const PAD_BUTTONS := {
 	"jump": JOY_BUTTON_A, "crouch": JOY_BUTTON_B, "punch": JOY_BUTTON_X, "kick": JOY_BUTTON_RIGHT_SHOULDER,
-	"camera": JOY_BUTTON_Y, "sprint": JOY_BUTTON_LEFT_STICK, "reset": JOY_BUTTON_BACK,
+	"camera": JOY_BUTTON_Y, "prone": JOY_BUTTON_RIGHT_STICK, "sprint": JOY_BUTTON_LEFT_STICK, "reset": JOY_BUTTON_BACK,
 }
 const PAD_AXES := {
 	"move_left": [JOY_AXIS_LEFT_X, -1.0], "move_right": [JOY_AXIS_LEFT_X, 1.0],
