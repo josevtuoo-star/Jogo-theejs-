@@ -1,0 +1,5 @@
+# cache do Godot (recriado ao abrir o projeto)
+.godot/
+*.tmp
+/android/
+*.zip

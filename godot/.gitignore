@@ -1,6 +1,0 @@
-# Pasta de cache do Godot (recriada ao abrir o projeto)
-.godot/
-*.tmp
-/android/
-# Pacotes .zip gerados para enviar o projeto
-*.zip
