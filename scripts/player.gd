@@ -1195,19 +1195,19 @@ func _normalize_cycle(ap: AnimationPlayer, clip: String) -> Animation:
 	out.length = 1.0
 	out.loop_mode = Animation.LOOP_LINEAR
 	const N := 40
-	for tr in src.get_track_count():
-		var type := src.track_get_type(tr)
+	for track in src.get_track_count():
+		var type := src.track_get_type(track)
 		if type != Animation.TYPE_POSITION_3D and type != Animation.TYPE_ROTATION_3D:
 			continue
 		var nt := out.add_track(type)
-		out.track_set_path(nt, src.track_get_path(tr))
+		out.track_set_path(nt, src.track_get_path(track))
 		for i in N:
 			var u := float(i) / N
 			var t := fposmod(best + u * L, L)
 			if type == Animation.TYPE_POSITION_3D:
-				out.position_track_insert_key(nt, u, src.position_track_interpolate(tr, t))
+				out.position_track_insert_key(nt, u, src.position_track_interpolate(track, t))
 			else:
-				out.rotation_track_insert_key(nt, u, src.rotation_track_interpolate(tr, t))
+				out.rotation_track_insert_key(nt, u, src.rotation_track_interpolate(track, t))
 	return out
 
 
