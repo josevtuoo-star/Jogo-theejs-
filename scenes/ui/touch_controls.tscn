@@ -1,0 +1,71 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/touch_controls.gd" id="1_controls"]
+[ext_resource type="Script" path="res://scripts/ui/touch_move_stick.gd" id="2_joystick"]
+[ext_resource type="Script" path="res://scripts/ui/touch_action_button.gd" id="3_button"]
+
+[node name="TouchControlsLayer" type="CanvasLayer"]
+layer = 10
+
+[node name="TouchControls" type="Control" parent="." node_paths=PackedStringArray("joystick", "buttons")]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("1_controls")
+joystick = NodePath("Joystick")
+buttons = [NodePath("JumpButton"), NodePath("CrouchButton")]
+
+[node name="Joystick" type="Control" parent="TouchControls"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("2_joystick")
+
+[node name="JumpButton" type="Control" parent="TouchControls"]
+custom_minimum_size = Vector2(104, 104)
+layout_mode = 1
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -150.0
+offset_top = -176.0
+offset_right = -46.0
+offset_bottom = -72.0
+grow_horizontal = 0
+grow_vertical = 0
+mouse_filter = 2
+script = ExtResource("3_button")
+action = &"jump"
+label = "PULAR"
+radius = 52.0
+
+[node name="CrouchButton" type="Control" parent="TouchControls"]
+custom_minimum_size = Vector2(88, 88)
+layout_mode = 1
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -268.0
+offset_top = -118.0
+offset_right = -180.0
+offset_bottom = -30.0
+grow_horizontal = 0
+grow_vertical = 0
+mouse_filter = 2
+script = ExtResource("3_button")
+action = &"crouch_toggle"
+label = "AGACHAR"
+radius = 44.0
+font_size = 15

@@ -1,0 +1,17 @@
+# Cache e importação do Godot 4 (regenerados ao abrir o projeto)
+.godot/
+
+# Builds e exportações
+builds/
+android/
+*.apk
+*.aab
+
+# Credenciais de assinatura nunca devem ir para o repositório
+*.keystore
+*.jks
+export_credentials.cfg
+
+# Sistema
+.DS_Store
+Thumbs.db
