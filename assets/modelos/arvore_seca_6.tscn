@@ -1,0 +1,20 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="ArrayMesh" path="res://assets/modelos/malhas/arvore_seca_6__Tree_05.res" id="1_s4y3u"]
+
+[sub_resource type="CylinderShape3D" id="CylinderShape3D_lwb2f"]
+height = 3.0
+radius = 0.45
+
+[node name="arvore_seca_6" type="Node3D"]
+metadata/tamanho = Vector3(16.0739, 26.5556, 18.4062)
+
+[node name="Tree_05" type="MeshInstance3D" parent="."]
+transform = Transform3D(0.896528, 0, 0, 0, -1.06874e-07, 0.896528, 0, -0.896528, -1.06874e-07, 0.991224, 0.180214, -1.9049)
+mesh = ExtResource("1_s4y3u")
+
+[node name="Corpo" type="StaticBody3D" parent="."]
+
+[node name="Colisao" type="CollisionShape3D" parent="Corpo"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 0)
+shape = SubResource("CylinderShape3D_lwb2f")

@@ -1,0 +1,19 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="ArrayMesh" path="res://assets/modelos/malhas/cadeira2__Cylinder_014.res" id="1_uqevb"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_gux50"]
+size = Vector3(0.39823, 0.606701, 0.418724)
+
+[node name="cadeira2" type="Node3D"]
+metadata/tamanho = Vector3(0.39823, 0.606701, 0.418724)
+
+[node name="Cylinder_014" type="MeshInstance3D" parent="."]
+transform = Transform3D(-0.352969, -7.52399e-15, 5.32969e-08, -5.32969e-08, 6.31158e-08, -0.352969, -2.508e-15, -0.352969, -4.20772e-08, 3.8147e-06, 0.366165, 0.00146103)
+mesh = ExtResource("1_uqevb")
+
+[node name="Corpo" type="StaticBody3D" parent="."]
+
+[node name="Colisao" type="CollisionShape3D" parent="Corpo"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.303351, 0)
+shape = SubResource("BoxShape3D_gux50")

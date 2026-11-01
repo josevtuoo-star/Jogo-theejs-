@@ -1,112 +1,142 @@
-# Sobrevivência — v0.02
+# Sobrevivência — v0.03
 
-Jogo de sobrevivência no estilo DayZ / The Walking Dead / Minecraft, feito no **Godot 4**
-para **Android** (funciona também no PC). Este protótipo foi montado do zero usando **apenas a
-Universal Animation Library (Standard) do Quaternius** (personagem manequim + 43 animações,
-CC0). Todo o resto — mapa, materiais, céu, sons, controles — é gerado por código.
+Jogo de sobrevivência no estilo DayZ / The Walking Dead, feito no **Godot 4** para
+**Android** (funciona também no PC). Personagem e animações da **Universal Animation Library**
+(Quaternius, CC0); cenário, carros, móveis, ferramentas e armas do pacote de modelos enviado
+(Models / Textures / GunsExplosives); sons gravados CC0.
 
 ## Como abrir
 
 1. Instale o **Godot Engine 4** (4.3 ou mais novo) — no Android pela Play Store, ou no PC.
 2. No Godot: **Importar** → escolha o `project.godot` (ou o `.zip` do projeto) → **Importar e editar**.
-3. Na primeira vez ele importa o personagem e as animações (alguns segundos).
+3. Na primeira vez ele importa modelos, texturas e sons (pode levar um minuto).
 4. Aperte **▶ (Executar projeto)**.
 
 ## Controles
 
 | Ação | Celular | PC | Controle |
 | --- | --- | --- | --- |
-| Andar | analógico (lado esquerdo; aparece onde o dedo encostar). Pouco = anda, todo = trota | WASD / setas | analógico esquerdo |
-| Correr | empurre o dedo **além do anel externo** | Shift | apertar o analógico esquerdo |
+| Andar / correr | analógico no lado esquerdo; dedo além do anel externo = correr | WASD + Shift | analógico esquerdo |
 | Olhar | arraste no lado direito da tela | mouse (clique prende, Esc solta) | analógico direito |
-| Pular / nadar mais rápido | **PULAR** (segure para pular mais alto) | Espaço | A |
-| Agachar / rolar / mergulhar | **AGACHAR** (liga/desliga); correndo vira **ROLAR**; nadando, segure para **MERGULHAR** | C ou Ctrl | B |
-| Usar | **USAR** — o botão mostra a ação: **PEGAR**, **SENTAR**, **ABRIR PORTÃO**, **LEVANTAR** | E | Y |
-| Soco (combo) | **SOCO** — toque de novo no ritmo: jab → direto | clique esquerdo ou F | X |
-| 1ª / 3ª pessoa | **1ª/3ª** (canto superior direito) | V | analógico direito (apertar) |
+| Pular / nadar mais rápido | **PULAR** | Espaço | A |
+| Agachar / rolar / mergulhar | **AGACHAR** (correndo vira **ROLAR**) | C ou Ctrl | B |
+| Usar | **USAR** — mostra a ação: **PEGAR (item e peso)**, **ABRIR/FECHAR PORTA**, **SENTAR** | E | Y |
+| Sacar / guardar a arma | **ARMA** | Q | RB |
+| Equipamento (mochila) | **MOCHILA** | Tab ou I | Start |
+| Soco (combo) | **SOCO** | clique esquerdo ou F | X |
+| 1ª / 3ª pessoa | **1ª/3ª** | V | analógico direito (apertar) |
 | Recomeçar | **↺** | R | Select |
 
-No PC, **F1** mostra os controles de toque.
+## Novidades da v0.03
 
-## Novidades da v0.02
+### Mapa de 1 km × 1 km, pós-apocalíptico
+- Terreno com morros, estrada asfaltada atravessando o mapa, estradas de terra, céu fechado,
+  neblina e cores lavadas (sem vida, como em The Walking Dead).
+- **Acampamento** no centro (onde o jogo começa): cabana, picape, viatura do xerife, fogueira
+  apagada com pedras e troncos.
+- **Seis cabanas** com móveis (cama, mesa, fogão, estante, armário) e **porta que abre e fecha**
+  (o personagem leva a mão até a maçaneta); cadeiras para **sentar**; som com eco lá dentro.
+- **Torre de vigia** num morro, **lago**, **carros abandonados** pela estrada e no mato.
+- Floresta de árvores secas e pinheiros mortos, troncos caídos, tocos, pedras, rochedos,
+  arbustos, samambaias e grama alta (desenhados em lotes e somem de longe — leve no celular).
 
-- **Animações mais suaves**: misturas mais longas entre parado/andar/trotar/correr, agachar,
-  ações e socos; o corpo gira com uma mola amortecida (acelera e desacelera a rotação, sem
-  "estalar"); pés, quadril e inclinação suavizados de forma independente do FPS.
-- **1ª pessoa mais imersiva**: cada passo chega na câmera (descida curta e leve balanço de
-  lado), a queda dobra os joelhos e a vista desce e volta, o pulo levanta; inclinação ao andar
-  de lado e nas curvas; respiração que mexe a câmera quando cansado; olhar suavizado (sem
-  "degraus" no toque); **mergulho** (segure AGACHAR nadando) com imagem ondulando, cor do lago
-  e som abafado.
-- **Física**: objetos **boiam** no lago (barril, caixa e bola boiando; jogue outros na água),
-  com arrasto e balanço das ondas; espirro de água quando algo cai nela; objetos fazem barulho
-  ao bater conforme o material e a força.
-- **Sons novos** (todos sintetizados, com variações sorteadas): passos **no ritmo dos pés da
-  animação** — grama (com estalos de folhas), concreto (calcanhar e ponta) e água; respiração
-  ofegante depois de correr/nadar; roupa; golpe no ar e no saco; batidas de madeira, metal e
-  borracha; espirros, braçadas e bolhas; motor e pancada do portão; **ambiente**: vento,
-  pássaros nas árvores e água do lago; **eco** dentro da garagem. Os sons são gerados em
-  segundo plano na abertura (prontos em ~2 s).
+### Itens com peso, roupa e mochila — nada some
+- O personagem usa **roupa** (jaqueta de lona, camisa xadrez, calça jeans, cinto, botas,
+  luvas sem dedos, gorro), com trama do tecido, desgaste e barro, e uma **mochila** nas costas.
+- **Tudo que ele pega tem peso e vai para um lugar do corpo, à vista**:
+  - armas longas penduradas **nas costas** (até duas, em X, por cima da mochila);
+  - machado, pá, frigideira e kit médico **amarrados nas laterais** da mochila;
+  - panela, chaleira e galão **pendurados embaixo**; caneca **em cima**;
+  - lanterna e garrafa **no cinto**;
+  - comida, munição e fósforos **dentro da mochila** (32 litros; ela **estufa** conforme enche).
+- **Pegar** é um movimento completo com IK nos braços: vira para o item, dá um passo, **agacha**
+  e inclina o tronco (itens no chão) ou só estende o braço (mesa), a mão chega por cima e
+  fecha no item, levanta, olha o item na frente do peito e leva até o lugar dele (por cima do
+  ombro para as costas/mochila, para o quadril no cinto). Cada lugar tem seu som (couro, cinto,
+  metal, zíper/pano).
+- **Largar** (painel MOCHILA → LARGAR): a mão vai até o lugar do item, tira, traz para frente e
+  solta — o item cai com física de verdade (peso, quique, barulho conforme o material).
+- **Peso**: o total aparece no HUD e no painel. Acima de ~6 kg o personagem fica mais lento
+  (até 38% mais lento), cansa mais rápido correndo, pula menos, inclina o corpo para frente e
+  o equipamento chacoalha nos passos. Limite de 40 kg.
+- **Física secundária**: a mochila balança com molas ao andar, parar e virar; panela e itens do
+  cinto são pêndulos (ficam sempre pendurados para baixo e balançam com o corpo).
 
-## O que dá para fazer
+### Armas: sacar, segurar e guardar
+- **ARMA** (Q): a mão direita sobe por cima do ombro, pega a arma das costas e traz para a
+  frente; a mão esquerda encontra o guarda-mão. Segura com **as duas mãos (IK)**, coronha no
+  ombro, apontando para onde a câmera olha, com atraso de mola (a arma tem peso). O corpo fica
+  de lado (ombro esquerdo à frente) como quem segura um rifle; correndo, a arma desce e vai
+  para o lado. Em 1ª pessoa a arma aparece embaixo, à direita.
+- Guardar faz o caminho inverso. Ao nadar ou sentar a arma vai para as costas sozinha.
+- Armas: **AK-47**, **M4A1**, **escopeta** e **rifle de caça** espalhadas pelo mapa (o rifle no
+  acampamento, a escopeta perto da viatura, a AK no alto da torre, a M4 numa cabana a oeste).
+- Ainda **não atira** (próxima etapa).
 
-- **Andar, trotar e correr** com peso: acelera, freia, faz curva mais aberta correndo, sobe
-  ladeira mais devagar. As animações de andar/trotar/correr são sincronizadas (sem trocar de
-  pé ao misturar) e a cadência acompanha a velocidade real.
-- **Agachar** (passa no túnel de 1,3 m e não levanta embaixo do teto), **pular** (tempo de
-  coiote, memória do botão, altura variável) e **rolar** (correndo + agachar, ou ao cair de
-  mais de ~3 m em movimento; parado, a queda alta vira uma aterrissagem pesada).
-- **Nadar** no lago: entre pela rampa; onde não dá pé ele boia e nada; volta a andar quando
-  o fundo fica raso. Na água rasa anda mais devagar, com som de água.
-- **Empurrar**: a caixa pesada (60 kg) é empurrada com as duas mãos (animação de empurrar);
-  caixas leves, barris e bolas são empurrados andando contra eles. O peso do personagem
-  (75 kg) é aplicado no que está sob os pés.
-- **Socar** (jab e direto em combo): empurra objetos com física, saco de pancada pendurado
-  que balança e conta os golpes, faíscas, tremida e micro-pausa no impacto.
-- **USAR**: pegar **suprimentos** nas mesas (animação de pegar; contador no HUD), **sentar**
-  no banco (sentar, sentado, levantar), apertar o **botão do painel** que abre/fecha o
-  portão de correr da garagem (o personagem dá um passo até alcançar com a mão).
-- **Câmeras**: 3ª pessoa por cima do ombro (não atravessa paredes) e 1ª pessoa nos olhos
-  (corpo visível, balanço do passo estabilizado, nunca entra na parede).
-- **Corpo procedural** por cima das animações: pés apoiados no chão em escadas e rampas (IK),
-  quadril acompanhando o terreno, tronco e cabeça olhando para onde a câmera aponta,
-  inclinação nas curvas; em 1ª pessoa as pernas seguem a direção do passo (de lado e de ré).
+### Animações com um "extra" em cada uma
+- **Parado**: respiração (peito e ombros sobem; mais rápida e funda depois de correr) e, depois
+  de alguns segundos, o personagem **olha em volta**; agachado ele vigia mais rápido.
+- **Andar/correr**: inclina para frente com carga pesada; a mochila e os itens pendurados
+  balançam; o equipamento chacoalha a cada passo.
+- **No ar**: os braços abrem para equilibrar.
+- **Nadando**: cabeça levantada para fora d'água (abaixa ao mergulhar).
+- **Empurrando**: cabeça baixa e tronco à frente fazendo força.
+- **Soco**: o tronco gira junto com o golpe (jab para um lado, direto para o outro) e a cabeça
+  segura o olhar no alvo.
+- **Pegar / largar / sacar / guardar / abrir porta**: mãos guiadas por IK até o objeto real.
 
-## Mapa de testes (60 × 60 m)
-
-Gramado com manchas de terra, lago com rampa e fundo de 2,2 m, garagem com portão e
-painel, três mesas com cinco suprimentos, banco, saco de pancada, pilha de caixas, caixa
-pesada, barris, bolas, blocos de 0,5/1,0/1,5 m, rampa de 20°, escada, túnel baixo e
-árvores. Céu, luz do sol com sombras e neblina leve.
+### Sons gravados (no lugar dos sintetizados)
+- Passos em **grama, terra, asfalto e madeira** (piso das cabanas e da torre), queda, roupa,
+  couro, cinto, manuseio de arma e trava, socos, batidas de **madeira, metal, lata e vidro**,
+  portas abrindo e fechando, **pássaros e insetos** (ambiente vindo das árvores mais próximas).
+- Continuam gerados por código só o vento (com rajadas), a água do lago, espirros, braçadas e
+  bolhas. A respiração sintetizada (que soava mal) foi retirada.
 
 ## Arquivos
 
 ```
-project.godot               configuração (renderizador Compatibility, ideal para Android)
-assets/ual/                 Universal Animation Library (personagem + animações) e licença
-scenes/main.tscn            mapa, céu, luz, HUD
-scenes/player.tscn          personagem (colisão, modelo, câmera)
-scripts/player.gd           movimento, física, ações, nado, socos, câmeras e animações
-scripts/procedural_body.gd  pés no chão (IK), inclinação, olhar, cabeça oculta em 1ª pessoa
-scripts/touch_controls.gd   analógico, botões com texto conforme o contexto, olhar por toque
-scripts/inputs.gd           ações de teclado/controle e estado compartilhado
-scripts/sfx.gd              sons gerados por código (em segundo plano)
-scripts/audio.gd            barramento de áudio: eco em lugar fechado, abafado debaixo d'água
-scripts/ambience.gd         vento, pássaros e água do lago
-scripts/prop.gd             objetos com física: barulho ao bater e empuxo na água
-scripts/supply.gd, bench.gd, gate.gd, gate_button.gd, water.gd, interior.gd, punching_bag.gd   objetos
-scripts/main.gd             HUD
-shaders/                    grama, concreto, madeira, água, azulejo e cor final
+project.godot                 configuração (renderizador Compatibility, ideal para Android)
+scenes/main.scn               mapa de 1 km (gerado), céu, luz, HUD
+scenes/player.tscn            personagem (colisão, modelo, câmera)
+assets/ual/                   Universal Animation Library (personagem + animações) e licença
+assets/modelos/               objetos do pacote prontos para usar (com colisão) e armas
+assets/cenario/, assets/armas/ texturas do pacote (reduzidas para o celular)
+assets/mapa/                  blocos do terreno e máscara das estradas
+assets/sfx/                   sons gravados
+scripts/player.gd             movimento, física, ações, nado, socos, câmeras e animações
+scripts/procedural_body.gd    IK de pés e braços, inclinação, olhar, respiração e extras
+scripts/equipamento.gd        roupa, mochila, lugares no corpo, pegar/guardar/largar, armas
+scripts/itens.gd              tabela de itens (peso, volume, onde vão no corpo)
+scripts/item.gd               item no mundo (física, som, PEGAR)
+scripts/inventory_ui.gd       painel do equipamento (MOCHILA)
+scripts/door.gd, seat.gd      porta com dobradiça, assento
+scripts/terreno.gd            colisão de cada bloco do terreno
+scripts/sfx.gd, audio.gd, ambience.gd   sons, eco/abafado, ambiente
+scripts/touch_controls.gd, inputs.gd    controles de toque, teclado e controle
+shaders/                      terreno, roupa, água e cor final
+fontes/                       arquivos originais do pacote (ignorados pelo Godot)
 ```
-
-## Ajustar
-
-Selecione o nó **Player** em `scenes/main.tscn` (ou abra `scenes/player.tscn`): no Inspetor
-ficam velocidades (andar, trotar, correr, agachado, nadando, empurrando), aceleração,
-pulo/gravidade, força para empurrar, peso do corpo, sensibilidade do olhar e as câmeras.
 
 ## Créditos
 
 - Personagem e animações: **Universal Animation Library (Standard)** —
-  [Quaternius](https://quaternius.com), licença **CC0** (veja `assets/ual/License.txt`).
-- Todo o resto (código, mapa, materiais procedurais, sons sintetizados): feito para este projeto.
+  [Quaternius](https://quaternius.com), **CC0** (`assets/ual/License.txt`).
+- Cenário, veículos, móveis, ferramentas, mochilas e texturas: pacote **Models / Textures1 /
+  Textures2** enviado para o projeto. Armas (AK-47, M4A1, escopeta): pacote **GunsExplosives**
+  enviado para o projeto.
+- Sons: [Kenney — Impact Sounds](https://kenney.nl/assets/impact-sounds) e
+  [Kenney — RPG Audio](https://kenney.nl/assets/rpg-audio) (CC0);
+  [The Free Firearm Sound Library](https://opengameart.org/content/the-free-firearm-sound-library) e
+  [Gun reload sounds](https://opengameart.org/content/gun-reload-sounds) (CC0);
+  pássaros/insetos do demo Truck Town de
+  [godot-demo-projects](https://github.com/godotengine/godot-demo-projects) (MIT, © Godot Engine contributors).
+- Código, mapa, materiais procedurais e sons sintetizados: feitos para este projeto.
+
+## Ferramentas
+
+- `ferramentas/gerar_mapa.gd` — gera `scenes/main.scn` e `assets/mapa/` (rode com
+  `godot --rendering-driver opengl3 -s res://ferramentas/gerar_mapa.gd`; precisa de janela).
+- `ferramentas/extrair_modelos.gd` — transforma os FBX do pacote em `assets/modelos/` (copie
+  `fontes/Vegetation.fbx` para `assets/cenario/` e os das armas para `assets/armas/` antes).
+- `ferramentas/testes.gd` — 23 testes automáticos (andar, pegar, guardar, sacar e guardar a
+  arma, largar, peso, porta, nadar): `godot --headless -s res://ferramentas/testes.gd`.

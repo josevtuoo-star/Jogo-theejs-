@@ -6,7 +6,9 @@ extends CharacterBody3D
 ## - Nadar na água funda; na água rasa anda mais devagar.
 ## - Empurrar caixas pesadas (animação de empurrar), socos em combo (jab e direto) que
 ##   empurram objetos com física, peso do corpo sobre o que estiver embaixo.
-## - USAR: pegar suprimentos, sentar no banco, apertar o botão do portão.
+## - USAR: pegar itens (vão para o corpo: costas, cinto, mochila — equipamento.gd), abrir
+##   portas, sentar. Cada item pesa: o total deixa mais lento, cansa mais e pula menos.
+## - ARMA: saca a arma das costas e segura com as duas mãos (IK); guarda de volta.
 ## - Câmeras em 3ª pessoa (por cima do ombro) e 1ª pessoa (nos olhos, corpo visível) com
 ##   impulsos dos passos, queda e pulo, respiração quando cansado, leve inclinação ao andar de
 ##   lado; mergulho com visão e som abafados debaixo d'água.
@@ -82,7 +84,7 @@ var sprinting := false
 var pushing := false
 var model_yaw := 0.0
 ## suprimentos coletados (HUD)
-var supplies := 0
+var equip: Node3D # equipamento.gd
 ## cansaço (0 a 1): sobe correndo/nadando, desce parado. Só muda a respiração (som e câmera).
 var fatigue := 0.0
 var diving := false
@@ -157,6 +159,7 @@ var _yaw_vel := 0.0
 var _phase := 0.0
 var _hz := 1.0
 var _floor_hard := false
+var _floor_wood := false
 var _bob := Vector2.ZERO
 var _bob_vel := Vector2.ZERO
 var _roll := 0.0
@@ -164,6 +167,9 @@ var _breath_t := 0.0
 var _breath_in := true
 var _breath_clock := 0.0
 var _look_pending := Vector2.ZERO
+var _idle_t := 0.0
+var _glance_t := 0.0
+var _glance := Vector2.ZERO
 var _under := 0.0
 var _bubble_t := 0.0
 var _post: CanvasItem
@@ -183,6 +189,11 @@ func _ready() -> void:
 	_eye_y = global_position.y + 1.6
 	arm.add_excluded_object(get_rid())
 	_setup_animation()
+	equip = Node3D.new()
+	equip.name = "Equipamento"
+	equip.set_script(load("res://scripts/equipamento.gd"))
+	add_child(equip)
+	equip.setup(self, _skel, _body, model)
 	_setup_sounds()
 	_setup_particles()
 
@@ -211,6 +222,8 @@ func _physics_process(delta: float) -> void:
 		gain = 0.1
 	elif mode == Mode.SWIM:
 		gain = 0.06 if sprinting else 0.03
+	var kg: float = equip.weight
+	gain *= 1.0 + maxf(kg - 6.0, 0.0) / 18.0
 	fatigue = clampf(fatigue + (gain if gain > 0.0 else -0.06) * delta, 0.0, 1.0)
 	_cur_pos = global_position
 
@@ -240,10 +253,12 @@ func _move_normal(delta: float) -> void:
 			_try_stand()
 		else:
 			_set_crouch(true)
-	if Input.is_action_just_pressed("use") and _use_target and was_on_floor and _punch_t < 0.0:
+	if Input.is_action_just_pressed("use") and _use_target and was_on_floor and _punch_t < 0.0 and not equip.busy:
 		_use_target.interact(self)
 		if mode != Mode.NORMAL:
 			return
+	if Input.is_action_just_pressed("weapon") and _punch_t < 0.0:
+		equip.toggle_weapon()
 
 	# velocidade desejada
 	sprinting = Input.is_action_pressed("sprint") and mag > 0.5 and not crouching and _punch_t < 0.0 and depth < 0.6
@@ -264,6 +279,10 @@ func _move_normal(delta: float) -> void:
 		target_speed *= clampf(1.0 + Vector3(n.x, 0.0, n.z).dot(dir) * 1.1, 0.55, 1.15)
 	if depth > 0.3:
 		target_speed *= clampf(1.0 - (depth - 0.3) * 0.5, 0.45, 1.0) # água: arrasta as pernas
+	# peso carregado
+	target_speed *= equip.load_factor()
+	if equip.has_gun() and not sprinting:
+		target_speed = minf(target_speed, jog_speed * 0.8)
 	if pushing:
 		target_speed = minf(target_speed, push_speed)
 	if _punch_t >= 0.0:
@@ -299,7 +318,7 @@ func _move_normal(delta: float) -> void:
 	_buffer = jump_buffer if Input.is_action_just_pressed("jump") else _buffer - delta
 	if _buffer > 0.0 and _coyote > 0.0 and _punch_t < 0.0 and not pushing:
 		if not crouching or _try_stand():
-			velocity.y = jump_velocity * (0.8 if depth > 0.6 else 1.0)
+			velocity.y = jump_velocity * (0.8 if depth > 0.6 else 1.0) * lerpf(0.8, 1.0, (equip.load_factor() - 0.62) / 0.38)
 			_coyote = 0.0
 			_buffer = 0.0
 			_jump_held = true
@@ -451,13 +470,7 @@ func _move_action(delta: float) -> void:
 		move_and_slide()
 	# o instante em que a mão alcança o objeto
 	if not _act_fired:
-		if _act == "PickUp_Table" and _act_t >= 0.32:
-			_act_fired = true
-			if is_instance_valid(_act_target_node):
-				_act_target_node.queue_free()
-				supplies += 1
-				_play("pickup", -2.0)
-		elif _act == "Interact" and _act_t >= 0.55:
+		if _act == "Interact" and _act_t >= 0.55:
 			_act_fired = true
 			if is_instance_valid(_act_target_node):
 				_act_target_node.activate()
@@ -486,24 +499,34 @@ func _start_roll(speed: float) -> void:
 	_play("cloth", -4.0)
 
 
-## Chamado por uma caixa de suprimentos (USAR).
-func pickup(item: Node3D) -> void:
-	_act_target_node = item
-	_face(item.global_position)
-	_act_goto = _reach_point(item.global_position, 0.5)
-	_start_action("PickUp_Table", 0.62, 1.3)
+## Pegar/largar um item (equipamento.gd conduz os braços): o corpo para, vira para o item e
+## dá um passo curto até alcançá-lo. A animação de baixo continua (parado/agachado).
+func begin_equip(target: Vector3) -> void:
+	mode = Mode.ACTION
+	_act = "Equip"
+	_act_t = 0.0
+	_act_dur = 99.0
+	_act_fired = true
+	_act_goto = Vector3.INF
+	if target != Vector3.INF:
+		_face(target)
+		var d := Vector2(target.x - global_position.x, target.z - global_position.z).length()
+		if d > 0.48 or d < 0.28:
+			_act_goto = _reach_point(target, 0.38)
 
 
 ## Chamado pelo painel do portão (USAR).
 func press(button: Node3D) -> void:
 	_act_target_node = button
-	_face(button.global_position)
-	_act_goto = _reach_point(button.global_position, 0.55)
+	var hp: Vector3 = button.handle_point() if button.has_method("handle_point") else button.global_position
+	_face(hp)
+	_act_goto = _reach_point(hp, 0.55)
 	_start_action("Interact", 1.15, 1.6)
 
 
 ## Chamado pelo banco (USAR): vai até o assento, de costas para ele, e senta.
 func sit(seat: Transform3D) -> void:
+	equip.stow_instant()
 	_sit_xform = seat
 	var fwd := -seat.basis.z
 	model_yaw = atan2(fwd.x, fwd.z)
@@ -543,7 +566,7 @@ func _face(p: Vector3) -> void:
 func _update_use_target() -> void:
 	_use_target = null
 	var label := ""
-	if mode == Mode.NORMAL and is_on_floor():
+	if mode == Mode.NORMAL and is_on_floor() and not equip.busy:
 		var best := 1.7
 		var fwd := Vector3(-sin(cam_yaw), 0.0, -cos(cam_yaw)) if first_person else _facing()
 		for n in get_tree().get_nodes_in_group("usavel"):
@@ -594,6 +617,7 @@ func _water_depth() -> float:
 
 
 func _start_swim() -> void:
+	equip.stow_instant()
 	mode = Mode.SWIM
 	_set_crouch(false)
 	_set_height(CROUCH_H)
@@ -653,7 +677,7 @@ func _update_punch(delta: float) -> void:
 			_punch_t = -1.0
 			_punch_last = _time
 			_tree.set("parameters/punch/request", AnimationNodeOneShot.ONE_SHOT_REQUEST_FADE_OUT)
-	elif _punch_queue > 0.0 and not pushing and _water_depth() < 0.8:
+	elif _punch_queue > 0.0 and not pushing and _water_depth() < 0.8 and not equip.has_gun() and not equip.busy:
 		_start_punch((_punch_idx + 1) % PUNCHES.size() if _time - _punch_last < 0.5 else 0)
 
 
@@ -719,7 +743,7 @@ func _do_hitstop(t: float) -> void:
 func _on_land(fall_speed: float, hspeed: float) -> void:
 	var k := clampf((fall_speed - 2.0) / 10.0, 0.0, 1.0)
 	_play("land", lerpf(-16.0, 1.0, k))
-	_play("step_hard" if _floor_hard else "step_grass", lerpf(-8.0, 0.0, k))
+	_play(_step_kind(), lerpf(-8.0, 0.0, k))
 	_shake = maxf(_shake, 0.03 + 0.25 * k)
 	# a queda chega na câmera: os joelhos dobram e a vista desce e volta
 	_bob_vel.y -= lerpf(0.4, 1.6, k)
@@ -749,6 +773,7 @@ func _footsteps(delta: float) -> void:
 	if is_on_floor() and fc != null:
 		var c := fc.get_collider() as Node
 		_floor_hard = c != null and c.is_in_group("piso_duro")
+		_floor_wood = c != null and c.is_in_group("piso_madeira")
 	if mode == Mode.SWIM:
 		_step_dist += spd * delta
 		if _step_dist > 1.3:
@@ -784,17 +809,24 @@ func _step_sound(spd: float, weight: float) -> void:
 	if _water_depth() > 0.1:
 		_play("step_water", vol + 2.0)
 	else:
-		_play("step_hard" if _floor_hard else "step_grass", vol)
+		_play(_step_kind(), vol + clampf((equip.weight - 6.0) * 0.15, 0.0, 3.0))
 	if spd > 4.5:
-		_play("cloth", -18.0)
+		_play("cloth", -16.0)
+	# o equipamento chacoalha a cada passo (mais com mais peso)
+	if equip.weight > 8.0 and spd > 2.0:
+		_play("leather", lerpf(-30.0, -18.0, clampf((equip.weight - 8.0) / 20.0, 0.0, 1.0)) + k * 4.0)
 	# o passo chega na câmera (1ª pessoa): uma descida curta
 	_bob_vel.y -= lerpf(0.05, 0.16, k)
 	_bob_vel.x += (0.02 if _phase < 0.5 else -0.02) * (0.5 + k)
 
 
+func _step_kind() -> String:
+	return "step_wood" if _floor_wood else ("step_hard" if _floor_hard else "step_grass")
+
+
 func _setup_sounds() -> void:
-	for key in ["step_grass", "step_hard", "step_water", "land", "punch", "knock", "swish", "splash_small",
-			"stroke", "bubbles", "click", "cloth", "pickup", "breath_in", "breath_out"]:
+	for key in ["step_grass", "step_hard", "step_wood", "step_water", "land", "punch", "knock", "swish", "splash_small",
+			"stroke", "bubbles", "click", "cloth", "leather"]:
 		var pl := AudioStreamPlayer3D.new()
 		pl.stream = Sfx.get_stream(key)
 		pl.max_polyphony = 3
@@ -807,7 +839,7 @@ func _setup_sounds() -> void:
 
 func _play(key: String, db := 0.0) -> void:
 	var pl: AudioStreamPlayer3D = _sfx.get(key)
-	if pl and Sfx.ready:
+	if pl and (Sfx.ready or Sfx.SAMPLES.has(key)):
 		pl.volume_db = db
 		pl.pitch_scale = randf_range(0.94, 1.06)
 		pl.play()
@@ -894,6 +926,17 @@ func _process(delta: float) -> void:
 		if _punch_t >= 0.0:
 			target_yaw = view_yaw
 			turn = 25.0
+		elif equip.has_gun() and not sprinting and mode == Mode.NORMAL:
+			# arma na mão: corpo de lado (ombro esquerdo à frente) para onde a câmera olha;
+			# andando de lado as pernas viram até ~55° e, para trás, andam de ré
+			target_yaw = view_yaw - 0.45
+			turn = 14.0
+			if spd > 0.3:
+				var rel := wrapf(atan2(hv.x, hv.z) - view_yaw, -PI, PI)
+				if absf(rel) > 1.95:
+					_backward = true
+				else:
+					target_yaw += clampf(rel, -0.95, 0.95) * 0.6
 		elif first_person and spd > 0.3:
 			# 1ª pessoa: as pernas seguem a direção do passo (até de lado); para trás, o corpo
 			# fica de frente e a animação anda de ré. Tronco e cabeça continuam na câmera.
@@ -969,6 +1012,8 @@ func _process(delta: float) -> void:
 	var s := _shake * _shake
 	cam.h_offset = (randf() - 0.5) * s * 0.6 + _bob.x * e
 	cam.v_offset = (randf() - 0.5) * s * 0.6 + _bob.y * e
+	# depois da câmera: a arma em 1ª pessoa usa a posição da câmera deste quadro
+	equip.update(delta)
 
 
 ## Respiração ofegante depois de correr/nadar (inspira e expira alternando, mais rápido e
@@ -980,7 +1025,6 @@ func _breathing(delta: float) -> void:
 	_breath_t -= delta
 	if _breath_t <= 0.0:
 		var period := lerpf(1.7, 0.75, fatigue)
-		_play("breath_in" if _breath_in else "breath_out", lerpf(-26.0, -7.0, fatigue))
 		_breath_t = period * (0.42 if _breath_in else 0.58)
 		_breath_in = not _breath_in
 
@@ -1020,12 +1064,16 @@ func _update_body(delta: float, hv: Vector3, view_yaw: float) -> void:
 	var accel := (spd - _last_speed) / maxf(delta, 0.001)
 	_last_speed = spd
 	var free := mode == Mode.NORMAL and is_on_floor() and _water_depth() < 0.5
-	_body.ik_weight = move_toward(_body.ik_weight, 1.0 if (free and spd < 2.6 and not pushing) else 0.0, delta * 4.0)
+	var feet_on := (free and spd < 2.6 and not pushing) or (mode == Mode.ACTION and _act == "Equip")
+	_body.ik_weight = move_toward(_body.ik_weight, 1.0 if feet_on else 0.0, delta * 4.0)
 	var lean := Vector2.ZERO
 	if free:
 		lean = Vector2(clampf(accel * 0.012, -0.08, 0.12) + clampf(spd / sprint_speed, 0.0, 1.0) * 0.05,
 			clampf(-yaw_rate * spd * 0.03, -0.28, 0.28))
+	# carga pesada: o corpo vai mais para frente
+	lean.x += clampf((equip.weight - 8.0) * 0.006, 0.0, 0.14) * (1.0 if free else 0.0)
 	_body.lean = _body.lean.lerp(lean, 1.0 - exp(-6.0 * delta))
+	_extras(delta, spd)
 	var lk := Vector2.ZERO
 	if (mode == Mode.NORMAL or mode == Mode.SWIM or mode == Mode.SIT) and _punch_t < 0.0 and not pushing:
 		var diff := wrapf(view_yaw - model_yaw, -PI, PI)
@@ -1034,7 +1082,37 @@ func _update_body(delta: float, hv: Vector3, view_yaw: float) -> void:
 			fade = 1.0
 		lk = Vector2(clampf(diff, -1.6, 1.6) * fade,
 			clampf(cam_pitch + (0.0 if first_person else 0.2), -0.7, 0.6) * (1.0 if first_person else 0.6))
-	_body.look = _body.look.lerp(lk, 1.0 - exp(-8.0 * delta))
+		# parado (3ª pessoa): de vez em quando olha em volta; agachado, vigia mais rápido
+		if not first_person and spd < 0.1 and not equip.has_gun():
+			_idle_t += delta
+			if _idle_t > (2.5 if crouching else 5.0):
+				_glance_t -= delta
+				if _glance_t <= 0.0:
+					_glance_t = randf_range(1.2, 2.2) if crouching else randf_range(2.0, 3.5)
+					_glance = Vector2(randf_range(-0.9, 0.9), randf_range(-0.15, 0.12)) if randf() < 0.75 else Vector2.ZERO
+				lk += _glance
+		else:
+			_idle_t = 0.0
+			_glance = Vector2.ZERO
+	_body.look = _body.look.lerp(lk, 1.0 - exp(-(3.0 if _glance != Vector2.ZERO else 8.0) * delta))
+
+
+## Extras de cada animação (procedural_body.gd): respiração, braços no ar, cabeça nadando,
+## esforço ao empurrar, giro do tronco no soco.
+func _extras(delta: float, spd: float) -> void:
+	var k := 1.0 - exp(-6.0 * delta)
+	var resting := spd < 0.5 and (mode == Mode.NORMAL or mode == Mode.SIT)
+	_body.breath = lerpf(_body.breath, (1.0 if resting else 0.4) + fatigue * 1.4, k)
+	_body.breath_rate = lerpf(_body.breath_rate, lerpf(0.25, 0.85, fatigue), k)
+	_body.air_arms = lerpf(_body.air_arms, _air_amt * (0.0 if equip.has_gun() else 1.0) * clampf(-velocity.y * 0.15 + 0.6, 0.3, 1.0), k)
+	_body.head_up = lerpf(_body.head_up, _swim_amt * (0.0 if diving else 1.0), k)
+	_body.strain = lerpf(_body.strain, _push_amt, k)
+	var tw := 0.0
+	if _punch_t >= 0.0:
+		var p: Dictionary = PUNCHES[_punch_idx]
+		var at := _punch_t * PUNCH_TS
+		tw = sin(clampf(at / p.end, 0.0, 1.0) * PI) * 0.35 * (-1.0 if _punch_idx == 0 else 1.0)
+	_body.twist = lerpf(_body.twist, tw, 1.0 - exp(-14.0 * delta))
 
 
 # ================================================================== animação
@@ -1239,7 +1317,7 @@ func _update_animation(delta: float, hv: Vector3) -> void:
 		hz = 0.9
 	_moving = lerpf(_moving, moving, 1.0 - exp(-8.0 * delta))
 	var k := 1.0 - exp(-6.0 * delta)
-	_crouch_amt = lerpf(_crouch_amt, 1.0 if crouching else 0.0, k)
+	_crouch_amt = lerpf(_crouch_amt, 1.0 if crouching else equip.crouch_now(), k)
 	var in_air := mode == Mode.NORMAL and not is_on_floor() and _air_time > 0.12
 	_air_amt = lerpf(_air_amt, 1.0 if in_air else 0.0, 1.0 - exp(-10.0 * delta))
 	_swim_amt = lerpf(_swim_amt, 1.0 if mode == Mode.SWIM else 0.0, k)
@@ -1276,7 +1354,7 @@ func state_text() -> String:
 		Mode.SIT:
 			return "Sentado"
 		Mode.ACTION:
-			return {"Roll": "Rolando", "Jump_Land": "Aterrissagem pesada", "PickUp_Table": "Pegando",
+			return {"Roll": "Rolando", "Jump_Land": "Aterrissagem pesada", "Equip": "Pegando / guardando",
 				"Interact": "Apertando botão", "Sitting_Enter": "Sentando", "Sitting_Exit": "Levantando"}.get(_act, _act)
 	if not is_on_floor():
 		return "No ar"
@@ -1285,4 +1363,6 @@ func state_text() -> String:
 		s += " (na água)"
 	if _punch_t >= 0.0:
 		s += " · " + ["Jab", "Direto"][_punch_idx]
+	if equip.has_gun():
+		s += " · " + Itens.nome(equip.held.id)
 	return s

@@ -1,0 +1,34 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="ArrayMesh" path="res://assets/modelos/malhas/escopeta__Shotgun.res" id="1_5ydb6"]
+[ext_resource type="ArrayMesh" path="res://assets/modelos/malhas/escopeta__Ejection_Port.res" id="2_41f6b"]
+[ext_resource type="ArrayMesh" path="res://assets/modelos/malhas/escopeta__Fore_Stock.res" id="3_ww8qp"]
+[ext_resource type="ArrayMesh" path="res://assets/modelos/malhas/escopeta__Trigger.res" id="4_av8vw"]
+
+[node name="escopeta" type="Node3D"]
+metadata/tamanho = Vector3(0.0561731, 0.240754, 1.21918)
+
+[node name="Shotgun" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.00109669, 0.0690378, -0.204427)
+mesh = ExtResource("1_5ydb6")
+
+[node name="Ejection_Port" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0144155, 0.0953853, 0.0543804)
+mesh = ExtResource("2_41f6b")
+
+[node name="Fore_Stock" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.0574019, -0.260509)
+mesh = ExtResource("3_ww8qp")
+
+[node name="Trigger" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.033365, 0.187411)
+mesh = ExtResource("4_av8vw")
+
+[node name="Cano" type="Marker3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.02, -0.609592)
+
+[node name="Empunhadura" type="Marker3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.0770412, 0.19507)
+
+[node name="Guarda" type="Marker3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.0288904, -0.243837)

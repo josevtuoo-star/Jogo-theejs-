@@ -1,0 +1,19 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="ArrayMesh" path="res://assets/modelos/malhas/lenha__firewood.res" id="1_nqrch"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_xj65p"]
+size = Vector3(0.535812, 0.603814, 0.612579)
+
+[node name="lenha" type="Node3D"]
+metadata/tamanho = Vector3(0.535812, 0.603814, 0.612579)
+
+[node name="firewood" type="MeshInstance3D" parent="."]
+transform = Transform3D(0.269231, 0.0140532, -0.962973, 0.674755, -0.716207, 0.178198, -0.687183, -0.697747, -0.202308, 0.00686836, 0.325253, -0.00985336)
+mesh = ExtResource("1_nqrch")
+
+[node name="Corpo" type="StaticBody3D" parent="."]
+
+[node name="Colisao" type="CollisionShape3D" parent="Corpo"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.301907, 0)
+shape = SubResource("BoxShape3D_xj65p")

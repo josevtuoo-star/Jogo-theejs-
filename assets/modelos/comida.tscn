@@ -1,0 +1,19 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="ArrayMesh" path="res://assets/modelos/malhas/comida__Food.res" id="1_x3yf6"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_l1e4p"]
+size = Vector3(0.148113, 0.0781082, 0.148109)
+
+[node name="comida" type="Node3D"]
+metadata/tamanho = Vector3(0.148113, 0.0781082, 0.148109)
+
+[node name="Food" type="MeshInstance3D" parent="."]
+transform = Transform3D(0, 0.0739734, 1.10415e-09, 2.20458e-09, 0, 0.0370493, 0.0739734, 2.20458e-09, 0, 0, 0.0429969, 0)
+mesh = ExtResource("1_x3yf6")
+
+[node name="Corpo" type="StaticBody3D" parent="."]
+
+[node name="Colisao" type="CollisionShape3D" parent="Corpo"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0390541, 0)
+shape = SubResource("BoxShape3D_l1e4p")

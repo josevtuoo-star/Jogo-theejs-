@@ -1,0 +1,19 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="ArrayMesh" path="res://assets/modelos/malhas/caneca__Cup.res" id="1_tpf15"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_njkg8"]
+size = Vector3(0.136765, 0.131216, 0.180313)
+
+[node name="caneca" type="Node3D"]
+metadata/tamanho = Vector3(0.136765, 0.131216, 0.180313)
+
+[node name="Cup" type="MeshInstance3D" parent="."]
+transform = Transform3D(0.0655228, 0, 0, 0, -7.81092e-09, 0.0655228, 0, -0.0655228, -7.81092e-09, 0, 0.0610437, -0.0217743)
+mesh = ExtResource("1_tpf15")
+
+[node name="Corpo" type="StaticBody3D" parent="."]
+
+[node name="Colisao" type="CollisionShape3D" parent="Corpo"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0656082, 0)
+shape = SubResource("BoxShape3D_njkg8")

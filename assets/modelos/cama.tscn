@@ -1,0 +1,19 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="ArrayMesh" path="res://assets/modelos/malhas/cama__Bed_003.res" id="1_dtucv"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_7hxbb"]
+size = Vector3(1.35033, 1.11806, 2.27696)
+
+[node name="cama" type="Node3D"]
+metadata/tamanho = Vector3(1.35033, 1.11806, 2.27696)
+
+[node name="Bed_003" type="MeshInstance3D" parent="."]
+transform = Transform3D(5.96046e-08, 3.27826e-07, -1, -1, 0, -8.9407e-08, 0, 1, 2.98023e-07, 0.100279, 0.65411, 0.00271988)
+mesh = ExtResource("1_dtucv")
+
+[node name="Corpo" type="StaticBody3D" parent="."]
+
+[node name="Colisao" type="CollisionShape3D" parent="Corpo"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.559032, 0)
+shape = SubResource("BoxShape3D_7hxbb")

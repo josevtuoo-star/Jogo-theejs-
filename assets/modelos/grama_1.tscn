@@ -1,0 +1,10 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="ArrayMesh" path="res://assets/modelos/malhas/grama_1__Grass_P_007.res" id="1_kscyc"]
+
+[node name="grama_1" type="Node3D"]
+metadata/tamanho = Vector3(7.36866, 1.13258, 7.48448)
+
+[node name="Grass_P_007" type="MeshInstance3D" parent="."]
+transform = Transform3D(-0.118663, 2.37833e-08, 0.427082, -3.85629e-15, 0.551566, -1.89245e-08, -0.713836, -3.95356e-09, -0.0709948, 0.169838, 2.83122e-07, 0.192188)
+mesh = ExtResource("1_kscyc")

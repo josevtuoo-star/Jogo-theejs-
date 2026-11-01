@@ -1,0 +1,10 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="ArrayMesh" path="res://assets/modelos/malhas/samambaia2__Plane_014.res" id="1_wxng1"]
+
+[node name="samambaia2" type="Node3D"]
+metadata/tamanho = Vector3(2.52863, 1.07999, 2.42179)
+
+[node name="Plane_014" type="MeshInstance3D" parent="."]
+transform = Transform3D(1.26431, 0, 0, 0, 0.767334, -5.29648e-08, 0, 3.35412e-08, 1.21169, -0.120979, 7.45058e-08, 0.256652)
+mesh = ExtResource("1_wxng1")

@@ -1,9 +1,10 @@
 class_name Sfx
 extends Object
-## Sons gerados por código (o projeto não tem arquivos de som). Cada som curto é sintetizado em
-## algumas variações (o jogo sorteia uma a cada vez, com tom e volume levemente diferentes,
-## para nunca soar repetido) a partir de ruído filtrado, ressonadores (madeira, metal) e
-## ondas graves com envelope. Vento, água e motor são laços contínuos.
+## Sons do jogo.
+## - Gravados (assets/sfx, CC0): passos, roupa, couro, armas, batidas em madeira/metal, socos,
+##   portas, pássaros e insetos. Cada tipo tem várias gravações: o jogo sorteia uma a cada vez,
+##   com tom e volume levemente diferentes, para nunca soar repetido.
+## - Gerados por código: vento, água (laços), espirros, braçadas, bolhas e passos na água.
 
 const RATE := 22050
 const VARIANTS := 3
@@ -13,9 +14,23 @@ static var _cache := {}
 const LOOPS := ["wind", "water_lap", "motor"]
 
 
-const KINDS := ["step_grass", "step_hard", "step_water", "land", "cloth", "swish", "punch", "knock",
-	"wood", "metal", "rubber", "splash", "splash_small", "stroke", "bubbles", "click", "pickup",
-	"clunk", "breath_in", "breath_out", "bird", "wind", "water_lap", "motor"]
+## sons gerados por código
+const KINDS := ["step_water", "swish", "splash", "splash_small", "stroke", "bubbles", "wind", "water_lap"]
+
+## sons gravados: tipo -> arquivos (prefixo_0.mp3, prefixo_1.mp3...) e volume de ajuste (dB)
+const SAMPLES := {
+	"step_grass": [["step_grass"], 0.0], "step_hard": [["step_concrete"], -2.0], "step_wood": [["step_wood"], -1.0],
+	"land": [["imp_soft_heavy"], 0.0], "cloth": [["cloth"], 0.0], "leather": [["leather", "cloth_belt"], 0.0],
+	"belt": [["belt_handle", "cloth_belt"], 0.0], "gun_handle": [["gun_handle", "metal_latch"], 0.0],
+	"gun_click": [["metal_click", "gun_reload"], 0.0], "punch": [["imp_punch_medium"], 0.0],
+	"punch_heavy": [["imp_punch_heavy"], 0.0], "knock": [["imp_plank_medium"], 0.0],
+	"wood": [["imp_wood_medium"], 0.0], "wood_light": [["imp_wood_light"], 0.0], "wood_heavy": [["imp_wood_heavy"], 0.0],
+	"metal": [["imp_metal_medium"], 0.0], "metal_light": [["imp_metal_light", "imp_tin_medium"], 0.0],
+	"metal_heavy": [["imp_metal_heavy"], 0.0], "glass": [["imp_glass_light"], 0.0], "rubber": [["imp_soft_medium"], 0.0],
+	"click": [["metal_click"], 0.0], "pickup": [["cloth", "leather"], 0.0], "drop": [["drop_leather", "imp_soft_medium"], 0.0],
+	"door_open": [["door_open", "creak"], 0.0], "door_close": [["door_close"], 0.0], "creak": [["creak"], 0.0],
+	"birds": [["amb_birds"], 0.0], "insects": [["amb_insects"], 0.0],
+}
 
 ## verdadeiro quando todos os sons já foram gerados
 static var ready := false
@@ -27,7 +42,9 @@ static var _started := false
 ## preenchido depois (quem guardou a referência passa a tocar normalmente).
 static func get_stream(kind: String) -> AudioStream:
 	if not _cache.has(kind):
-		if kind in LOOPS:
+		if SAMPLES.has(kind):
+			_cache[kind] = _load_samples(kind)
+		elif kind in LOOPS:
 			_cache[kind] = AudioStreamWAV.new()
 		else:
 			var r := AudioStreamRandomizer.new()
@@ -35,6 +52,29 @@ static func get_stream(kind: String) -> AudioStream:
 			r.random_volume_offset_db = 1.5
 			_cache[kind] = r
 	return _cache[kind]
+
+
+static func _load_samples(kind: String) -> AudioStream:
+	var r := AudioStreamRandomizer.new()
+	r.random_pitch = 1.07
+	r.random_volume_offset_db = 2.0
+	var info: Array = SAMPLES[kind]
+	for prefix in info[0]:
+		# arquivo único (laço de ambiente) ou numerado
+		var single := "res://assets/sfx/%s.mp3" % prefix
+		if ResourceLoader.exists(single):
+			var st: AudioStreamMP3 = load(single)
+			if kind in ["birds", "insects"]:
+				st.loop = true
+				return st
+			r.add_stream(-1, st)
+			continue
+		for i in 10:
+			var path := "res://assets/sfx/%s_%d.mp3" % [prefix, i]
+			if not ResourceLoader.exists(path):
+				break
+			r.add_stream(-1, load(path))
+	return r
 
 
 ## Prepara a fila de sons a gerar. A geração acontece aos poucos em poll(), na linha principal

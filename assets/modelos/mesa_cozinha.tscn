@@ -1,0 +1,19 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="ArrayMesh" path="res://assets/modelos/malhas/mesa_cozinha__Kitchen_table_001.res" id="1_u8hpq"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_u6vtm"]
+size = Vector3(5.79898, 0.920399, 1.67633)
+
+[node name="mesa_cozinha" type="Node3D"]
+metadata/tamanho = Vector3(5.79898, 0.920399, 1.67633)
+
+[node name="Kitchen_table_001" type="MeshInstance3D" parent="."]
+transform = Transform3D(0, -1, -2.98023e-08, -2.98023e-08, 0, 1, -1, 2.98023e-08, 0, -7.62939e-06, 0.479586, -0.400387)
+mesh = ExtResource("1_u8hpq")
+
+[node name="Corpo" type="StaticBody3D" parent="."]
+
+[node name="Colisao" type="CollisionShape3D" parent="Corpo"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.460199, 0)
+shape = SubResource("BoxShape3D_u6vtm")

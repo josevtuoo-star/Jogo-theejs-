@@ -1,0 +1,24 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="ArrayMesh" path="res://assets/modelos/malhas/rifle_weatherby__Weatherby_Orion_I.res" id="1_a4vrm"]
+[ext_resource type="ArrayMesh" path="res://assets/modelos/malhas/rifle_weatherby__Weatherby_Orion_I_001.res" id="2_avhl2"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_rjtg5"]
+size = Vector3(1.34169, 0.239746, 0.0475807)
+
+[node name="rifle_weatherby" type="Node3D"]
+metadata/tamanho = Vector3(1.34169, 0.239746, 0.0475807)
+
+[node name="Weatherby_Orion_I" type="MeshInstance3D" parent="."]
+transform = Transform3D(0, 0.690242, 2.05708e-08, 2.05708e-08, 0, 0.690242, 0.690242, 2.05708e-08, 0, 0.38879, 0.135164, -1.14441e-05)
+mesh = ExtResource("1_a4vrm")
+
+[node name="Weatherby_Orion_I_001" type="MeshInstance3D" parent="."]
+transform = Transform3D(0, 0.690242, 2.05708e-08, 2.05708e-08, 0, 0.690242, 0.690242, 2.05708e-08, 0, 0.0248146, 0.188232, 0.000202179)
+mesh = ExtResource("2_avhl2")
+
+[node name="Corpo" type="StaticBody3D" parent="."]
+
+[node name="Colisao" type="CollisionShape3D" parent="Corpo"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.119873, 0)
+shape = SubResource("BoxShape3D_rjtg5")

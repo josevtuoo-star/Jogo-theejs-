@@ -1,0 +1,19 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="ArrayMesh" path="res://assets/modelos/malhas/fosforos__Matches.res" id="1_1vco1"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_k20m5"]
+size = Vector3(0.203018, 0.0428728, 0.0937881)
+
+[node name="fosforos" type="Node3D"]
+metadata/tamanho = Vector3(0.203018, 0.0428728, 0.0937881)
+
+[node name="Matches" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, -1.19209e-07, 1, 0, -1, -1.19209e-07, 7.62939e-06, 0.0214365, 0)
+mesh = ExtResource("1_1vco1")
+
+[node name="Corpo" type="StaticBody3D" parent="."]
+
+[node name="Colisao" type="CollisionShape3D" parent="Corpo"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0214364, 0)
+shape = SubResource("BoxShape3D_k20m5")

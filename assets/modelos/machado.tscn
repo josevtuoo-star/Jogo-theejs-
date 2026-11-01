@@ -1,0 +1,19 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="ArrayMesh" path="res://assets/modelos/malhas/machado__Axe.res" id="1_58kal"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_f40md"]
+size = Vector3(0.0431328, 0.399511, 0.151127)
+
+[node name="machado" type="Node3D"]
+metadata/tamanho = Vector3(0.0431328, 0.399511, 0.151127)
+
+[node name="Axe" type="MeshInstance3D" parent="."]
+transform = Transform3D(-0.0176708, 0, 0, 0, 3.15192e-09, -0.0264402, 0, 0.0264402, 3.15192e-09, 0, 0.155608, 0.042141)
+mesh = ExtResource("1_58kal")
+
+[node name="Corpo" type="StaticBody3D" parent="."]
+
+[node name="Colisao" type="CollisionShape3D" parent="Corpo"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.199756, 0)
+shape = SubResource("BoxShape3D_f40md")

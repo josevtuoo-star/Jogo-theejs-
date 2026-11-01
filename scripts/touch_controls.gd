@@ -4,7 +4,8 @@ extends Control
 ##   externo = correr;
 ## - arrastar no lado direito = olhar;
 ## - botões: SOCO, PULAR, AGACHAR (correndo vira ROLAR), USAR (aparece com o nome da ação
-##   quando há algo por perto: PEGAR, SENTAR, ABRIR PORTÃO...), 1ª/3ª pessoa e recomeçar.
+##   quando há algo por perto: PEGAR, SENTAR, ABRIR PORTA...), ARMA (sacar/guardar), MOCHILA
+##   (painel do equipamento), 1ª/3ª pessoa e recomeçar.
 
 const JOY_R := 80.0
 const KNOB_R := 34.0
@@ -17,6 +18,8 @@ const BUTTONS := [
 	{"action": "use", "label": "USAR", "pos": Vector2(-270, -235), "r": 46.0},
 	{"action": "camera", "label": "1ª/3ª", "pos": Vector2(-64, 64), "r": 38.0},
 	{"action": "reset", "label": "↺", "pos": Vector2(-152, 64), "r": 30.0},
+	{"action": "weapon", "label": "ARMA", "pos": Vector2(-395, -150), "r": 40.0},
+	{"action": "inventory", "label": "MOCHILA", "pos": Vector2(-240, 64), "r": 38.0},
 ]
 
 var _joy_finger := -1
@@ -63,6 +66,8 @@ func _input(event: InputEvent) -> void:
 
 
 func _down(finger: int, p: Vector2) -> void:
+	if Inputs.menu_open:
+		return # o painel da mochila cuida do toque
 	for i in BUTTONS.size():
 		var b: Dictionary = BUTTONS[i]
 		if p.distance_to(_btn_center(b)) <= b.r * 1.15:

@@ -1,0 +1,19 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="ArrayMesh" path="res://assets/modelos/malhas/caixa_ferramentas__toolbox.res" id="1_08ylp"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_wopjf"]
+size = Vector3(0.21236, 0.191551, 0.443932)
+
+[node name="caixa_ferramentas" type="Node3D"]
+metadata/tamanho = Vector3(0.21236, 0.191551, 0.443932)
+
+[node name="toolbox" type="MeshInstance3D" parent="."]
+transform = Transform3D(0.0808387, 1.72318e-15, -1.22063e-08, 1.22063e-08, -1.44551e-08, 0.0808387, 5.74394e-16, 0.0808387, 9.63672e-09, 0, 0.0957409, 0)
+mesh = ExtResource("1_08ylp")
+
+[node name="Corpo" type="StaticBody3D" parent="."]
+
+[node name="Colisao" type="CollisionShape3D" parent="Corpo"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0957757, 0)
+shape = SubResource("BoxShape3D_wopjf")

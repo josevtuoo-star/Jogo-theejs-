@@ -1,0 +1,19 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="ArrayMesh" path="res://assets/modelos/malhas/armario__drawer_01.res" id="1_pfoto"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_m4qy0"]
+size = Vector3(0.583012, 0.942111, 1.06448)
+
+[node name="armario" type="Node3D"]
+metadata/tamanho = Vector3(0.583012, 0.942111, 1.06448)
+
+[node name="drawer_01" type="MeshInstance3D" parent="."]
+transform = Transform3D(0, -2.5594e-07, 1.22685, -1.22685, 0, 0, 0, -1.22685, -2.92503e-07, 0, 0.550159, 0)
+mesh = ExtResource("1_pfoto")
+
+[node name="Corpo" type="StaticBody3D" parent="."]
+
+[node name="Colisao" type="CollisionShape3D" parent="Corpo"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.471056, 0)
+shape = SubResource("BoxShape3D_m4qy0")

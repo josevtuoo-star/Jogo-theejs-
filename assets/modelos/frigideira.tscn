@@ -1,0 +1,19 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="ArrayMesh" path="res://assets/modelos/malhas/frigideira__frying_pan.res" id="1_besev"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_8yg8m"]
+size = Vector3(0.536972, 0.0545065, 0.524319)
+
+[node name="frigideira" type="Node3D"]
+metadata/tamanho = Vector3(0.536972, 0.0545065, 0.524319)
+
+[node name="frying_pan" type="MeshInstance3D" parent="."]
+transform = Transform3D(0.131245, 0.0957018, -8.71352e-08, -9.68169e-09, -1.35544e-07, -0.162432, -0.0957018, 0.131245, -9.68169e-08, 0.0479641, 0.0274097, -0.0188713)
+mesh = ExtResource("1_besev")
+
+[node name="Corpo" type="StaticBody3D" parent="."]
+
+[node name="Colisao" type="CollisionShape3D" parent="Corpo"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0272532, 0)
+shape = SubResource("BoxShape3D_8yg8m")

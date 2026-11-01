@@ -1,0 +1,19 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="ArrayMesh" path="res://assets/modelos/malhas/garrafa__Water_bottle.res" id="1_xrhs2"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_7cnte"]
+size = Vector3(0.0805168, 0.243786, 0.0805206)
+
+[node name="garrafa" type="Node3D"]
+metadata/tamanho = Vector3(0.0805168, 0.243786, 0.0805206)
+
+[node name="Water_bottle" type="MeshInstance3D" parent="."]
+transform = Transform3D(0, 0.0402585, 1.05621e-09, 1.1998e-09, 0, 0.0354406, 0.0402585, 1.1998e-09, 0, 0, 0.144644, 0)
+mesh = ExtResource("1_xrhs2")
+
+[node name="Corpo" type="StaticBody3D" parent="."]
+
+[node name="Colisao" type="CollisionShape3D" parent="Corpo"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.121893, 0)
+shape = SubResource("BoxShape3D_7cnte")

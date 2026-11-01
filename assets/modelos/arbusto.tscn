@@ -1,0 +1,10 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="ArrayMesh" path="res://assets/modelos/malhas/arbusto__Tree_B.res" id="1_ogp2c"]
+
+[node name="arbusto" type="Node3D"]
+metadata/tamanho = Vector3(4.34174, 6.12008, 4.30437)
+
+[node name="Tree_B" type="MeshInstance3D" parent="."]
+transform = Transform3D(1.19347e-07, -1.80581, -0.340622, -2.00231, -2.19066e-07, -1.36916e-08, -1.49183e-08, 0.340622, -1.80581, -0.714554, 0.065048, -0.400723)
+mesh = ExtResource("1_ogp2c")

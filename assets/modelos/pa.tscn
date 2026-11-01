@@ -1,0 +1,19 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="ArrayMesh" path="res://assets/modelos/malhas/pa__Shovel.res" id="1_aliuw"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_puju1"]
+size = Vector3(0.0466328, 0.979572, 0.215218)
+
+[node name="pa" type="Node3D"]
+metadata/tamanho = Vector3(0.0466328, 0.979572, 0.215218)
+
+[node name="Shovel" type="MeshInstance3D" parent="."]
+transform = Transform3D(0, -3.93177e-08, 0.188469, -0.188469, 0, 0, 0, -0.188469, -4.49346e-08, 0.000701904, 0.562496, 0)
+mesh = ExtResource("1_aliuw")
+
+[node name="Corpo" type="StaticBody3D" parent="."]
+
+[node name="Colisao" type="CollisionShape3D" parent="Corpo"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.489786, 0)
+shape = SubResource("BoxShape3D_puju1")

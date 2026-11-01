@@ -1,0 +1,19 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="ArrayMesh" path="res://assets/modelos/malhas/kit_medico__kit.res" id="1_60ht7"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_fp1rh"]
+size = Vector3(0.150764, 0.558062, 0.357376)
+
+[node name="kit_medico" type="Node3D"]
+metadata/tamanho = Vector3(0.150764, 0.558062, 0.357376)
+
+[node name="kit" type="MeshInstance3D" parent="."]
+transform = Transform3D(0, 0.765557, 2.28154e-08, 2.28154e-08, 0, 0.765557, 0.765557, 2.28154e-08, 0, 0, 0.279031, 0)
+mesh = ExtResource("1_60ht7")
+
+[node name="Corpo" type="StaticBody3D" parent="."]
+
+[node name="Colisao" type="CollisionShape3D" parent="Corpo"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.279031, 0)
+shape = SubResource("BoxShape3D_fp1rh")

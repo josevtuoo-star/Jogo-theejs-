@@ -1,0 +1,19 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="ArrayMesh" path="res://assets/modelos/malhas/lanterna__flashlight.res" id="1_doy10"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_ui2nh"]
+size = Vector3(0.346514, 0.0656486, 0.0656509)
+
+[node name="lanterna" type="Node3D"]
+metadata/tamanho = Vector3(0.346514, 0.0656486, 0.0656509)
+
+[node name="flashlight" type="MeshInstance3D" parent="."]
+transform = Transform3D(-1.38578e-09, 1.01627e-09, 0.0232496, 4.12996e-17, -0.0232496, 1.01627e-09, -0.0232496, -1.23899e-16, -1.38578e-09, 0.02034, 0.0328242, 0)
+mesh = ExtResource("1_doy10")
+
+[node name="Corpo" type="StaticBody3D" parent="."]
+
+[node name="Colisao" type="CollisionShape3D" parent="Corpo"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0328243, 0)
+shape = SubResource("BoxShape3D_ui2nh")

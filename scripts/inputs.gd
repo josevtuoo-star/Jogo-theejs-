@@ -13,16 +13,23 @@ static var first_person := false
 static var use_label := ""
 static var jump_label := "PULAR"
 static var crouch_label := "AGACHAR"
+## Mensagem curta no centro da tela (ex.: "Sem espaço") e por quanto tempo ainda aparece.
+static var toast := ""
+static var toast_t := 0.0
+## Painel da mochila aberto (os controles de toque param de mover/olhar).
+static var menu_open := false
 
 const KEYS := {
 	"move_forward": [KEY_W, KEY_UP], "move_back": [KEY_S, KEY_DOWN],
 	"move_left": [KEY_A, KEY_LEFT], "move_right": [KEY_D, KEY_RIGHT],
 	"jump": [KEY_SPACE], "crouch": [KEY_C, KEY_CTRL], "sprint": [KEY_SHIFT],
 	"punch": [KEY_F], "use": [KEY_E], "camera": [KEY_V], "reset": [KEY_R],
+	"weapon": [KEY_Q], "inventory": [KEY_TAB, KEY_I],
 }
 const PAD_BUTTONS := {
 	"jump": JOY_BUTTON_A, "crouch": JOY_BUTTON_B, "punch": JOY_BUTTON_X, "use": JOY_BUTTON_Y,
 	"camera": JOY_BUTTON_RIGHT_STICK, "sprint": JOY_BUTTON_LEFT_STICK, "reset": JOY_BUTTON_BACK,
+	"weapon": JOY_BUTTON_RIGHT_SHOULDER, "inventory": JOY_BUTTON_START,
 }
 const PAD_AXES := {
 	"move_left": [JOY_AXIS_LEFT_X, -1.0], "move_right": [JOY_AXIS_LEFT_X, 1.0],

@@ -1,0 +1,19 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="ArrayMesh" path="res://assets/modelos/malhas/livro__Book_006.res" id="1_7p17k"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_h3ws6"]
+size = Vector3(0.424698, 0.306489, 0.206829)
+
+[node name="livro" type="Node3D"]
+metadata/tamanho = Vector3(0.424698, 0.306489, 0.206829)
+
+[node name="Book_006" type="MeshInstance3D" parent="."]
+transform = Transform3D(-0.92523, -0.0500639, 1.42303e-07, -0.0500639, 0.92523, -4.04321e-08, -1.3991e-07, -4.80617e-08, -0.926584, 0.0507164, 0.155618, 0.000343323)
+mesh = ExtResource("1_7p17k")
+
+[node name="Corpo" type="StaticBody3D" parent="."]
+
+[node name="Colisao" type="CollisionShape3D" parent="Corpo"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.153244, 0)
+shape = SubResource("BoxShape3D_h3ws6")

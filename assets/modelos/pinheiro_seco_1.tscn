@@ -1,0 +1,20 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="ArrayMesh" path="res://assets/modelos/malhas/pinheiro_seco_1__Tree_07.res" id="1_8noa3"]
+
+[sub_resource type="CylinderShape3D" id="CylinderShape3D_dixvm"]
+height = 3.0
+radius = 0.287723
+
+[node name="pinheiro_seco_1" type="Node3D"]
+metadata/tamanho = Vector3(9.7589, 17.7445, 9.59077)
+
+[node name="Tree_07" type="MeshInstance3D" parent="."]
+transform = Transform3D(0.492454, 0, 0, 0, -5.87051e-08, 0.492454, 0, -0.492454, -5.87051e-08, -0.125158, 0.168513, -0.00378749)
+mesh = ExtResource("1_8noa3")
+
+[node name="Corpo" type="StaticBody3D" parent="."]
+
+[node name="Colisao" type="CollisionShape3D" parent="Corpo"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 0)
+shape = SubResource("CylinderShape3D_dixvm")

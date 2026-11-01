@@ -1,0 +1,19 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="ArrayMesh" path="res://assets/modelos/malhas/galao__fuel_tank.res" id="1_5tytp"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_pywni"]
+size = Vector3(0.175646, 0.509521, 0.353439)
+
+[node name="galao" type="Node3D"]
+metadata/tamanho = Vector3(0.175646, 0.509521, 0.353439)
+
+[node name="fuel_tank" type="MeshInstance3D" parent="."]
+transform = Transform3D(0.0878233, 0, 0, 0, -1.68671e-08, 0.141491, 0, -0.141491, -1.68671e-08, 7.62939e-06, 0.252788, -0.00962448)
+mesh = ExtResource("1_5tytp")
+
+[node name="Corpo" type="StaticBody3D" parent="."]
+
+[node name="Colisao" type="CollisionShape3D" parent="Corpo"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.25476, 0)
+shape = SubResource("BoxShape3D_pywni")

@@ -1,0 +1,19 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="ArrayMesh" path="res://assets/modelos/malhas/gaveteiro__drawer.res" id="1_fjsnm"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_at2la"]
+size = Vector3(0.569101, 0.712822, 0.595364)
+
+[node name="gaveteiro" type="Node3D"]
+metadata/tamanho = Vector3(0.569101, 0.712822, 0.595364)
+
+[node name="drawer" type="MeshInstance3D" parent="."]
+transform = Transform3D(0, -2.08616e-07, 1, -1, 0, 0, 0, -1, -2.38419e-07, 0.00585175, 0.536343, 0)
+mesh = ExtResource("1_fjsnm")
+
+[node name="Corpo" type="StaticBody3D" parent="."]
+
+[node name="Colisao" type="CollisionShape3D" parent="Corpo"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.356411, 0)
+shape = SubResource("BoxShape3D_at2la")

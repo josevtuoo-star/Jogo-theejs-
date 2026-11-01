@@ -1,0 +1,19 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="ArrayMesh" path="res://assets/modelos/malhas/mesa__Table.res" id="1_egquv"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_owalq"]
+size = Vector3(0.556572, 0.986146, 1.14737)
+
+[node name="mesa" type="Node3D"]
+metadata/tamanho = Vector3(0.556572, 0.986146, 1.14737)
+
+[node name="Table" type="MeshInstance3D" parent="."]
+transform = Transform3D(1.41937e-08, 2.12906e-08, 0.238132, -0.238132, 0, 2.12906e-08, 0, -0.238132, 1.41937e-08, -5.72205e-06, 0.639891, 0)
+mesh = ExtResource("1_egquv")
+
+[node name="Corpo" type="StaticBody3D" parent="."]
+
+[node name="Colisao" type="CollisionShape3D" parent="Corpo"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.493073, 0)
+shape = SubResource("BoxShape3D_owalq")

@@ -1,0 +1,19 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="ArrayMesh" path="res://assets/modelos/malhas/chaleira__teapot.res" id="1_ea18s"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_nreoc"]
+size = Vector3(0.254383, 0.299621, 0.313148)
+
+[node name="chaleira" type="Node3D"]
+metadata/tamanho = Vector3(0.254383, 0.299621, 0.313148)
+
+[node name="teapot" type="MeshInstance3D" parent="."]
+transform = Transform3D(0, 0.125417, 3.73771e-09, 3.73771e-09, 0, 0.125417, 0.125417, 3.73771e-09, 0, 0, 0.0729466, 0.0293846)
+mesh = ExtResource("1_ea18s")
+
+[node name="Corpo" type="StaticBody3D" parent="."]
+
+[node name="Colisao" type="CollisionShape3D" parent="Corpo"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.149811, 0)
+shape = SubResource("BoxShape3D_nreoc")

@@ -1,0 +1,19 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="ArrayMesh" path="res://assets/modelos/malhas/panela__pot.res" id="1_yamxd"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_vyu2r"]
+size = Vector3(0.298759, 0.186044, 0.289528)
+
+[node name="panela" type="Node3D"]
+metadata/tamanho = Vector3(0.298759, 0.186044, 0.289528)
+
+[node name="pot" type="MeshInstance3D" parent="."]
+transform = Transform3D(6.60786e-08, 0.369539, 5.50655e-08, -1.10131e-08, -4.40524e-08, 0.369539, 0.369539, -5.50655e-08, 2.20262e-08, -0.00317574, 0.105755, 0)
+mesh = ExtResource("1_yamxd")
+
+[node name="Corpo" type="StaticBody3D" parent="."]
+
+[node name="Colisao" type="CollisionShape3D" parent="Corpo"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.093022, 0)
+shape = SubResource("BoxShape3D_vyu2r")

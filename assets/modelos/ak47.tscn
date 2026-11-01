@@ -1,0 +1,39 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="ArrayMesh" path="res://assets/modelos/malhas/ak47__AK_47.res" id="1_eoruk"]
+[ext_resource type="ArrayMesh" path="res://assets/modelos/malhas/ak47__Magazine.res" id="2_trd2m"]
+[ext_resource type="ArrayMesh" path="res://assets/modelos/malhas/ak47__Trigger.res" id="3_skv7t"]
+[ext_resource type="ArrayMesh" path="res://assets/modelos/malhas/ak47__Selector_Switch.res" id="4_qlbgt"]
+[ext_resource type="ArrayMesh" path="res://assets/modelos/malhas/ak47__Ejection_Port.res" id="5_tfsyv"]
+
+[node name="ak47" type="Node3D"]
+metadata/tamanho = Vector3(0.0399375, 0.258176, 0.876529)
+
+[node name="AK_47" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.00207928, 0.0830405, -0.122576)
+mesh = ExtResource("1_eoruk")
+
+[node name="Magazine" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.00462619, 0.0202743, 0.0376096)
+mesh = ExtResource("2_trd2m")
+
+[node name="Trigger" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.00462619, 0.0368536, 0.120098)
+mesh = ExtResource("3_skv7t")
+
+[node name="Selector_Switch" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.999872, -0.0159946, 0, 0.0159946, 0.999872, 0.0108219, 0.0678177, 0.144349)
+mesh = ExtResource("4_qlbgt")
+
+[node name="Ejection_Port" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.00352557, 0.0627076, 0.0197366)
+mesh = ExtResource("5_tfsyv")
+
+[node name="Cano" type="Marker3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.02, -0.438264)
+
+[node name="Empunhadura" type="Marker3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.0826164, 0.140245)
+
+[node name="Guarda" type="Marker3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.0309811, -0.175306)

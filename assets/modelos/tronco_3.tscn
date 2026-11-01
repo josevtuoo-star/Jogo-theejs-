@@ -1,0 +1,19 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="ArrayMesh" path="res://assets/modelos/malhas/tronco_3__Trunk_02.res" id="1_cnu2j"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_75kfy"]
+size = Vector3(2.08472, 2.14842, 6.02502)
+
+[node name="tronco_3" type="Node3D"]
+metadata/tamanho = Vector3(2.08472, 2.14842, 6.02502)
+
+[node name="Trunk_02" type="MeshInstance3D" parent="."]
+transform = Transform3D(1.44245, 0.288099, -0.0203555, -0.288746, 1.4408, -0.0691901, 0.00638622, 0.0718389, 1.46931, -0.0983925, 0.97535, -0.492226)
+mesh = ExtResource("1_cnu2j")
+
+[node name="Corpo" type="StaticBody3D" parent="."]
+
+[node name="Colisao" type="CollisionShape3D" parent="Corpo"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.07421, 0)
+shape = SubResource("BoxShape3D_75kfy")

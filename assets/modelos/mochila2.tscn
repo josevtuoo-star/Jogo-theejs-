@@ -1,0 +1,19 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="ArrayMesh" path="res://assets/modelos/malhas/mochila2__Backpack_01.res" id="1_p3457"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_ewiin"]
+size = Vector3(0.453234, 0.658608, 0.455242)
+
+[node name="mochila2" type="Node3D"]
+metadata/tamanho = Vector3(0.453234, 0.658608, 0.455242)
+
+[node name="Backpack_01" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, -1.19209e-07, 1, 0, -1, -1.19209e-07, -0.0277519, 0.314708, -8.39233e-05)
+mesh = ExtResource("1_p3457")
+
+[node name="Corpo" type="StaticBody3D" parent="."]
+
+[node name="Colisao" type="CollisionShape3D" parent="Corpo"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.329304, 0)
+shape = SubResource("BoxShape3D_ewiin")

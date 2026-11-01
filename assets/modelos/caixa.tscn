@@ -1,0 +1,19 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="ArrayMesh" path="res://assets/modelos/malhas/caixa__Box.res" id="1_neyhy"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_4gwp7"]
+size = Vector3(0.454243, 0.316256, 0.439564)
+
+[node name="caixa" type="Node3D"]
+metadata/tamanho = Vector3(0.454243, 0.316256, 0.439564)
+
+[node name="Box" type="MeshInstance3D" parent="."]
+transform = Transform3D(-0.155192, 6.04341e-08, -4.41083e-15, 0, 9.25017e-09, 0.155192, 6.04341e-08, 0.155192, -1.85003e-08, -0.0719299, 0.155192, 0)
+mesh = ExtResource("1_neyhy")
+
+[node name="Corpo" type="StaticBody3D" parent="."]
+
+[node name="Colisao" type="CollisionShape3D" parent="Corpo"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.158128, 0)
+shape = SubResource("BoxShape3D_4gwp7")

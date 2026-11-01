@@ -1,0 +1,10 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="ArrayMesh" path="res://assets/modelos/malhas/mochila__Backpack.res" id="1_qs4lq"]
+
+[node name="mochila" type="Node3D"]
+metadata/tamanho = Vector3(0.391386, 0.891727, 0.471058)
+
+[node name="Backpack" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, -1.19209e-07, 1, 0, -1, -1.19209e-07, -0.0113182, 0.422018, -1.52588e-05)
+mesh = ExtResource("1_qs4lq")

@@ -1,0 +1,10 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="ArrayMesh" path="res://assets/modelos/malhas/galhos__Branch_C.res" id="1_ytvnu"]
+
+[node name="galhos" type="Node3D"]
+metadata/tamanho = Vector3(3.84328, 2.16853, 6.78287)
+
+[node name="Branch_C" type="MeshInstance3D" parent="."]
+transform = Transform3D(0.580072, 0, 0, 0, -6.91499e-08, 0.580072, 0, -0.580072, -6.91499e-08, 1.02039, 0.479169, -3.17424)
+mesh = ExtResource("1_ytvnu")
