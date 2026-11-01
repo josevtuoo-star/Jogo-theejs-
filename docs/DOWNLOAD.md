@@ -25,7 +25,12 @@ O Chrome do Android às vezes segura arquivos `.apk` no fim do download, na veri
 2. Se ele não estiver lá, baixe o **.zip** acima. No app Arquivos, toque nele → **Extrair**, depois toque no `UltimoAmanhecer.apk` extraído.
 3. Outra opção é baixar por outro navegador (Firefox, Samsung Internet).
 
-O jogo abre na área de calibração do movimento. Controles: direcional no lado esquerdo (pouco inclinado anda, todo inclinado trota, além da borda para frente corre), arrastar o lado direito para olhar, botões PULAR e AGACHAR.
+O jogo abre na área de calibração. Controles de toque:
+- direcional no lado esquerdo: pouco inclinado anda, todo inclinado trota, além da borda para frente corre;
+- arrastar o lado direito da tela: olhar;
+- botões PULAR e AGACHAR;
+- ATACAR: toque rápido dá um soco, segurar carrega um golpe;
+- USAR: interagir e renascer.
 
 ## Como a build é feita
 

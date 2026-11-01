@@ -109,6 +109,10 @@ func _reset(position: Vector3, yaw: float) -> void:
 		await _hold(&"crouch_toggle", 2)
 	if _player.is_walk_mode:
 		await _hold(&"walk_toggle", 2)
+	# Testes anteriores podem ter matado ou ferido o personagem (queda letal).
+	if _player.health.is_dead:
+		(_player.get_node("Death") as PlayerDeath).respawn(Transform3D(Basis.IDENTITY, position))
+	_player.health.revive()
 	_player.teleport(position + Vector3.UP * 0.02)
 	_player.set_view_rotation(yaw, 0.0)
 	_player.stamina.current = _player.stamina.max_stamina

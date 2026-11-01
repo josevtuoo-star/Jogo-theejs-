@@ -39,6 +39,8 @@ enum MovementState { IDLE, WALKING, JOGGING, SPRINTING, CROUCH_IDLE, CROUCH_WALK
 ## Superfície usada quando o piso não define uma.
 @export var default_surface: SurfaceProfile
 @export var stamina: StaminaComponent
+## Vida e lesões. Opcional: sem ele, quedas só emitem o sinal de dano.
+@export var health: HealthComponent
 ## Nó que recebe a arfagem (olhar para cima/baixo). A guinada gira o corpo.
 @export var head: Node3D
 @export var collision_shape: CollisionShape3D
@@ -140,6 +142,10 @@ func _ready() -> void:
 	_stand_query.shape = _stand_shape
 	_stand_query.exclude = [get_rid()]
 	_motion_params.margin = safe_margin
+	if health != null:
+		fall_damage_taken.connect(func(amount: float, _impact: float) -> void: health.apply_fall_damage(amount))
+		health.died.connect(_on_died)
+		health.revived.connect(_on_revived)
 
 
 func _process(_delta: float) -> void:
@@ -201,7 +207,7 @@ func _physics_process(delta: float) -> void:
 # --- Entrada -----------------------------------------------------------------
 
 func _read_input() -> void:
-	if not input_enabled:
+	if not input_enabled or is_dead():
 		_move_input = Vector2.ZERO
 		_sprint_held = false
 		_jump_held = false
@@ -279,7 +285,8 @@ func _apply_body_height(height: float) -> void:
 func _update_sprint(delta: float, grounded: bool) -> void:
 	var moving_forward := _move_input.y < -0.5
 	var allowed := _sprint_held and moving_forward and stance == Stance.STANDING and not is_sliding \
-			and _stagger_timer <= 0.0 and (stamina == null or stamina.can_sprint())
+			and _stagger_timer <= 0.0 and (stamina == null or stamina.can_sprint()) \
+			and get_leg_injury() < 0.5
 	if grounded:
 		is_sprinting = allowed
 	elif not allowed:
@@ -320,7 +327,7 @@ func _handle_jump(delta: float) -> void:
 	if is_sliding or _coyote_timer <= 0.0 or _jump_cooldown_timer > 0.0 \
 			or _current_height < settings.standing_height - 0.05:
 		return
-	var height_factor := pow(get_mass_factor(), settings.load_jump_exponent)
+	var height_factor := pow(get_mass_factor(), settings.load_jump_exponent) * (1.0 - 0.6 * get_leg_injury())
 	if stamina != null:
 		var cost := settings.jump_stamina_cost * get_load_factor()
 		if not stamina.try_consume(cost):
@@ -411,7 +418,7 @@ func get_target_speed() -> float:
 	if is_walk_mode and not crouched:
 		base = minf(base, settings.walk_speed)
 	return base * _get_direction_multiplier() * external_speed_multiplier * _get_stagger_multiplier() \
-			* get_load_speed_multiplier() * current_surface.speed_multiplier
+			* get_load_speed_multiplier() * current_surface.speed_multiplier * (1.0 - 0.45 * get_leg_injury())
 
 
 func _get_wish_direction() -> Vector3:
@@ -868,6 +875,29 @@ func get_local_horizontal_velocity() -> Vector3:
 ## Fase do passo atual, de 0 a 1.
 func get_stride_phase() -> float:
 	return clampf(_stride_distance / get_stride_length(), 0.0, 1.0)
+
+
+## Fase do ciclo de marcha completo (dois passos), de 0 a 1: 0 = contato do pé
+## esquerdo, 0,5 = contato do pé direito. Sincroniza as animações de locomoção.
+func get_gait_phase() -> float:
+	return (0.5 if _left_foot_next else 0.0) + 0.5 * get_stride_phase()
+
+
+func get_leg_injury() -> float:
+	return health.leg_injury if health != null else 0.0
+
+
+func is_dead() -> bool:
+	return health != null and health.is_dead
+
+
+func _on_died() -> void:
+	is_sprinting = false
+	look_enabled = false
+
+
+func _on_revived() -> void:
+	look_enabled = true
 
 
 func is_left_foot_next() -> bool:

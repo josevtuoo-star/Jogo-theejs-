@@ -20,7 +20,7 @@ concurrency:
 env:
   GODOT_VERSION: "4.5.1"
   # Prefixo da versão do jogo; o último número é o número da build.
-  VERSION_PREFIX: "0.2"
+  VERSION_PREFIX: "0.3"
   APK_NAME: UltimoAmanhecer.apk
   ZIP_NAME: UltimoAmanhecer.zip
   BUILD_TOOLS: "35.0.1"
@@ -80,6 +80,9 @@ jobs:
 
       - name: Testes de física (o APK só sai se todos passarem)
         run: ~/godot/godot --headless --path . --fixed-fps 60 res://tests/test_runner.tscn
+
+      - name: Testes de animação, combate, interação e morte
+        run: ~/godot/godot --headless --path . --fixed-fps 60 res://tests/animation_test_runner.tscn
 
       - name: Versão da build
         id: version

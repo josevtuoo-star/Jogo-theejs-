@@ -17,6 +17,8 @@ func _init() -> void:
 	_add_action("crouch_toggle", 0.5, [_key(KEY_C), _button(JOY_BUTTON_B)])
 	_add_action("crouch_hold", 0.5, [_key(KEY_CTRL)])
 	_add_action("walk_toggle", 0.5, [_key(KEY_ALT), _button(JOY_BUTTON_RIGHT_STICK)])
+	_add_action("attack", 0.5, [_mouse(MOUSE_BUTTON_LEFT), _button(JOY_BUTTON_RIGHT_SHOULDER)])
+	_add_action("interact", 0.5, [_key(KEY_E), _button(JOY_BUTTON_X)])
 	_add_action("toggle_mouse_capture", 0.5, [_key(KEY_ESCAPE)])
 	_add_action("debug_toggle", 0.5, [_key(KEY_F3)])
 	_add_action("debug_cycle_load", 0.5, [_key(KEY_F4)])
@@ -33,6 +35,13 @@ func _key(keycode: Key) -> InputEventKey:
 	var event := InputEventKey.new()
 	event.device = -1
 	event.physical_keycode = keycode
+	return event
+
+
+func _mouse(button: MouseButton) -> InputEventMouseButton:
+	var event := InputEventMouseButton.new()
+	event.device = -1
+	event.button_index = button
 	return event
 
 

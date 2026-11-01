@@ -29,6 +29,9 @@ func _initialize() -> void:
 	_add_rigid_props()
 	_add_surface_patches()
 	_add_head_beam()
+	_add_light_switch()
+	_add_barbed_wire()
+	_add_training_dummy()
 	_add_player_and_ui()
 
 	var packed := PackedScene.new()
@@ -341,6 +344,149 @@ func _add_head_beam() -> void:
 	_add_label("Viga 2,15 m (saltar)", Vector3(0.0, 2.9, 14.0), group)
 
 
+## Interruptor num poste com lâmpada: testa interação sincronizada com a mão.
+func _add_light_switch() -> void:
+	var group := _group("LightSwitchStation")
+	_add_static_box("Post", Vector3(0.12, 2.8, 0.12), Transform3D(Basis.IDENTITY, Vector3(-3.0, 1.4, 1.9)), "concrete", group)
+	var panel := _add_static_box("SwitchPanel", Vector3(0.22, 0.30, 0.06), Transform3D(Basis.IDENTITY, Vector3(-3.0, 1.30, 1.99)), "metal", group)
+	panel.collision_layer = 1 | 16
+	var lever_pivot := Node3D.new()
+	lever_pivot.name = "LeverPivot"
+	lever_pivot.position = Vector3(0.0, 0.0, 0.04)
+	_own(lever_pivot, panel)
+	var lever_mesh := BoxMesh.new()
+	lever_mesh.size = Vector3(0.035, 0.11, 0.03)
+	var lever := MeshInstance3D.new()
+	lever.name = "Lever"
+	lever.mesh = lever_mesh
+	lever.position = Vector3(0.0, 0.045, 0.0)
+	lever.material_override = _standard_material(Color(0.75, 0.12, 0.08), 0.5, 0.2)
+	_own(lever, lever_pivot)
+	var lamp := OmniLight3D.new()
+	lamp.name = "Lamp"
+	lamp.position = Vector3(-3.0, 2.75, 2.25)
+	lamp.light_color = Color(1.0, 0.82, 0.55)
+	lamp.light_energy = 3.0
+	lamp.omni_range = 7.0
+	_own(lamp, group)
+	var bulb_mesh := SphereMesh.new()
+	bulb_mesh.radius = 0.07
+	bulb_mesh.height = 0.14
+	var bulb_material := StandardMaterial3D.new()
+	bulb_material.albedo_color = Color(1.0, 0.9, 0.7)
+	bulb_material.emission_enabled = true
+	bulb_material.emission = Color(1.0, 0.8, 0.5)
+	var bulb := MeshInstance3D.new()
+	bulb.name = "Bulb"
+	bulb.mesh = bulb_mesh
+	bulb.material_override = bulb_material
+	_own(bulb, lamp)
+	var switch := Node.new()
+	switch.name = "Switch"
+	switch.set_script(load("res://scripts/interaction/light_switch.gd"))
+	_own(switch, panel)
+	switch.set("light", lamp)
+	switch.set("lever", lever_pivot)
+	_add_label("Interruptor (USAR)", Vector3(-3.0, 3.1, 2.0), group)
+
+
+## Faixa de arame farpado: dano contínuo e lentidão (ferimentos e morte).
+func _add_barbed_wire() -> void:
+	var group := _group("BarbedWire")
+	var area := Area3D.new()
+	area.name = "WireZone"
+	area.position = Vector3(8.0, 0.5, 8.0)
+	area.collision_layer = 0
+	area.collision_mask = 2
+	area.set_script(load("res://scripts/world/damage_zone.gd"))
+	_own(area, group)
+	var shape := BoxShape3D.new()
+	shape.size = Vector3(3.0, 1.0, 2.0)
+	var collision := CollisionShape3D.new()
+	collision.name = "Collision"
+	collision.shape = shape
+	_own(collision, area)
+	var wire_material := _standard_material(Color(0.35, 0.33, 0.30), 0.4, 0.9)
+	for i in 5:
+		var strand := CylinderMesh.new()
+		strand.top_radius = 0.006
+		strand.bottom_radius = 0.006
+		strand.height = 3.0
+		strand.radial_segments = 6
+		var mesh := MeshInstance3D.new()
+		mesh.name = "Strand%d" % i
+		mesh.mesh = strand
+		mesh.material_override = wire_material
+		mesh.rotation_degrees = Vector3(0.0, 0.0, 90.0)
+		mesh.position = Vector3(0.0, -0.35 + 0.17 * i, -0.8 + 0.4 * i)
+		_own(mesh, area)
+	_add_label("Arame farpado (fere)", Vector3(8.0, 1.6, 9.2), group)
+
+
+## Boneco de treino: alvo dos golpes (recebe dano e balança).
+func _add_training_dummy() -> void:
+	var group := _group("TrainingDummyStation")
+	var dummy := StaticBody3D.new()
+	dummy.name = "TrainingDummy"
+	dummy.position = Vector3(-5.0, 0.0, 9.0)
+	dummy.collision_layer = 1
+	dummy.set_script(load("res://scripts/world/training_dummy.gd"))
+	_own(dummy, group)
+	var shape := BoxShape3D.new()
+	shape.size = Vector3(0.5, 1.8, 0.5)
+	var collision := CollisionShape3D.new()
+	collision.name = "Collision"
+	collision.shape = shape
+	collision.position = Vector3(0.0, 0.9, 0.0)
+	_own(collision, dummy)
+	var pivot := Node3D.new()
+	pivot.name = "Pivot"
+	pivot.position = Vector3(0.0, 0.25, 0.0)
+	_own(pivot, dummy)
+	var cloth := _standard_material(Color(0.55, 0.45, 0.30), 0.9, 0.0)
+	var torso_mesh := CylinderMesh.new()
+	torso_mesh.top_radius = 0.2
+	torso_mesh.bottom_radius = 0.17
+	torso_mesh.height = 1.1
+	var torso := MeshInstance3D.new()
+	torso.name = "Torso"
+	torso.mesh = torso_mesh
+	torso.position = Vector3(0.0, 0.85, 0.0)
+	torso.material_override = cloth
+	_own(torso, pivot)
+	var head_mesh := SphereMesh.new()
+	head_mesh.radius = 0.13
+	head_mesh.height = 0.26
+	var head := MeshInstance3D.new()
+	head.name = "Head"
+	head.mesh = head_mesh
+	head.position = Vector3(0.0, 1.55, 0.0)
+	head.material_override = cloth
+	_own(head, pivot)
+	var post_mesh := CylinderMesh.new()
+	post_mesh.top_radius = 0.04
+	post_mesh.bottom_radius = 0.06
+	post_mesh.height = 0.3
+	var post := MeshInstance3D.new()
+	post.name = "Post"
+	post.mesh = post_mesh
+	post.position = Vector3(0.0, 0.15, 0.0)
+	post.material_override = _materials["metal"]
+	_own(post, dummy)
+	var label := Label3D.new()
+	label.name = "DamageLabel"
+	label.position = Vector3(0.0, 2.15, 0.0)
+	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	label.font_size = 72
+	label.pixel_size = 0.004
+	label.outline_size = 12
+	label.text = "-"
+	_own(label, dummy)
+	dummy.set("pivot", pivot)
+	dummy.set("label", label)
+	_add_label("Boneco de treino (ATACAR)", Vector3(-5.0, 2.5, 9.0), group)
+
+
 func _add_player_and_ui() -> void:
 	var player: Node3D = (load("res://scenes/player/player.tscn") as PackedScene).instantiate(PackedScene.GEN_EDIT_STATE_INSTANCE)
 	player.name = "Player"
@@ -364,3 +510,11 @@ func _add_player_and_ui() -> void:
 	hud.add_theme_constant_override("outline_size", 4)
 	_own(hud, debug_layer)
 	hud.set("player", player)
+
+	var player_hud := CanvasLayer.new()
+	player_hud.name = "PlayerHud"
+	player_hud.set_script(load("res://scripts/ui/player_hud.gd"))
+	_own(player_hud)
+	player_hud.set("player", player)
+	player_hud.set("interaction", player.get_node("Interaction"))
+	player_hud.set("death", player.get_node("Death"))

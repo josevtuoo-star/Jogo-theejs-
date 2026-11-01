@@ -13,6 +13,8 @@ Gerado automaticamente a cada atualização, só depois de todos os testes passa
 - Arquitetura e plano de etapas: [`docs/ARQUITETURA.md`](docs/ARQUITETURA.md)
 - Etapa 1, personagem e movimento (concluída): [`docs/ETAPA_01_PERSONAGEM.md`](docs/ETAPA_01_PERSONAGEM.md)
 - Etapa 2, física avançada de movimentação (concluída): [`docs/ETAPA_02_FISICA_AVANCADA.md`](docs/ETAPA_02_FISICA_AVANCADA.md)
+- Etapa 3, animações em primeira pessoa (concluída): [`docs/ETAPA_03_ANIMACOES.md`](docs/ETAPA_03_ANIMACOES.md)
+- Procedência e licenças dos assets: [`ASSET_LICENSES.md`](ASSET_LICENSES.md)
 
 ## Começar
 
@@ -22,4 +24,5 @@ Gerado automaticamente a cada atualização, só depois de todos os testes passa
 ```
 godot --headless --path . --import
 godot --headless --path . --fixed-fps 60 res://tests/test_runner.tscn
+godot --headless --path . --fixed-fps 60 res://tests/animation_test_runner.tscn
 ```

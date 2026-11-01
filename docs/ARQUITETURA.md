@@ -23,7 +23,10 @@ scenes/
 scripts/
   autoload/                Singletons (GameInput)
   components/              Componentes reutilizáveis (StaminaComponent; depois Health, Hunger, Thirst…)
-  player/                  Controlador, efeitos de câmera, MovementSettings
+  player/                  Controlador, câmera, interação, combate, morte
+  animation/               Animador em camadas e movimento secundário dos braços
+  interaction/             Interactable e objetos interagíveis
+  world/                   Perigos e alvos do cenário (arame, boneco de treino)
   physics/                 SurfaceProfile e utilidades físicas
   ui/                      Controles de toque e HUD
   debug/                   Ferramentas de diagnóstico
@@ -63,6 +66,8 @@ assets/                    (próximas etapas) modelos, texturas, áudio; cada su
 | `wall_impact(speed, normal)`, `head_bumped(speed)` | câmera, som, dano (etapa 5) |
 | `surface_changed(surface)`, `slide_started`, `slide_ended` | áudio, partículas, animação |
 
+`HealthComponent` emite `damaged(amount, kind, direction)`, `died` e `revived`. `FirstPersonAnimator` emite `animation_event(event, animation)` (`hit`, `contact`): combate e interação agem nesse quadro. Alvos de golpes implementam `receive_hit(hit: Dictionary)`, com as chaves `damage`, `impulse`, `direction`, `point`, `kind` e `attacker`.
+
 Propriedades de entrada para outros sistemas: `carried_mass` (kg carregados, definido pelo inventário), `external_speed_multiplier` (ferimentos, pernas quebradas), `input_enabled`, `look_enabled` (menus e inventário). `StaminaComponent.regen_multiplier` recebe fome e sede.
 
 ## Etapas
@@ -71,22 +76,22 @@ Cada etapa só começa depois que a anterior passa nos testes e é validada no a
 
 | # | Etapa | Conteúdo | Situação |
 |---|---|---|---|
-| 1 | **Personagem e movimento** | controlador físico, câmera, agachar, salto, queda, degraus, rampas, empurrar objetos, resistência, controles de toque, testes | **concluída** (`ETAPA_01_PERSONAGEM.md`) |
-| 2 | **Física avançada de movimentação** | perfis andar/trote/corrida, aderência por superfície (círculo de atrito), curva de aceleração humana, inércia em curvas, carga, arrasto do ar, deslizamento em encostas, descida ativa de degraus, impactos em paredes e teto, inércia da cabeça | **concluída** (`ETAPA_02_FISICA_AVANCADA.md`) |
-| 3 | Corpo, braços e mãos | braços em primeira pessoa com esqueleto, `AnimationTree` dirigido pelo estado físico, balanço da arma pela velocidade real, corpo visível ao olhar para baixo, IK das mãos | próxima |
-| 4 | Interação e inventário | `RayCast` de interação, itens como `RigidBody3D` reais, inventário por peso e volume (define `carried_mass`), UI de toque | — |
-| 5 | Status vitais | `HealthComponent`, fome, sede, resistência integrada, sangramento; dano de queda e de impacto já emitidos | — |
-| 6 | Combate | corpo a corpo com hitboxes e impulso físico, armas de fogo (recuo, dispersão, munição), detecção de impacto por camada | — |
-| 7 | Zumbis | `NavigationAgent3D`, máquina de estados (vagar, investigar som, perseguir, atacar), percepção por visão e ruído (passos com superfície), LOD de IA | — |
-| 8 | Ragdoll e física de objetos | `PhysicalBoneSimulator3D` ao morrer, transição animação → ragdoll com o impulso do golpe | — |
-| 9 | Otimização Android | perfis de qualidade, LOD, oclusão, testes em aparelhos reais | — |
-| 10 | PC | mouse e teclado completos, configurações gráficas | — |
+| 1 | **Personagem e movimento** | controlador físico, câmera, agachar, salto, queda, degraus, rampas, empurrar objetos, resistência, controles de toque | **concluída** (`ETAPA_01_PERSONAGEM.md`) |
+| 2 | **Física avançada de movimentação** | perfis de velocidade, aderência por superfície, inércia, carga, arrasto do ar, encostas, impactos | **concluída** (`ETAPA_02_FISICA_AVANCADA.md`) |
+| 3 | **Animações em primeira pessoa** | rig e 19 animações autorais, animador em camadas sincronizado com a passada, vida e lesões, interação, combate corpo a corpo, morte e renascer, HUD | **concluída** (`ETAPA_03_ANIMACOES.md`) |
+| 4 | Interação e inventário | itens como `RigidBody3D` reais, pegar e soltar, inventário por peso e volume (define `carried_mass`), portas, UI de toque | próxima |
+| 5 | Status vitais | fome, sede, sangramento, cura; a vida e as lesões já existem | — |
+| 6 | Armas | armas brancas e de fogo (recuo, dispersão, munição) sobre o combate da etapa 3 | — |
+| 7 | Zumbis | corpo inteiro (Quaternius UAL 1/2, CC0), `NavigationAgent3D`, percepção por visão e ruído (passos com superfície), ataques com `receive_hit` | — |
+| 8 | Ragdoll e física de objetos | `PhysicalBoneSimulator3D`, transição animação → ragdoll com o impulso do golpe | — |
+| 9 | Otimização Android | perfis de qualidade, LOD, testes em aparelhos reais | — |
+| 10 | PC | configurações gráficas e de controle | — |
 
 O mundo aberto não faz parte destas etapas.
 
-## Assets (para a etapa 3 em diante)
+## Assets
 
-Nenhum asset de terceiros foi incluído na etapa 1. A cena de calibração usa apenas primitivas e um shader de grade próprio. Ao adicionar assets:
+O registro completo, com o que está em uso, o que foi aprovado e o que foi rejeitado, fica em [`ASSET_LICENSES.md`](../ASSET_LICENSES.md). Ao adicionar assets:
 
 - cada recurso entra em `assets/<categoria>/<nome>/` com o arquivo de licença original e uma linha em `ASSET_LICENSES.md` (origem, autor, licença, restrições);
 - a licença é verificada **por arquivo**, no momento do download, na página do autor; não se presume que a licença do repositório cobre os modelos e o áudio;
