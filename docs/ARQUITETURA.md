@@ -24,10 +24,12 @@ scripts/
   autoload/                Singletons (GameInput)
   components/              Componentes reutilizáveis (StaminaComponent; depois Health, Hunger, Thirst…)
   player/                  Controlador, efeitos de câmera, MovementSettings
+  physics/                 SurfaceProfile e utilidades físicas
   ui/                      Controles de toque e HUD
   debug/                   Ferramentas de diagnóstico
 resources/
   player/                  Parâmetros (.tres)
+  surfaces/                Perfis de superfície (.tres)
   materials/               Shaders e materiais
 tests/                     Testes automatizados (cena + script)
 tools/                     Scripts de manutenção (gerar InputMap e cena de testes)
@@ -51,15 +53,17 @@ assets/                    (próximas etapas) modelos, texturas, áudio; cada su
 
 | Sinal | Uso previsto |
 |---|---|
-| `footstep(intensity, is_left_foot)` | áudio de passos por superfície, ruído que atrai zumbis, animação |
+| `footstep(intensity, is_left_foot, surface)` | áudio de passos por superfície, ruído que atrai zumbis, animação |
 | `landed(impact_speed)` | som e câmera de aterrissagem |
 | `fall_damage_taken(amount, impact_speed)` | `HealthComponent` (etapa 4) |
 | `jumped(vertical_speed)` | som, animação, ruído |
 | `stance_changed(stance)` | animação, furtividade (agachado faz menos ruído) |
 | `movement_state_changed(state)` | `AnimationTree` dos braços/corpo |
 | `stepped_up(height)` | suavização da câmera |
+| `wall_impact(speed, normal)`, `head_bumped(speed)` | câmera, som, dano (etapa 5) |
+| `surface_changed(surface)`, `slide_started`, `slide_ended` | áudio, partículas, animação |
 
-Propriedades de entrada para outros sistemas: `external_speed_multiplier` (peso do inventário, ferimentos, pernas quebradas), `input_enabled`, `look_enabled` (menus e inventário). `StaminaComponent.regen_multiplier` recebe fome e sede.
+Propriedades de entrada para outros sistemas: `carried_mass` (kg carregados, definido pelo inventário), `external_speed_multiplier` (ferimentos, pernas quebradas), `input_enabled`, `look_enabled` (menus e inventário). `StaminaComponent.regen_multiplier` recebe fome e sede.
 
 ## Etapas
 
@@ -67,19 +71,20 @@ Cada etapa só começa depois que a anterior passa nos testes e é validada no a
 
 | # | Etapa | Conteúdo | Situação |
 |---|---|---|---|
-| 1 | **Personagem e movimento** | controlador físico, câmera, agachar, salto, queda, degraus, rampas, empurrar objetos, resistência, controles de toque, testes | **concluída** (ver `ETAPA_01_PERSONAGEM.md`) |
-| 2 | Corpo, braços e mãos | braços em primeira pessoa com esqueleto, `AnimationTree` dirigido pelo estado físico, balanço da arma pela velocidade real, corpo visível ao olhar para baixo, IK das mãos | próxima |
-| 3 | Interação e inventário | `RayCast` de interação, itens como `RigidBody3D` reais, inventário por peso e volume, UI de toque | — |
-| 4 | Status vitais | `HealthComponent`, fome, sede, resistência integrada, sangramento, dano de queda já emitido pela etapa 1 | — |
-| 5 | Combate | corpo a corpo com hitboxes e impulso físico, armas de fogo (recuo, dispersão, munição), detecção de impacto por camada | — |
-| 6 | Zumbis | `NavigationAgent3D`, máquina de estados (vagar, investigar som, perseguir, atacar), percepção por visão e ruído (passos da etapa 1), LOD de IA | — |
-| 7 | Ragdoll e física de objetos | `PhysicalBoneSimulator3D` ao morrer, transição animação → ragdoll com o impulso do golpe | — |
-| 8 | Otimização Android | perfis de qualidade, LOD, oclusão, testes em aparelhos reais | — |
-| 9 | PC | mouse e teclado completos, configurações gráficas | — |
+| 1 | **Personagem e movimento** | controlador físico, câmera, agachar, salto, queda, degraus, rampas, empurrar objetos, resistência, controles de toque, testes | **concluída** (`ETAPA_01_PERSONAGEM.md`) |
+| 2 | **Física avançada de movimentação** | perfis andar/trote/corrida, aderência por superfície (círculo de atrito), curva de aceleração humana, inércia em curvas, carga, arrasto do ar, deslizamento em encostas, descida ativa de degraus, impactos em paredes e teto, inércia da cabeça | **concluída** (`ETAPA_02_FISICA_AVANCADA.md`) |
+| 3 | Corpo, braços e mãos | braços em primeira pessoa com esqueleto, `AnimationTree` dirigido pelo estado físico, balanço da arma pela velocidade real, corpo visível ao olhar para baixo, IK das mãos | próxima |
+| 4 | Interação e inventário | `RayCast` de interação, itens como `RigidBody3D` reais, inventário por peso e volume (define `carried_mass`), UI de toque | — |
+| 5 | Status vitais | `HealthComponent`, fome, sede, resistência integrada, sangramento; dano de queda e de impacto já emitidos | — |
+| 6 | Combate | corpo a corpo com hitboxes e impulso físico, armas de fogo (recuo, dispersão, munição), detecção de impacto por camada | — |
+| 7 | Zumbis | `NavigationAgent3D`, máquina de estados (vagar, investigar som, perseguir, atacar), percepção por visão e ruído (passos com superfície), LOD de IA | — |
+| 8 | Ragdoll e física de objetos | `PhysicalBoneSimulator3D` ao morrer, transição animação → ragdoll com o impulso do golpe | — |
+| 9 | Otimização Android | perfis de qualidade, LOD, oclusão, testes em aparelhos reais | — |
+| 10 | PC | mouse e teclado completos, configurações gráficas | — |
 
 O mundo aberto não faz parte destas etapas.
 
-## Assets (para a etapa 2 em diante)
+## Assets (para a etapa 3 em diante)
 
 Nenhum asset de terceiros foi incluído na etapa 1. A cena de calibração usa apenas primitivas e um shader de grade próprio. Ao adicionar assets:
 
@@ -87,7 +92,7 @@ Nenhum asset de terceiros foi incluído na etapa 1. A cena de calibração usa a
 - a licença é verificada **por arquivo**, no momento do download, na página do autor; não se presume que a licença do repositório cobre os modelos e o áudio;
 - recursos restritos a uso não comercial ou só a testes ficam fora do repositório público e fora de builds distribuídas.
 
-Fontes a avaliar na etapa 2, com o que precisa ser conferido em cada uma:
+Fontes a avaliar na etapa 3, com o que precisa ser conferido em cada uma:
 
 | Fonte | O que conferir antes de usar |
 |---|---|

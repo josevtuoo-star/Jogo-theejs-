@@ -1,5 +1,7 @@
 # Etapa 1 — Personagem em primeira pessoa
 
+> Os valores de velocidade, aceleração e o número de testes abaixo são os da entrega da Etapa 1. A Etapa 2 revisou o modelo (perfis andar/trote/corrida, aderência por superfície, carga). Os valores atuais estão em [`ETAPA_02_FISICA_AVANCADA.md`](ETAPA_02_FISICA_AVANCADA.md).
+
 ## O que foi implementado
 
 | Mecânica | Como funciona |

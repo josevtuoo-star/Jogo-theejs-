@@ -27,6 +27,8 @@ func _initialize() -> void:
 	_add_drop_tower()
 	_add_walls()
 	_add_rigid_props()
+	_add_surface_patches()
+	_add_head_beam()
 	_add_player_and_ui()
 
 	var packed := PackedScene.new()
@@ -47,6 +49,9 @@ func _create_materials() -> void:
 	_materials["wood"] = _standard_material(Color(0.55, 0.4, 0.25), 0.8, 0.0)
 	_materials["metal"] = _standard_material(Color(0.32, 0.36, 0.38), 0.45, 0.8)
 	_materials["heavy"] = _standard_material(Color(0.25, 0.27, 0.24), 0.7, 0.2)
+	_materials["ice"] = _grid_material(shader, Color(0.72, 0.84, 0.92), Color(0.55, 0.68, 0.78), "ice")
+	(_materials["ice"] as ShaderMaterial).set_shader_parameter("roughness_value", 0.15)
+	_materials["mud"] = _grid_material(shader, Color(0.3, 0.22, 0.14), Color(0.22, 0.16, 0.1), "mud")
 
 
 func _grid_material(shader: Shader, base: Color, line: Color, id: String) -> ShaderMaterial:
@@ -314,6 +319,26 @@ func _add_rigid_props() -> void:
 	_add_rigid_box("Block300kg", Vector3(1.2, 1.2, 1.2), 300.0, Vector3(2.0, 0.6, -9.0), "heavy", group)
 	_add_rigid_barrel("Barrel15kg", 0.29, 0.88, 15.0, Vector3(-3.0, 0.44, -10.5), group)
 	_add_label("Objetos físicos (5, 15, 20 e 300 kg)", Vector3(0.0, 1.8, -8.0), group)
+
+
+## Placas rentes ao chão (2 cm) com perfis de superfície: gelo e lama.
+func _add_surface_patches() -> void:
+	var group := _group("SurfacePatches")
+	var ice := _add_static_box("Ice", Vector3(7.0, 0.02, 20.0), Transform3D(Basis.IDENTITY, Vector3(-32.0, 0.01, 12.0)), "ice", group)
+	ice.set_meta(&"surface_profile", load("res://resources/surfaces/gelo.tres"))
+	_add_label("Gelo (μ 0,08)", Vector3(-32.0, 1.6, 1.6), group)
+	var mud := _add_static_box("Mud", Vector3(8.0, 0.02, 16.0), Transform3D(Basis.IDENTITY, Vector3(20.0, 0.01, 22.0)), "mud", group)
+	mud.set_meta(&"surface_profile", load("res://resources/surfaces/lama.tres"))
+	_add_label("Lama (μ 0,5, passo 75%)", Vector3(20.0, 1.6, 13.6), group)
+
+
+## Viga com face inferior a 2,15 m: a cabeça bate nela ao saltar embaixo.
+func _add_head_beam() -> void:
+	var group := _group("HeadBeam")
+	_add_static_box("Beam", Vector3(3.0, 0.2, 0.4), Transform3D(Basis.IDENTITY, Vector3(0.0, 2.25, 14.0)), "concrete", group)
+	_add_static_box("PostLeft", Vector3(0.2, 2.35, 0.2), Transform3D(Basis.IDENTITY, Vector3(-1.6, 1.175, 14.0)), "concrete", group)
+	_add_static_box("PostRight", Vector3(0.2, 2.35, 0.2), Transform3D(Basis.IDENTITY, Vector3(1.6, 1.175, 14.0)), "concrete", group)
+	_add_label("Viga 2,15 m (saltar)", Vector3(0.0, 2.9, 14.0), group)
 
 
 func _add_player_and_ui() -> void:
