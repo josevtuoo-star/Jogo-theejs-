@@ -65,7 +65,9 @@ const PUNCHES := [
 	{"anim": "Punch_Cross", "hit": 0.3, "next": 0.5, "end": 0.95, "force": 18.0, "reach": 0.75, "height": 1.4},
 ]
 ## ações que prendem o corpo enquanto tocam (uma por vez)
-const ACTIONS := ["Roll", "Jump_Land", "PickUp_Table", "Interact", "Sitting_Enter", "Sitting_Idle", "Sitting_Exit"]
+const ACTIONS := ["Roll", "Jump_Land", "PickUp_Table", "Interact", "Sitting_Enter", "Sitting_Idle", "Sitting_Exit", "Consume"]
+## animações da Universal Animation Library 2 (Quaternius, CC0) usadas pelas ações
+const UAL2_CLIPS := {"Consume": "ual2/Consume"}
 
 @onready var col: CollisionShape3D = $Collision
 @onready var visual: Node3D = $Visual
@@ -177,6 +179,7 @@ var _post: CanvasItem
 
 func _ready() -> void:
 	Inputs.setup()
+	add_to_group("jogador")
 	_spawn = global_transform
 	cam_yaw = rotation.y
 	model_yaw = cam_yaw + PI
@@ -203,7 +206,7 @@ func _ready() -> void:
 func _physics_process(delta: float) -> void:
 	_prev_pos = global_position
 	_time += delta
-	if Input.is_action_just_pressed("reset") or global_position.y < -25.0:
+	if Input.is_action_just_pressed("reset") or global_position.y < -80.0:
 		respawn()
 		return
 	match mode:
@@ -340,10 +343,26 @@ func _move_normal(delta: float) -> void:
 		_air_time = 0.0
 	else:
 		_air_time += delta
+		_unstick(delta)
 	if _water_depth() > 1.3 and mode == Mode.NORMAL:
 		_start_swim()
 		return
 	_update_punch(delta)
+
+
+## Preso na quina de um móvel/pedra (sem chão e sem cair): escorrega para fora da quina.
+func _unstick(delta: float) -> void:
+	if _air_time < 0.25 or absf(velocity.y) > 0.6:
+		return
+	var push := Vector3.ZERO
+	for i in get_slide_collision_count():
+		var n := get_slide_collision(i).get_normal()
+		if n.y > 0.05:
+			push += Vector3(n.x, 0.0, n.z)
+	if push.length() < 0.01:
+		push = -_facing()
+	velocity += push.normalized() * 6.0 * delta
+	velocity.y = minf(velocity.y, -1.0)
 
 
 func _facing() -> Vector3:
@@ -408,7 +427,18 @@ func _push_bodies(delta: float, wanted: Vector3) -> void:
 	pushing = _push_hold > 0.0 and wanted.length() > 0.3
 
 
+## Põe o personagem num ponto (início do jogo e recomeçar).
+func place_at(p: Vector3, yaw: float) -> void:
+	_spawn = Transform3D(Basis(), p)
+	cam_yaw = yaw
+	model_yaw = yaw + PI
+	respawn()
+
+
 func respawn() -> void:
+	var mundo := get_tree().get_first_node_in_group("mundo")
+	if mundo:
+		mundo.preload_around(_spawn.origin)
 	mode = Mode.NORMAL
 	_act_target = 0.0
 	_act_amt = 0.0
@@ -515,7 +545,12 @@ func begin_equip(target: Vector3) -> void:
 			_act_goto = _reach_point(target, 0.38)
 
 
-## Chamado pelo painel do portão (USAR).
+## Comer/beber (o equipamento já pôs o item na mão): a animação leva a mão à boca.
+func play_consume() -> void:
+	_play_action("Consume", 1.0, 0.2)
+
+
+## Chamado pela porta/painel (USAR).
 func press(button: Node3D) -> void:
 	_act_target_node = button
 	var hp: Vector3 = button.handle_point() if button.has_method("handle_point") else button.global_position
@@ -902,7 +937,8 @@ func _process(delta: float) -> void:
 	visual.global_position = pos - _facing() * 0.24 * _push_amt
 
 	# olhar: o movimento do dedo/mouse é aplicado em ~30 ms (sem "degraus" em telas rápidas)
-	_look_pending += Inputs.take_look() * touch_sensitivity + _mouse_look * mouse_sensitivity
+	var sens: float = Config.v.sensibilidade
+	_look_pending += (Inputs.take_look() * touch_sensitivity + _mouse_look * mouse_sensitivity) * sens
 	_mouse_look = Vector2.ZERO
 	var look := _look_pending * (1.0 - exp(-35.0 * delta))
 	_look_pending -= look
@@ -1006,7 +1042,7 @@ func _process(delta: float) -> void:
 	arm.spring_length = lerpf(tp_distance, 0.0, e)
 	arm.position = Vector3(lerpf(0.45, 0.0, e), 0.0, 0.0)
 	_body.hide_head = cam_blend > 0.5
-	var fov := lerpf(tp_fov, fp_fov, e) + (5.0 if sprinting and mode == Mode.NORMAL else 0.0)
+	var fov := lerpf(tp_fov, float(Config.v.fov), e) + (5.0 if sprinting and mode == Mode.NORMAL else 0.0)
 	cam.fov = lerpf(cam.fov, fov, 1.0 - exp(-6.0 * delta))
 	_shake = maxf(_shake - delta * 1.5, 0.0)
 	var s := _shake * _shake
@@ -1104,7 +1140,8 @@ func _extras(delta: float, spd: float) -> void:
 	var resting := spd < 0.5 and (mode == Mode.NORMAL or mode == Mode.SIT)
 	_body.breath = lerpf(_body.breath, (1.0 if resting else 0.4) + fatigue * 1.4, k)
 	_body.breath_rate = lerpf(_body.breath_rate, lerpf(0.25, 0.85, fatigue), k)
-	_body.air_arms = lerpf(_body.air_arms, _air_amt * (0.0 if equip.has_gun() else 1.0) * clampf(-velocity.y * 0.15 + 0.6, 0.3, 1.0), k)
+	var falling := mode == Mode.NORMAL and not is_on_floor() and _air_time > 0.35 and velocity.y < -2.0
+	_body.air_arms = lerpf(_body.air_arms, (0.4 if falling and not equip.has_gun() else 0.0) * clampf(-velocity.y * 0.08, 0.2, 1.0), k)
 	_body.head_up = lerpf(_body.head_up, _swim_amt * (0.0 if diving else 1.0), k)
 	_body.strain = lerpf(_body.strain, _push_amt, k)
 	var tw := 0.0
@@ -1129,6 +1166,15 @@ func _setup_animation() -> void:
 	for n in LOCO:
 		lib.add_animation(n, _normalize_cycle(ap, n))
 	ap.add_animation_library("loco", lib)
+	# animações extras da UAL2 (mesmo esqueleto): comer/beber
+	var ual2: Node = load("res://assets/personagem/UAL2.glb").instantiate()
+	var ap2: AnimationPlayer = ual2.find_children("*", "AnimationPlayer", true, false)[0]
+	var lib2 := AnimationLibrary.new()
+	for clip in UAL2_CLIPS.values():
+		var n2: String = (clip as String).get_file()
+		lib2.add_animation(n2, ap2.get_animation(n2))
+	ap.add_animation_library("ual2", lib2)
+	ual2.free()
 
 	_body = load("res://scripts/procedural_body.gd").new()
 	_body.exclude.append(get_rid())
@@ -1182,7 +1228,7 @@ func _setup_animation() -> void:
 	act_sel.xfade_time = 0.22
 	for i in ACTIONS.size():
 		act_sel.add_input(ACTIONS[i])
-		bt.add_node("a_" + ACTIONS[i], _anim(ACTIONS[i]))
+		bt.add_node("a_" + ACTIONS[i], _anim(UAL2_CLIPS.get(ACTIONS[i], ACTIONS[i])))
 	bt.add_node("act_sel", act_sel)
 	for i in ACTIONS.size():
 		bt.connect_node("act_sel", i, "a_" + ACTIONS[i])
@@ -1318,8 +1364,11 @@ func _update_animation(delta: float, hv: Vector3) -> void:
 	_moving = lerpf(_moving, moving, 1.0 - exp(-8.0 * delta))
 	var k := 1.0 - exp(-6.0 * delta)
 	_crouch_amt = lerpf(_crouch_amt, 1.0 if crouching else equip.crouch_now(), k)
-	var in_air := mode == Mode.NORMAL and not is_on_floor() and _air_time > 0.12
-	_air_amt = lerpf(_air_amt, 1.0 if in_air else 0.0, 1.0 - exp(-10.0 * delta))
+	# no ar: a pose de pulo da biblioteca abre muito os braços; entra só em quedas de verdade e
+	# misturada pela metade com o resto (não vira "pose T" num degrau ou preso numa quina)
+	var in_air := mode == Mode.NORMAL and not is_on_floor() and _air_time > 0.28 and _water_depth() < 0.3 \
+		and (velocity.y > 1.0 or velocity.y < -1.5)
+	_air_amt = lerpf(_air_amt, 0.6 if in_air else 0.0, 1.0 - exp(-8.0 * delta))
 	_swim_amt = lerpf(_swim_amt, 1.0 if mode == Mode.SWIM else 0.0, k)
 	_push_amt = lerpf(_push_amt, 1.0 if pushing else 0.0, k)
 	_act_amt = move_toward(_act_amt, _act_target, delta / maxf(_act_fade, 0.01))

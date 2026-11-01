@@ -4,9 +4,9 @@ config_version=5
 
 [application]
 
-config/name="Sobrevivência 0.03"
+config/name="Sobrevivência 0.04"
 config/description="Sobrevivência pós-apocalíptica: mapa de 1 km, itens com peso no corpo e na mochila, armas com IK, personagem da Universal Animation Library (Quaternius)."
-config/version="0.03"
+config/version="0.04"
 run/main_scene="res://scenes/main.scn"
 config/features=PackedStringArray("4.3", "GL Compatibility")
 config/icon="res://icon.svg"
@@ -26,6 +26,7 @@ pointing/emulate_mouse_from_touch=false
 [physics]
 
 common/physics_ticks_per_second=60
+3d/physics_engine="Jolt Physics"
 
 [rendering]
 

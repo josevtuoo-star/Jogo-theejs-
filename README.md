@@ -1,13 +1,13 @@
-# Sobrevivência — v0.03
+# Sobrevivência — v0.04
 
 Jogo de sobrevivência no estilo DayZ / The Walking Dead, feito no **Godot 4** para
-**Android** (funciona também no PC). Personagem e animações da **Universal Animation Library**
-(Quaternius, CC0); cenário, carros, móveis, ferramentas e armas do pacote de modelos enviado
-(Models / Textures / GunsExplosives); sons gravados CC0.
+**Android** (funciona também no PC). Agora num **pedaço real do sertão da Paraíba**: Faisqueiro,
+na PB-394 (o ponto -6,93394, -38,45759), com relevo, estradas, açudes e casas nos lugares reais.
 
 ## Como abrir
 
-1. Instale o **Godot Engine 4** (4.3 ou mais novo) — no Android pela Play Store, ou no PC.
+1. Instale o **Godot Engine 4** (4.3 ou mais novo; no 4.4+ a física usa a **Jolt**) — no
+   Android pela Play Store, ou no PC.
 2. No Godot: **Importar** → escolha o `project.godot` (ou o `.zip` do projeto) → **Importar e editar**.
 3. Na primeira vez ele importa modelos, texturas e sons (pode levar um minuto).
 4. Aperte **▶ (Executar projeto)**.
@@ -20,25 +20,60 @@ Jogo de sobrevivência no estilo DayZ / The Walking Dead, feito no **Godot 4** p
 | Olhar | arraste no lado direito da tela | mouse (clique prende, Esc solta) | analógico direito |
 | Pular / nadar mais rápido | **PULAR** | Espaço | A |
 | Agachar / rolar / mergulhar | **AGACHAR** (correndo vira **ROLAR**) | C ou Ctrl | B |
-| Usar | **USAR** — mostra a ação: **PEGAR (item e peso)**, **ABRIR/FECHAR PORTA**, **SENTAR** | E | Y |
+| Usar | **USAR** — mostra a ação: **PEGAR (item e peso)**, **SENTAR**... | E | Y |
 | Sacar / guardar a arma | **ARMA** | Q | RB |
-| Equipamento (mochila) | **MOCHILA** | Tab ou I | Start |
+| Equipamento (mochila) — largar, empunhar, **comer/beber** | **MOCHILA** | Tab ou I | Start |
+| Configurações | **⚙** | O ou F10 | — |
 | Soco (combo) | **SOCO** | clique esquerdo ou F | X |
 | 1ª / 3ª pessoa | **1ª/3ª** | V | analógico direito (apertar) |
-| Recomeçar | **↺** | R | Select |
+| Recomeçar | **↺** (ou no painel ⚙) | R | Select |
 
-## Novidades da v0.03
+## Novidades da v0.04
 
-### Mapa de 1 km × 1 km, pós-apocalíptico
-- Terreno com morros, estrada asfaltada atravessando o mapa, estradas de terra, céu fechado,
-  neblina e cores lavadas (sem vida, como em The Walking Dead).
-- **Acampamento** no centro (onde o jogo começa): cabana, picape, viatura do xerife, fogueira
-  apagada com pedras e troncos.
-- **Seis cabanas** com móveis (cama, mesa, fogão, estante, armário) e **porta que abre e fecha**
-  (o personagem leva a mão até a maçaneta); cadeiras para **sentar**; som com eco lá dentro.
-- **Torre de vigia** num morro, **lago**, **carros abandonados** pela estrada e no mato.
-- Floresta de árvores secas e pinheiros mortos, troncos caídos, tocos, pedras, rochedos,
-  arbustos, samambaias e grama alta (desenhados em lotes e somem de longe — leve no celular).
+### O mapa real: Faisqueiro e a PB-394 (2,6 km × 4,6 km)
+- **Relevo real** (Copernicus GLO-30): os morros e baixadas de verdade (de -18 m a +115 m em
+  relação à vila).
+- **Chão pintado pela imagem de satélite** (Sentinel-2, outubro de 2025, estação seca): caatinga
+  escura, roçados claros, verde perto da água; de perto, barro rachado, pedrinhas e capim.
+- **Estradas reais**: a **PB-394 (Rodovia Chico Aristides)** asfaltada e 50+ estradas de terra
+  (incluindo o Acesso a Gravatá), com o terreno aplainado embaixo.
+- **238 casas nos lugares das construções reais** (do mapeamento por satélite): casas de
+  reboco pintado e desbotado, barrado escuro, descascando, telha colonial ou zinco, porta e
+  janelas abertas (dá para entrar), algumas sem telhado; móveis e **coisas para achar dentro**
+  (comida, água, ferramentas, panelas e, às vezes, uma arma).
+- **10 açudes** cavados onde o satélite mostra água (dá para nadar) e o **leito seco do
+  Rio Piranhas**.
+- **Caatinga gerada pelo satélite**: muita moita seca, arvoretas tortas sem folha, cactos e
+  pés de pau com folha perto da água.
+- **Capela "Espaço São José"** (branca, com cruz) e a **torre de vigia** no morro mais alto perto
+  da vila; **carros abandonados** na rodovia; placa "FAISQUEIRO / PB-394".
+- O mundo é montado em **blocos de 160 m em volta de você** (terreno com menos detalhe longe,
+  colisão só perto, árvores de longe como "impostores" — fotos 3D em cartões). Por isso o mapa
+  grande roda no celular.
+
+### Personagem novo
+- Corpo humano com **rosto, barba e cabelo raspado**, roupa de **camponês** (camisa, calça,
+  botas) — peças CC0 da Quaternius feitas para o mesmo esqueleto das animações.
+- Animação nova de **comer e beber** (Universal Animation Library 2): no painel MOCHILA, toque
+  **COMER**/**BEBER** — a mão busca o item na mochila/cinto e leva à boca (tira cansaço).
+
+### Configurações gráficas (botão ⚙)
+- **Qualidade pronta**: Baixa, Média, Alta, Ultra (o celular começa em Média).
+- Ajuste separado: **sombras** (desligadas/baixa/média/alta) e **distância das sombras**,
+  **resolução 3D** (50–100%), **antisserrilhado** (2x/4x), **distância de visão** (250–1500 m),
+  **densidade da caatinga**, **grama perto**, **neblina**, **cor final**, **limite de FPS**
+  (30/60/90/120/sem), **brilho**, **campo de visão**, **sensibilidade** e **mostrar FPS**.
+- Tudo salvo no aparelho. Dica: se o FPS cair, baixe Resolução 3D, Sombras e Vegetação.
+
+### Física e correções
+- Física **Jolt** no Godot 4.4+ (mais estável com muitos objetos; no 4.3 continua a padrão).
+- **"Pose T" no ar** corrigida: a pose de pulo só entra em quedas de verdade, misturada pela
+  metade (antes abria os braços num degrau ou preso numa quina).
+- **Preso em móvel/quina** ("No ar" parado): o personagem agora escorrega para fora.
+- **Galão** vai amarrado na lateral da mochila (não fica mais pendurado batendo nas coisas).
+- Volume da água dos açudes mais alto (nadar não "liga e desliga").
+
+## Da v0.03 (continua valendo)
 
 ### Itens com peso, roupa e mochila — nada some
 - O personagem usa **roupa** (jaqueta de lona, camisa xadrez, calça jeans, cinto, botas,
@@ -95,48 +130,39 @@ Jogo de sobrevivência no estilo DayZ / The Walking Dead, feito no **Godot 4** p
 ## Arquivos
 
 ```
-project.godot                 configuração (renderizador Compatibility, ideal para Android)
-scenes/main.scn               mapa de 1 km (gerado), céu, luz, HUD
+project.godot                 configuração (Compatibility, ideal para Android; Jolt no 4.4+)
+scenes/main.scn               cena principal (céu, sol, jogador, mundo, HUD)
 scenes/player.tscn            personagem (colisão, modelo, câmera)
-assets/ual/                   Universal Animation Library (personagem + animações) e licença
-assets/modelos/               objetos do pacote prontos para usar (com colisão) e armas
-assets/cenario/, assets/armas/ texturas do pacote (reduzidas para o celular)
-assets/mapa/                  blocos do terreno e máscara das estradas
-assets/sfx/                   sons gravados
-scripts/player.gd             movimento, física, ações, nado, socos, câmeras e animações
-scripts/procedural_body.gd    IK de pés e braços, inclinação, olhar, respiração e extras
-scripts/equipamento.gd        roupa, mochila, lugares no corpo, pegar/guardar/largar, armas
-scripts/itens.gd              tabela de itens (peso, volume, onde vão no corpo)
-scripts/item.gd               item no mundo (física, som, PEGAR)
-scripts/inventory_ui.gd       painel do equipamento (MOCHILA)
-scripts/door.gd, seat.gd      porta com dobradiça, assento
-scripts/terreno.gd            colisão de cada bloco do terreno
-scripts/sfx.gd, audio.gd, ambience.gd   sons, eco/abafado, ambiente
-scripts/touch_controls.gd, inputs.gd    controles de toque, teclado e controle
-shaders/                      terreno, roupa, água e cor final
-fontes/                       arquivos originais do pacote (ignorados pelo Godot)
+assets/mapa_real/             dados do lugar real: altura.res (relevo), satelite.png, mascara.png
+                              (asfalto/terra/água), vegetacao.png (caatinga/verde/roçado), dados.json
+                              (estradas, 238 casas, açudes, rio, lugares)
+assets/personagem/            corpo, roupa, cabelo/barba e animações extras (Quaternius, CC0)
+assets/natureza/              cactos (Quaternius, CC0) e fotos das árvores para os impostores
+assets/texturas/              detalhe do solo e reboco (geradas para o projeto)
+assets/ual/, modelos/, cenario/, armas/, sfx/   como na v0.03
+scripts/mundo_real.gd         mundo em blocos: terreno, colisão, caatinga, casas, estradas, açudes
+scripts/config.gd, settings_ui.gd   configurações gráficas e o painel ⚙
+scripts/player.gd, procedural_body.gd, equipamento.gd, itens.gd, item.gd, inventory_ui.gd
+scripts/sfx.gd, audio.gd, ambience.gd, touch_controls.gd, inputs.gd, water.gd, seat.gd...
+shaders/terreno_real.gdshader, parede.gdshader, water.gdshader, post.gdshader
+ferramentas/                  gerar_mapa_real.gd (cena + impostores), testes.gd (31 testes),
+                              extrair_modelos.gd e dados_reais/ (scripts Python que baixam e
+                              processam relevo, satélite, estradas e casas)
 ```
 
 ## Créditos
 
-- Personagem e animações: **Universal Animation Library (Standard)** —
-  [Quaternius](https://quaternius.com), **CC0** (`assets/ual/License.txt`).
-- Cenário, veículos, móveis, ferramentas, mochilas e texturas: pacote **Models / Textures1 /
-  Textures2** enviado para o projeto. Armas (AK-47, M4A1, escopeta): pacote **GunsExplosives**
-  enviado para o projeto.
-- Sons: [Kenney — Impact Sounds](https://kenney.nl/assets/impact-sounds) e
-  [Kenney — RPG Audio](https://kenney.nl/assets/rpg-audio) (CC0);
-  [The Free Firearm Sound Library](https://opengameart.org/content/the-free-firearm-sound-library) e
-  [Gun reload sounds](https://opengameart.org/content/gun-reload-sounds) (CC0);
-  pássaros/insetos do demo Truck Town de
-  [godot-demo-projects](https://github.com/godotengine/godot-demo-projects) (MIT, © Godot Engine contributors).
-- Código, mapa, materiais procedurais e sons sintetizados: feitos para este projeto.
-
-## Ferramentas
-
-- `ferramentas/gerar_mapa.gd` — gera `scenes/main.scn` e `assets/mapa/` (rode com
-  `godot --rendering-driver opengl3 -s res://ferramentas/gerar_mapa.gd`; precisa de janela).
-- `ferramentas/extrair_modelos.gd` — transforma os FBX do pacote em `assets/modelos/` (copie
-  `fontes/Vegetation.fbx` para `assets/cenario/` e os das armas para `assets/armas/` antes).
-- `ferramentas/testes.gd` — 23 testes automáticos (andar, pegar, guardar, sacar e guardar a
-  arma, largar, peso, porta, nadar): `godot --headless -s res://ferramentas/testes.gd`.
+- Personagem, roupas, cabelo e animações: **Quaternius** — Universal Animation Library 1 e 2,
+  Universal Base Characters, Modular Character Outfits; cactos do Ultimate Nature Pack —
+  **CC0** (https://quaternius.com; obtidos dos espelhos CC0 `Dallolz/moorfall-assets` e
+  `trebeljahr/quaternius-showcase` no GitHub).
+- Cenário, veículos, móveis, ferramentas, mochilas, texturas e armas: pacotes **Models /
+  Textures1 / Textures2 / GunsExplosives** enviados para o projeto.
+- Relevo: **Copernicus DEM GLO-30** — © DLR e.V. 2010-2014 e © Airbus Defence and Space GmbH
+  2014-2018, fornecido pelo programa COPERNICUS da União Europeia e ESA.
+- Imagem de satélite: contém dados modificados do **Copernicus Sentinel-2** (2025), ESA.
+- Estradas, rio e construções: **Overture Maps Foundation** (dados do **© OpenStreetMap**
+  contributors, ODbL; construções de Google Open Buildings / Microsoft, CC BY 4.0 / ODbL).
+- Sons: Kenney (CC0), The Free Firearm Sound Library e Gun reload sounds (CC0), demo Truck
+  Town do godot-demo-projects (MIT).
+- Código, processamento dos dados, materiais e sons sintetizados: feitos para este projeto.

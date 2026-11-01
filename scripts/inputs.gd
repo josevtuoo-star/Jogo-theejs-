@@ -24,7 +24,7 @@ const KEYS := {
 	"move_left": [KEY_A, KEY_LEFT], "move_right": [KEY_D, KEY_RIGHT],
 	"jump": [KEY_SPACE], "crouch": [KEY_C, KEY_CTRL], "sprint": [KEY_SHIFT],
 	"punch": [KEY_F], "use": [KEY_E], "camera": [KEY_V], "reset": [KEY_R],
-	"weapon": [KEY_Q], "inventory": [KEY_TAB, KEY_I],
+	"weapon": [KEY_Q], "inventory": [KEY_TAB, KEY_I], "settings": [KEY_O, KEY_F10],
 }
 const PAD_BUTTONS := {
 	"jump": JOY_BUTTON_A, "crouch": JOY_BUTTON_B, "punch": JOY_BUTTON_X, "use": JOY_BUTTON_Y,

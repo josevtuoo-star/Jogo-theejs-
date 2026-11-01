@@ -1,9 +1,9 @@
 [gd_scene load_steps=53 format=4]
 
-[ext_resource type="Script" path="res://scripts/player.gd" id="1_gryrt"]
-[ext_resource type="PackedScene" path="res://assets/ual/UAL1_Standard.glb" id="2_eaqvg"]
+[ext_resource type="Script" path="res://scripts/player.gd" id="1_wakvn"]
+[ext_resource type="PackedScene" path="res://assets/ual/UAL1_Standard.glb" id="2_uj1h5"]
 
-[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_1xxi8"]
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_6ctnt"]
 radius = 0.3
 height = 1.8
 
@@ -17345,7 +17345,7 @@ _data = {
 "Walk_Formal": SubResource("Animation_l2xo0")
 }
 
-[sub_resource type="SphereShape3D" id="SphereShape3D_j7nth"]
+[sub_resource type="SphereShape3D" id="SphereShape3D_m0nfc"]
 radius = 0.15
 
 [node name="Player" type="CharacterBody3D"]
@@ -17355,7 +17355,7 @@ floor_constant_speed = true
 floor_max_angle = 0.802851
 floor_snap_length = 0.45
 safe_margin = 0.02
-script = ExtResource("1_gryrt")
+script = ExtResource("1_wakvn")
 walk_speed = 1.4
 jog_speed = 3.4
 sprint_speed = 5.6
@@ -17382,12 +17382,12 @@ fp_fov = 78.0
 
 [node name="Collision" type="CollisionShape3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.9, 0)
-shape = SubResource("CapsuleShape3D_1xxi8")
+shape = SubResource("CapsuleShape3D_6ctnt")
 
 [node name="Visual" type="Node3D" parent="."]
 top_level = true
 
-[node name="Model" parent="Visual" instance=ExtResource("2_eaqvg")]
+[node name="Model" parent="Visual" instance=ExtResource("2_uj1h5")]
 
 [node name="Skeleton3D" parent="Visual/Model/Armature" index="0"]
 bones/0/name = "root"
@@ -17859,7 +17859,7 @@ libraries = {
 top_level = true
 
 [node name="SpringArm3D" type="SpringArm3D" parent="CamRig"]
-shape = SubResource("SphereShape3D_j7nth")
+shape = SubResource("SphereShape3D_m0nfc")
 spring_length = 2.6
 margin = 0.12
 

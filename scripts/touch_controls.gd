@@ -20,6 +20,7 @@ const BUTTONS := [
 	{"action": "reset", "label": "↺", "pos": Vector2(-152, 64), "r": 30.0},
 	{"action": "weapon", "label": "ARMA", "pos": Vector2(-395, -150), "r": 40.0},
 	{"action": "inventory", "label": "MOCHILA", "pos": Vector2(-240, 64), "r": 38.0},
+	{"action": "settings", "label": "⚙", "pos": Vector2(-322, 64), "r": 30.0},
 ]
 
 var _joy_finger := -1
@@ -178,6 +179,6 @@ func _draw() -> void:
 		var a := 0.35 if dim else 1.0
 		draw_circle(bc, b.r, Color(1, 0.75, 0.3, 0.45) if on else Color(0, 0, 0, 0.3 * a))
 		draw_arc(bc, b.r, 0.0, TAU, 48, Color(1, 1, 1, 0.55 * a), 2.5, true)
-		var fs := 22 if label == "↺" else (17 if b.r > 50.0 else (13 if label.length() > 9 else 14))
+		var fs := 22 if label == "↺" or label == "⚙" else (17 if b.r > 50.0 else (13 if label.length() > 9 else 14))
 		draw_string(font, bc + Vector2(-b.r, fs * 0.35), label, HORIZONTAL_ALIGNMENT_CENTER, b.r * 2.0, fs,
 			Color(1, 0.85, 0.4) if hint else Color(1, 1, 1, 0.92 * a))

@@ -57,13 +57,26 @@ func _process(delta: float) -> void:
 	var gust := sin(t * 0.4) * 3.0 + sin(t * 0.13 + 1.0) * 2.0
 	_wind.volume_db = lerpf(_wind.volume_db, -19.0 + gust - (9.0 if Audio.indoor else 0.0), 1.0 - exp(-2.0 * delta))
 	_insects.volume_db = -28.0 + sin(t * 0.21) * 2.0
-	# pássaros: na árvore mais perto do jogador (troca a cada poucos segundos)
+	# pássaros: numa árvore perto do jogador (troca a cada poucos segundos); água: o açude mais perto
 	_spot_t -= delta
 	var cam := get_viewport().get_camera_3d()
-	if _spot_t <= 0.0 and cam and not bird_spots.is_empty():
+	if _spot_t <= 0.0 and cam:
 		_spot_t = 6.0
-		var best := bird_spots[0]
-		for s in bird_spots:
-			if s.distance_squared_to(cam.global_position) < best.distance_squared_to(cam.global_position):
-				best = s
-		_birds.position = best + Vector3.UP * 8.0
+		var cp := cam.global_position
+		if bird_spots.is_empty():
+			var a := randf() * TAU
+			_birds.global_position = cp + Vector3(cos(a), 0.0, sin(a)) * randf_range(18.0, 40.0) + Vector3.UP * 6.0
+		else:
+			var best := bird_spots[0]
+			for s in bird_spots:
+				if s.distance_squared_to(cp) < best.distance_squared_to(cp):
+					best = s
+			_birds.position = best + Vector3.UP * 8.0
+		var mundo := get_tree().get_first_node_in_group("mundo")
+		if mundo and mundo.has_method("pond_centers"):
+			var best_p := Vector3(1e9, 0, 0)
+			for pc in mundo.pond_centers():
+				if (pc as Vector3).distance_squared_to(cp) < best_p.distance_squared_to(cp):
+					best_p = pc
+			if best_p.x < 1e8:
+				_lake.global_position = best_p

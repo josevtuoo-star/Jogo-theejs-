@@ -71,6 +71,11 @@ func _press(action: String, idx: int) -> void:
 			eq.draw(idx)
 		"guardar":
 			eq.holster()
+		"consumir":
+			if eq.busy or _player.mode != _player.Mode.NORMAL:
+				return
+			eq.consume(idx)
+			_toggle()
 
 
 func _draw() -> void:
@@ -122,6 +127,8 @@ func _row(font: Font, x0: float, y: float, it: Dictionary, idx: int, in_hand: bo
 		_button(Rect2(bx - 108, y + 7, 100, 30), "GUARDAR", "guardar", -1)
 	elif Itens.is_gun(it.id):
 		_button(Rect2(bx - 108, y + 7, 100, 30), "EMPUNHAR", "empunhar", idx)
+	elif Itens.DATA[it.id].has("consumir"):
+		_button(Rect2(bx - 108, y + 7, 100, 30), Itens.DATA[it.id].consumir, "consumir", idx)
 
 
 func _button(r: Rect2, label: String, action: String, idx: int) -> void:

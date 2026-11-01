@@ -5,6 +5,9 @@ render_mode blend_mix, depth_draw_opaque, cull_disabled;
 
 uniform vec3 shallow : source_color = vec3(0.18, 0.42, 0.45);
 uniform vec3 deep : source_color = vec3(0.04, 0.16, 0.2);
+uniform float rugosidade = 0.05;
+uniform float brilho = 0.6;
+uniform float opacidade = 0.62;
 
 varying vec3 wpos;
 
@@ -29,8 +32,8 @@ void fragment() {
 	NORMAL = normalize((VIEW_MATRIX * vec4(n, 0.0)).xyz);
 	float fres = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 4.0);
 	ALBEDO = mix(deep, shallow, 0.4 + 0.3 * h);
-	ROUGHNESS = 0.05;
+	ROUGHNESS = rugosidade;
 	METALLIC = 0.0;
-	SPECULAR = 0.6;
-	ALPHA = clamp(0.62 + fres * 0.35, 0.0, 0.95);
+	SPECULAR = brilho;
+	ALPHA = clamp(opacidade + fres * 0.35 * brilho, 0.0, 0.97);
 }

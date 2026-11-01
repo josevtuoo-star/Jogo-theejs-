@@ -1,7 +1,7 @@
 extends Node3D
 ## Equipamento do personagem (filho do player):
-## - roupa (jaqueta de lona, camisa xadrez, calça jeans, cinto, botas, luvas sem dedos e gorro),
-##   pintada no próprio manequim por região do corpo e com tecido/sujeira no shader;
+## - personagem de verdade: corpo com rosto, roupa de camponês (camisa, calça, botas), cabelo
+##   raspado e barba (Quaternius, CC0), presos ao esqueleto das animações;
 ## - mochila nas costas e lugares no corpo onde cada item fica pendurado (costas, cinto,
 ##   laterais, embaixo e em cima da mochila) ou guardado dentro dela. Nada some: o item vai da
 ##   mão até o lugar dele e continua visível;
@@ -85,24 +85,62 @@ func setup(p: CharacterBody3D, sk: Skeleton3D, b: Node, m: Node3D) -> void:
 # ================================================================== roupa
 
 func _dress() -> void:
-	var mi: MeshInstance3D = model.find_children("*", "MeshInstance3D", true, false)[0]
-	var src := mi.mesh as ArrayMesh
+	# o manequim sai; entram o corpo com rosto (só a cabeça aparece), a roupa, cabelo e barba —
+	# todos feitos para o mesmo esqueleto da Universal Animation Library (Quaternius, CC0)
+	for mi in model.find_children("*", "MeshInstance3D", true, false):
+		(mi as MeshInstance3D).visible = false
+	var hair := StandardMaterial3D.new()
+	hair.albedo_color = Color(0.11, 0.085, 0.065)
+	hair.roughness = 0.85
+	var P := "res://assets/personagem/"
+	_attach_meshes(P + "Superhero_Male.glb", ["Head", "neck_01"], null)
+	_attach_meshes(P + "Male_Peasant.glb", [], null)
+	_attach_meshes(P + "Hair_Buzzed.glb", [], hair)
+	_attach_meshes(P + "Hair_Beard.glb", [], hair)
+
+
+## Põe as malhas de um .glb no nosso esqueleto (ligando os ossos pelo nome). `only_bones`:
+## mantém só os triângulos presos nesses ossos (ex.: só a cabeça do corpo base).
+func _attach_meshes(path: String, only_bones: Array, mat: Material) -> void:
+	var inst: Node3D = load(path).instantiate()
+	for src in inst.find_children("*", "MeshInstance3D", true, false):
+		var smi := src as MeshInstance3D
+		var src_sk := smi.get_node_or_null(smi.skeleton) as Skeleton3D
+		var mesh: Mesh = smi.mesh
+		if not only_bones.is_empty() and smi.name.begins_with("SuperHero"):
+			mesh = _keep_bones(mesh as ArrayMesh, src_sk, only_bones)
+		var skin := Skin.new()
+		var sskin := smi.skin
+		for bi in sskin.get_bind_count():
+			var bname := sskin.get_bind_name(bi)
+			if bname == "" and src_sk:
+				bname = src_sk.get_bone_name(sskin.get_bind_bone(bi))
+			skin.add_named_bind(bname, sskin.get_bind_pose(bi))
+		var mi := MeshInstance3D.new()
+		mi.name = "Roupa_" + smi.name
+		mi.mesh = mesh
+		skel.add_child(mi)
+		mi.skeleton = mi.get_path_to(skel)
+		mi.skin = skin
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+		if mat:
+			mi.material_override = mat
+	inst.free()
+
+
+func _keep_bones(src: ArrayMesh, sk: Skeleton3D, names: Array) -> ArrayMesh:
+	var keep := {}
+	for n in names:
+		keep[sk.find_bone(n)] = true
 	var out := ArrayMesh.new()
-	var mat := ShaderMaterial.new()
-	mat.shader = load("res://shaders/roupa.gdshader")
-	var names := []
-	for i in skel.get_bone_count():
-		names.append(skel.get_bone_name(i))
 	for s in src.get_surface_count():
 		var arr := src.surface_get_arrays(s)
-		var verts: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
 		var bones: PackedInt32Array = arr[Mesh.ARRAY_BONES]
 		var wts: PackedFloat32Array = arr[Mesh.ARRAY_WEIGHTS]
+		var verts: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
 		var per := bones.size() / maxi(verts.size(), 1)
-		var cols := PackedColorArray()
-		cols.resize(verts.size())
-		var rest := PackedFloat32Array()
-		rest.resize(verts.size() * 4)
+		var ok := PackedByteArray()
+		ok.resize(verts.size())
 		for v in verts.size():
 			var best := 0
 			var bw := -1.0
@@ -110,85 +148,16 @@ func _dress() -> void:
 				if wts[v * per + k] > bw:
 					bw = wts[v * per + k]
 					best = bones[v * per + k]
-			var bn: String = names[best] if best < names.size() else ""
-			var p := verts[v]
-			cols[v] = _cloth(bn, p)
-			rest[v * 4] = p.x
-			rest[v * 4 + 1] = p.y
-			rest[v * 4 + 2] = p.z
-			rest[v * 4 + 3] = 0.0
-		arr[Mesh.ARRAY_COLOR] = cols
-		arr[Mesh.ARRAY_CUSTOM0] = rest
-		var flags := src.surface_get_format(s) & ~Mesh.ARRAY_FORMAT_CUSTOM0
-		flags |= Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT
-		out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr, [], {}, flags)
-		out.surface_set_material(s, mat)
-	mi.mesh = out
-	# gorro de lã
-	var hat := MeshInstance3D.new()
-	hat.name = "Gorro"
-	var sm := SphereMesh.new()
-	sm.radius = 0.112
-	sm.height = 0.125
-	sm.is_hemisphere = true
-	sm.radial_segments = 20
-	sm.rings = 6
-	var hm := StandardMaterial3D.new()
-	hm.albedo_color = Color(0.17, 0.18, 0.15)
-	hm.roughness = 1.0
-	sm.material = hm
-	hat.mesh = sm
-	var head := _attach_to("Head")
-	head.add_child(hat)
-	hat.transform = _local_for("Head", Transform3D(Basis().scaled(Vector3(1.0, 1.05, 1.1)), Vector3(0.0, 1.715, -0.01)))
-	var cuff := MeshInstance3D.new()
-	var tm := CylinderMesh.new()
-	tm.top_radius = 0.112
-	tm.bottom_radius = 0.114
-	tm.height = 0.035
-	tm.radial_segments = 20
-	tm.material = hm
-	cuff.mesh = tm
-	head.add_child(cuff)
-	cuff.transform = _local_for("Head", Transform3D(Basis().scaled(Vector3(1.0, 1.0, 1.1)), Vector3(0.0, 1.725, -0.01)))
-
-
-## Cor da roupa (rgb) e tipo de tecido (alfa) de cada parte do corpo.
-## alfa: 0 pele, 0,2 jeans, 0,4 lona, 0,55 xadrez, 0,7 couro, 0,9 metal
-func _cloth(bn: String, p: Vector3) -> Color:
-	var skin := Color(0.6, 0.44, 0.35, 0.0)
-	var jeans := Color(0.22, 0.26, 0.32, 0.2)
-	var jacket := Color(0.33, 0.29, 0.2, 0.4)
-	var shirt := Color(0.42, 0.13, 0.1, 0.55)
-	var leather := Color(0.17, 0.12, 0.08, 0.7)
-	var boots := Color(0.2, 0.14, 0.09, 0.7)
-	if bn == "Head" or (bn == "neck_01" and p.y > 1.5):
-		return skin
-	if bn.begins_with("hand_"):
-		return leather
-	for f in ["thumb", "index", "middle", "ring", "pinky"]:
-		if bn.begins_with(f):
-			return leather if bn.contains("_01") else skin
-	if bn.begins_with("lowerarm"):
-		return jacket if absf(p.x) < 0.66 else Color(0.27, 0.23, 0.16, 0.4)
-	if bn.begins_with("foot") or bn.begins_with("ball"):
-		return boots
-	if bn.begins_with("calf"):
-		return boots if p.y < 0.24 else jeans
-	if bn.begins_with("thigh"):
-		return jeans
-	if bn == "pelvis" or bn == "root":
-		if p.y < 0.915:
-			return jeans
-		if p.y < 0.965:
-			if p.z > 0.05 and absf(p.x) < 0.035:
-				return Color(0.55, 0.53, 0.48, 0.9) # fivela
-			return leather
-		return jacket
-	# tronco, ombros, braços, pescoço
-	if p.z > 0.04 and absf(p.x) < 0.065 and p.y > 0.98 and p.y < 1.47:
-		return shirt
-	return jacket
+			ok[v] = 1 if keep.has(best) else 0
+		var idx: PackedInt32Array = arr[Mesh.ARRAY_INDEX]
+		var nidx := PackedInt32Array()
+		for t in range(0, idx.size(), 3):
+			if ok[idx[t]] and ok[idx[t + 1]] and ok[idx[t + 2]]:
+				nidx.append_array([idx[t], idx[t + 1], idx[t + 2]])
+		arr[Mesh.ARRAY_INDEX] = nidx
+		out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr, [], {}, src.surface_get_format(s) & ~Mesh.ARRAY_FORMAT_INDEX | Mesh.ARRAY_FORMAT_INDEX)
+		out.surface_set_material(s, src.surface_get_material(s))
+	return out
 
 
 # ================================================================== lugares no corpo
@@ -396,6 +365,17 @@ func drop(idx: int) -> void:
 	player.begin_equip(Vector3.INF)
 
 
+## Comer/beber um item do inventário: a mão busca no lugar dele e a animação leva à boca.
+func consume(idx: int) -> void:
+	if busy or idx < 0 or idx >= items.size():
+		return
+	if not Itens.DATA[items[idx].id].has("consumir"):
+		return
+	_it = items[idx]
+	_begin("consumir")
+	player.begin_equip(Vector3.INF)
+
+
 ## Saca a arma das costas (ou guarda, se já estiver na mão).
 func toggle_weapon() -> void:
 	if busy:
@@ -499,6 +479,8 @@ func update(delta: float) -> void:
 				_seq_draw(want_w)
 			"guardar":
 				_seq_holster(want_w)
+			"consumir":
+				_seq_consume(want_w)
 	if not held.is_empty() and not busy:
 		_hold_gun(delta)
 		want_w = [1.0, 1.0]
@@ -827,6 +809,27 @@ func _seq_holster(w: Array) -> void:
 		w[1] = 0.0
 		if _t > 0.75:
 			_finish()
+
+
+func _seq_consume(w: Array) -> void:
+	const GRAB := 0.42
+	if not _grabbed:
+		_seq_drop(w) # mesmo movimento de ir buscar no lugar e pegar
+		if _grabbed:
+			player.play_consume()
+		return
+	var t2 := _t - GRAB
+	# a animação de comer/beber leva a mão (com o item) até a boca; o IK solta aos poucos
+	w[1] = 1.0 - smoothstep(0.0, 0.25, t2)
+	if t2 > 0.45 and not _done_store:
+		_done_store = true
+		var drink: bool = Itens.DATA[_it.id].consumir == "BEBER"
+		_play("splash_small" if drink else "cloth", -10.0)
+	if t2 > 1.3:
+		(_it.node as Node).queue_free()
+		toast(("Bebeu: " if Itens.DATA[_it.id].consumir == "BEBER" else "Comeu: ") + Itens.nome(_it.id))
+		player.fatigue = maxf(player.fatigue - 0.3, 0.0)
+		_finish()
 
 
 func _finish() -> void:
