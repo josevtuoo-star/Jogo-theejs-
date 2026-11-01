@@ -1,0 +1,6 @@
+Nome: Machete
+Autores: Ulan Cabanilla
+Licença: CC0 1.0 (Poly Haven)
+Origem: https://polyhaven.com/a/machete
+Resolução: 1k
+Polígonos: 3032

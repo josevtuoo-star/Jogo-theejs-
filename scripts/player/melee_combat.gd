@@ -2,13 +2,15 @@ class_name MeleeCombat
 extends Node
 ## Combate corpo a corpo desarmado.
 ##
-## Toque rápido em "attack": soco rápido (jab). Segurar: a animação de golpe
-## carregado para na preparação enquanto o botão estiver apertado; ao soltar,
-## o gancho sai com força proporcional ao tempo carregado.
-## O acerto é calculado no quadro de impacto da animação (evento "hit"), com
-## uma esfera varrida a partir dos olhos. Alvos com receive_hit(hit) recebem
-## dano; corpos rígidos recebem impulso; superfícies rígidas devolvem o golpe
-## (a mão recua).
+## Toque rápido em "attack": soco rápido; toques seguidos alternam jab
+## (esquerda) e cruzado (direita). Segurar: o gancho para na preparação
+## enquanto o botão estiver apertado; ao soltar, sai com força proporcional ao
+## tempo carregado. As animações afetam só o tronco: as pernas continuam a
+## locomoção. O acerto é calculado no quadro de impacto da animação (evento
+## "hit", medido na própria animação), com uma esfera varrida a partir dos
+## olhos na direção do olhar — igual em primeira e terceira pessoa. Alvos com
+## receive_hit(hit) recebem dano; corpos rígidos recebem impulso; superfícies
+## rígidas devolvem o golpe.
 
 signal attack_started(kind: StringName)
 signal hit_landed(target: Node, damage: float, kind: StringName)
@@ -16,8 +18,9 @@ signal hit_obstacle(point: Vector3)
 signal attack_missed(kind: StringName)
 
 @export var player: PlayerController
-@export var camera: Camera3D
-@export var animator: FirstPersonAnimator
+## Olhos do personagem (Head/CameraEffects): origem e direção dos golpes.
+@export var view_origin: Node3D
+@export var animator: BodyAnimator
 @export var stamina: StaminaComponent
 
 @export_group("Soco rápido")
@@ -53,6 +56,8 @@ var _held_time: float = 0.0
 var _pressed_previous: bool = false
 var _active_kind: StringName = &""
 var _tired: bool = false
+var _next_light: StringName = &"punch_jab"
+var _last_light_end: float = -10.0
 var _query := PhysicsShapeQueryParameters3D.new()
 var _sphere := SphereShape3D.new()
 
@@ -81,11 +86,13 @@ func _physics_process(delta: float) -> void:
 		State.CHARGING:
 			_held_time += delta
 			charge = clampf((_held_time - charge_threshold) / full_charge_time, 0.0, 1.0)
+			player.face_view_for(0.3)
 			if not pressed:
 				state = State.STRIKING
-				animator.release_hold(FirstPersonAnimator.SLOT_ACTION)
+				animator.release_hold(BodyAnimator.SLOT_ACTION)
 		State.STRIKING:
-			if animator.current_animation(FirstPersonAnimator.SLOT_ACTION) != _active_kind:
+			if animator.current_animation(BodyAnimator.SLOT_ACTION) != _active_kind:
+				_last_light_end = Time.get_ticks_msec() / 1000.0
 				state = State.IDLE
 	if player.is_dead() and state != State.IDLE:
 		state = State.IDLE
@@ -93,32 +100,37 @@ func _physics_process(delta: float) -> void:
 
 
 func can_attack() -> bool:
-	return not player.is_dead() and not animator.is_playing(FirstPersonAnimator.SLOT_ACTION)
+	return not player.is_dead() and not animator.is_playing(BodyAnimator.SLOT_ACTION)
 
 
 func _start_light() -> void:
-	_active_kind = &"attack_light"
+	# Um-dois: um segundo soco logo depois do primeiro sai com a outra mão.
+	var now := Time.get_ticks_msec() / 1000.0
+	if now - _last_light_end > 0.8:
+		_next_light = &"punch_jab"
+	_active_kind = _next_light
+	_next_light = &"punch_cross" if _next_light == &"punch_jab" else &"punch_jab"
 	_tired = stamina != null and not stamina.try_consume(light_stamina_cost)
 	charge = 0.0
-	animator.play(FirstPersonAnimator.SLOT_ACTION, &"attack_light", 1.0, 0.05, 0.12)
-	animator.trigger_guard()
+	player.face_view_for(0.6)
+	animator.play(BodyAnimator.SLOT_ACTION, _active_kind, 1.15, 0.06, 0.15, 1.0, false, true)
 	state = State.STRIKING
-	attack_started.emit(_active_kind)
+	attack_started.emit(&"attack_light")
 
 
 func _start_heavy() -> void:
-	_active_kind = &"attack_heavy"
+	_active_kind = &"punch_hook"
 	charge = 0.0
-	animator.play(FirstPersonAnimator.SLOT_ACTION, &"attack_heavy", 1.0, 0.06, 0.15, 1.0, true)
-	animator.trigger_guard()
+	player.face_view_for(1.5)
+	animator.play(BodyAnimator.SLOT_ACTION, &"punch_hook", 1.0, 0.08, 0.15, 1.0, true, true)
 	state = State.CHARGING
-	attack_started.emit(_active_kind)
+	attack_started.emit(&"attack_heavy")
 
 
 func _on_animation_event(event: StringName, animation: StringName) -> void:
 	if event != &"hit" or animation != _active_kind:
 		return
-	var heavy := animation == &"attack_heavy"
+	var heavy := animation == &"punch_hook"
 	var damage := lerpf(heavy_min_damage, heavy_max_damage, charge) if heavy else light_damage
 	var impulse := lerpf(heavy_min_impulse, heavy_max_impulse, charge) if heavy else light_impulse
 	var reach := heavy_reach if heavy else light_reach
@@ -134,9 +146,9 @@ func _on_animation_event(event: StringName, animation: StringName) -> void:
 ## Varre uma esfera dos olhos até o alcance e aplica o golpe no primeiro
 ## corpo encontrado.
 func _resolve_hit(kind: StringName, damage: float, impulse: float, reach: float) -> void:
-	var space := camera.get_world_3d().direct_space_state
-	var forward := -camera.global_basis.z
-	var start := camera.global_position + forward * 0.1
+	var space := view_origin.get_world_3d().direct_space_state
+	var forward := -view_origin.global_basis.z
+	var start := view_origin.global_position + forward * 0.1
 	_query.transform = Transform3D(Basis.IDENTITY, start)
 	_query.motion = forward * reach
 	_query.exclude = [player.get_rid()]
@@ -169,9 +181,9 @@ func _resolve_hit(kind: StringName, damage: float, impulse: float, reach: float)
 		body.apply_impulse(forward * impulse, point - body.global_position)
 		hit_landed.emit(body, 0.0, kind)
 	else:
-		# Superfície rígida: a mão é rebatida.
-		animator.play(FirstPersonAnimator.SLOT_ACTION, &"impact_recoil", 1.0, 0.03, 0.15)
-		_active_kind = &"impact_recoil"
+		# Superfície rígida: o golpe é rebatido e o tronco recua.
+		animator.play(BodyAnimator.SLOT_ACTION, &"hit_head", 1.4, 0.03, 0.15, 1.0, false, true)
+		_active_kind = &"hit_head"
 		hit_obstacle.emit(point)
 
 
@@ -187,5 +199,6 @@ func _find_receiver(node: Node) -> Node:
 
 
 func _on_overlay_finished(slot: StringName, animation: StringName) -> void:
-	if slot == FirstPersonAnimator.SLOT_ACTION and animation == _active_kind:
+	if slot == BodyAnimator.SLOT_ACTION and animation == _active_kind:
+		_last_light_end = Time.get_ticks_msec() / 1000.0
 		state = State.IDLE

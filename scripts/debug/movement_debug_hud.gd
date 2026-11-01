@@ -4,6 +4,8 @@ extends Label
 ## reais do controlador para calibração em dispositivo.
 
 @export var player: PlayerController
+## O painel é ferramenta de calibração: começa escondido (F3 mostra).
+@export var start_visible: bool = false
 
 const STATE_NAMES := {
 	PlayerController.MovementState.IDLE: "parado",
@@ -24,6 +26,7 @@ var _last_wall_impact: float = 0.0
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	visible = start_visible
 	if player == null:
 		return
 	player.fall_damage_taken.connect(func(amount: float, _impact: float) -> void: _last_damage = amount)

@@ -56,6 +56,13 @@ var carried_mass: float = 0.0:
 var input_enabled: bool = true
 var look_enabled: bool = true
 
+## Terceira pessoa: o corpo gira para a direção do movimento e a câmera orbita
+## livre; primeira pessoa: o corpo fica travado na direção do olhar.
+## Controlado pelo sistema de câmera.
+var third_person: bool = false
+## Velocidade de giro do corpo em terceira pessoa (graus/s).
+var body_turn_speed_degrees: float = 540.0
+
 var stance: Stance = Stance.STANDING
 var movement_state: MovementState = MovementState.IDLE
 var is_sprinting: bool = false
@@ -70,6 +77,10 @@ var _drag_coefficient: float
 var _capsule: CapsuleShape3D
 var _current_height: float
 var _pitch: float = 0.0
+## Direção horizontal do olhar (independe do corpo em terceira pessoa).
+var _view_yaw: float = 0.0
+var _body_locked_to_view: bool = true
+var _face_view_timer: float = 0.0
 var _move_input: Vector2 = Vector2.ZERO
 var _sprint_held: bool = false
 var _jump_held: bool = false
@@ -120,6 +131,7 @@ func _ready() -> void:
 	if default_surface == null:
 		default_surface = SurfaceProfile.new()
 	current_surface = default_surface
+	_view_yaw = rotation.y
 	_gravity = ProjectSettings.get_setting("physics/3d/default_gravity", 9.8)
 	_drag_coefficient = _gravity / (settings.terminal_velocity * settings.terminal_velocity)
 	floor_max_angle = deg_to_rad(settings.max_floor_angle_degrees)
@@ -148,15 +160,25 @@ func _ready() -> void:
 		health.revived.connect(_on_revived)
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	var look := GameInput.consume_look()
-	if not look_enabled:
-		return
-	if look != Vector2.ZERO:
-		rotate_y(-look.x)
+	if look_enabled and look != Vector2.ZERO:
+		_view_yaw = wrapf(_view_yaw - look.x, -PI, PI)
 		var limit := deg_to_rad(settings.max_pitch_degrees)
 		_pitch = clampf(_pitch - look.y, -limit, limit)
-		head.rotation.x = _pitch
+	head.rotation.x = _pitch
+	if is_dead():
+		return
+	if not third_person or _face_view_timer > 0.0:
+		# Primeira pessoa: o corpo acompanha o olhar sem atraso. Logo após sair
+		# da terceira pessoa ele gira rápido até alinhar e então trava.
+		if _body_locked_to_view and not third_person:
+			rotation.y = _view_yaw
+		else:
+			rotation.y = rotate_toward(rotation.y, _view_yaw, deg_to_rad(900.0) * delta)
+			_body_locked_to_view = not third_person and absf(angle_difference(rotation.y, _view_yaw)) < deg_to_rad(1.0)
+	else:
+		_body_locked_to_view = false
 
 
 func _physics_process(delta: float) -> void:
@@ -166,6 +188,7 @@ func _physics_process(delta: float) -> void:
 	var was_grounded := _grounded
 
 	_update_timers(delta, was_grounded)
+	_update_body_yaw(delta)
 	_update_stance(delta)
 	_update_sprint(delta, was_grounded)
 	_apply_gravity_and_drag(delta)
@@ -243,8 +266,39 @@ func _update_timers(delta: float, grounded: bool) -> void:
 		_coyote_timer = maxf(_coyote_timer - delta, 0.0)
 		_airborne_time += delta
 	_jump_buffer_timer = maxf(_jump_buffer_timer - delta, 0.0)
+	_face_view_timer = maxf(_face_view_timer - delta, 0.0)
 	_jump_cooldown_timer = maxf(_jump_cooldown_timer - delta, 0.0)
 	_stagger_timer = maxf(_stagger_timer - delta, 0.0)
+
+
+# --- Direção do corpo --------------------------------------------------------
+
+## Em terceira pessoa o corpo gira, com velocidade limitada, para a direção em
+## que está andando (relativa à câmera). Parado, mantém a direção.
+func _update_body_yaw(delta: float) -> void:
+	if not third_person or _face_view_timer > 0.0 or is_dead():
+		return
+	var wish := _get_wish_direction()
+	if wish == Vector3.ZERO:
+		return
+	var target := atan2(-wish.x, -wish.z)
+	var rate := deg_to_rad(body_turn_speed_degrees) * (0.6 if is_sprinting else 1.0)
+	rotation.y = rotate_toward(rotation.y, target, rate * delta)
+
+
+## Faz o corpo encarar a direção do olhar por `duration` segundos (ataques e
+## interações em terceira pessoa).
+func face_view_for(duration: float) -> void:
+	_face_view_timer = maxf(_face_view_timer, duration)
+
+
+func get_view_yaw() -> float:
+	return _view_yaw
+
+
+## Base horizontal do olhar (frente = -Z).
+func get_view_basis() -> Basis:
+	return Basis(Vector3.UP, _view_yaw)
 
 
 # --- Postura -----------------------------------------------------------------
@@ -283,7 +337,8 @@ func _apply_body_height(height: float) -> void:
 # --- Corrida e resistência ---------------------------------------------------
 
 func _update_sprint(delta: float, grounded: bool) -> void:
-	var moving_forward := _move_input.y < -0.5
+	# Em terceira pessoa o corpo encara o movimento: corre em qualquer direção.
+	var moving_forward := _move_input.y < -0.5 or (third_person and _move_input.length() > 0.5)
 	var allowed := _sprint_held and moving_forward and stance == Stance.STANDING and not is_sliding \
 			and _stagger_timer <= 0.0 and (stamina == null or stamina.can_sprint()) \
 			and get_leg_injury() < 0.5
@@ -421,17 +476,17 @@ func get_target_speed() -> float:
 			* get_load_speed_multiplier() * current_surface.speed_multiplier * (1.0 - 0.45 * get_leg_injury())
 
 
+## Direção desejada no mundo, relativa ao olhar (não ao corpo).
 func _get_wish_direction() -> Vector3:
 	if _move_input == Vector2.ZERO:
 		return Vector3.ZERO
-	var forward := -global_basis.z
-	forward.y = 0.0
-	var right := global_basis.x
-	right.y = 0.0
-	return (right.normalized() * _move_input.x - forward.normalized() * _move_input.y).normalized()
+	var view := get_view_basis()
+	return (view.x * _move_input.x + view.z * _move_input.y).normalized()
 
 
 func _get_direction_multiplier() -> float:
+	if third_person:
+		return 1.0 # o corpo sempre encara o movimento
 	var input := _move_input.normalized()
 	var total := absf(input.x) + absf(input.y)
 	if total <= 0.0:
@@ -922,7 +977,9 @@ func is_recovering_from_impact() -> bool:
 
 ## Define a orientação da visão (radianos). Útil para spawn e cutscenes.
 func set_view_rotation(yaw: float, pitch: float) -> void:
-	rotation.y = yaw
+	_view_yaw = wrapf(yaw, -PI, PI)
+	rotation.y = _view_yaw
+	_body_locked_to_view = true
 	var limit := deg_to_rad(settings.max_pitch_degrees)
 	_pitch = clampf(pitch, -limit, limit)
 	head.rotation.x = _pitch

@@ -17,7 +17,7 @@ grow_vertical = 2
 mouse_filter = 2
 script = ExtResource("1_controls")
 joystick = NodePath("Joystick")
-buttons = [NodePath("JumpButton"), NodePath("CrouchButton"), NodePath("AttackButton"), NodePath("InteractButton")]
+buttons = [NodePath("JumpButton"), NodePath("CrouchButton"), NodePath("AttackButton"), NodePath("InteractButton"), NodePath("CameraButton")]
 
 [node name="Joystick" type="Control" parent="TouchControls"]
 layout_mode = 1
@@ -112,3 +112,22 @@ action = &"interact"
 label = "USAR"
 radius = 44.0
 font_size = 16
+
+[node name="CameraButton" type="Control" parent="TouchControls" groups=["camera_toggle_button"]]
+custom_minimum_size = Vector2(80, 80)
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -116.0
+offset_top = 28.0
+offset_right = -36.0
+offset_bottom = 108.0
+grow_horizontal = 0
+mouse_filter = 2
+script = ExtResource("3_button")
+action = &"toggle_camera"
+label = "1ª P"
+radius = 40.0
+font_size = 17
+active_label = "3ª P"

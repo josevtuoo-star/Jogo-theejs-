@@ -1,5 +1,7 @@
 # Etapa 3 — Animações em primeira pessoa
 
+> **Substituído na etapa 4:** os braços procedurais e o `FirstPersonAnimator` descritos aqui deram lugar ao corpo humano completo, às animações de captura retargetadas e ao `BodyAnimator` (veja [`ETAPA_04_RECONSTRUCAO.md`](ETAPA_04_RECONSTRUCAO.md)). Vida, lesões, interação, combate por evento de quadro e morte continuam valendo.
+
 Braços e mãos animados, sincronizados com a física real do personagem. A etapa inclui os sistemas que as animações precisam para existir de verdade: vida e ferimentos, lesão nas pernas, interação, combate corpo a corpo, morte e renascimento.
 
 ## Por que animações próprias

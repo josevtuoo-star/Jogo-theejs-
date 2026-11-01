@@ -1,0 +1,6 @@
+Nome: Dead Tree Trunk
+Autores: Rob Tuytel
+Licença: CC0 1.0 (Poly Haven)
+Origem: https://polyhaven.com/a/dead_tree_trunk
+Resolução: 1k
+Polígonos: 101802

@@ -6,8 +6,8 @@
 [ext_resource type="Script" path="res://scripts/components/stamina_component.gd" id="4_stamina"]
 [ext_resource type="Resource" path="res://resources/surfaces/terra.tres" id="5_surface"]
 [ext_resource type="Script" path="res://scripts/components/health_component.gd" id="6_health"]
-[ext_resource type="Script" path="res://scripts/animation/viewmodel_motion.gd" id="7_viewmodel"]
-[ext_resource type="PackedScene" path="res://scenes/player/fp_arms.tscn" id="8_arms"]
+[ext_resource type="PackedScene" path="res://scenes/characters/survivor.tscn" id="7_survivor"]
+[ext_resource type="Script" path="res://scripts/camera/camera_rig.gd" id="8_rig"]
 [ext_resource type="Script" path="res://scripts/player/interaction_component.gd" id="9_interaction"]
 [ext_resource type="Script" path="res://scripts/player/melee_combat.gd" id="10_combat"]
 [ext_resource type="Script" path="res://scripts/player/player_death.gd" id="11_death"]
@@ -31,29 +31,31 @@ collision_shape = NodePath("CollisionShape3D")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.9, 0)
 shape = SubResource("CapsuleShape3D_body")
 
+[node name="Survivor" parent="." node_paths=PackedStringArray("player", "health") instance=ExtResource("7_survivor")]
+player = NodePath("..")
+health = NodePath("../Health")
+
 [node name="Head" type="Node3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.68, 0)
 
 [node name="CameraEffects" type="Node3D" parent="Head" node_paths=PackedStringArray("player", "camera")]
 script = ExtResource("3_camera")
 player = NodePath("../..")
+camera = NodePath("../../CameraRig/Camera3D")
+bob_enabled = false
+
+[node name="CameraRig" type="Node3D" parent="." node_paths=PackedStringArray("player", "body", "first_person_anchor", "camera")]
+script = ExtResource("8_rig")
+player = NodePath("..")
+body = NodePath("../Survivor")
+first_person_anchor = NodePath("../Head/CameraEffects")
 camera = NodePath("Camera3D")
 
-[node name="Camera3D" type="Camera3D" parent="Head/CameraEffects"]
+[node name="Camera3D" type="Camera3D" parent="CameraRig"]
 current = true
 fov = 75.0
 near = 0.05
 far = 400.0
-
-[node name="ViewModel" type="Node3D" parent="Head/CameraEffects/Camera3D" node_paths=PackedStringArray("player", "stamina", "health")]
-script = ExtResource("7_viewmodel")
-player = NodePath("../../../..")
-stamina = NodePath("../../../../Stamina")
-health = NodePath("../../../../Health")
-
-[node name="FPArms" parent="Head/CameraEffects/Camera3D/ViewModel" node_paths=PackedStringArray("player", "health") instance=ExtResource("8_arms")]
-player = NodePath("../../../../..")
-health = NodePath("../../../../../Health")
 
 [node name="Stamina" type="Node" parent="."]
 script = ExtResource("4_stamina")
@@ -61,21 +63,23 @@ script = ExtResource("4_stamina")
 [node name="Health" type="Node" parent="."]
 script = ExtResource("6_health")
 
-[node name="Interaction" type="Node" parent="." node_paths=PackedStringArray("player", "camera", "animator")]
+[node name="Interaction" type="Node" parent="." node_paths=PackedStringArray("player", "camera", "view_origin", "animator")]
 script = ExtResource("9_interaction")
 player = NodePath("..")
-camera = NodePath("../Head/CameraEffects/Camera3D")
-animator = NodePath("../Head/CameraEffects/Camera3D/ViewModel/FPArms")
+camera = NodePath("../CameraRig/Camera3D")
+view_origin = NodePath("../Head/CameraEffects")
+animator = NodePath("../Survivor")
 
-[node name="Combat" type="Node" parent="." node_paths=PackedStringArray("player", "camera", "animator", "stamina")]
+[node name="Combat" type="Node" parent="." node_paths=PackedStringArray("player", "view_origin", "animator", "stamina")]
 script = ExtResource("10_combat")
 player = NodePath("..")
-camera = NodePath("../Head/CameraEffects/Camera3D")
-animator = NodePath("../Head/CameraEffects/Camera3D/ViewModel/FPArms")
+view_origin = NodePath("../Head/CameraEffects")
+animator = NodePath("../Survivor")
 stamina = NodePath("../Stamina")
 
-[node name="Death" type="Node" parent="." node_paths=PackedStringArray("player", "health", "camera")]
+[node name="Death" type="Node" parent="." node_paths=PackedStringArray("player", "health", "camera_rig", "body")]
 script = ExtResource("11_death")
 player = NodePath("..")
 health = NodePath("../Health")
-camera = NodePath("../Head/CameraEffects/Camera3D")
+camera_rig = NodePath("../CameraRig")
+body = NodePath("../Survivor")

@@ -1,11 +1,15 @@
 class_name PlayerHud
 extends CanvasLayer
 ## HUD de sobrevivência: vida, resistência, lesão nas pernas, mira, objeto
-## interagível em foco, clarão de dano e tela de morte com renascer.
+## interagível em foco, clarão de dano, aviso do modo de câmera e tela de
+## morte com renascer. Minimalista: a resistência some quando está cheia e o
+## aviso de câmera aparece só na troca.
 
 @export var player: PlayerController
 @export var interaction: InteractionComponent
 @export var death: PlayerDeath
+## Opcional: se vazio, usa o CameraRig do jogador.
+@export var camera_rig: PlayerCameraRig
 
 const DAMAGE_KIND_NAMES := {
 	&"queda": "queda", &"arame": "arame farpado", &"golpe": "golpe", &"mordida": "mordida",
@@ -21,6 +25,10 @@ var _death_cause: Label
 var _respawn_button: Button
 var _flash_alpha: float = 0.0
 var _interact_previous: bool = false
+var _stamina_row: Control
+var _camera_label: Label
+var _camera_label_time: float = 0.0
+var _crosshair: Control
 
 
 func _ready() -> void:
@@ -32,6 +40,11 @@ func _ready() -> void:
 	death.respawned.connect(_on_respawned)
 	interaction.focus_changed.connect(_on_focus_changed)
 	_on_focus_changed(null)
+	if camera_rig == null:
+		camera_rig = player.get_node_or_null("CameraRig") as PlayerCameraRig
+	if camera_rig != null:
+		camera_rig.mode_changed.connect(_on_camera_mode_changed)
+		_on_camera_mode_changed.call_deferred(camera_rig.third_person, false)
 
 
 func _build() -> void:
@@ -46,27 +59,46 @@ func _build() -> void:
 	_flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(_flash)
 
+	# Sinais vitais no canto superior esquerdo, discretos.
 	var vitals := VBoxContainer.new()
-	vitals.set_anchors_preset(Control.PRESET_CENTER_TOP)
-	vitals.position = Vector2(-120.0, 12.0)
-	vitals.custom_minimum_size = Vector2(240.0, 0.0)
+	vitals.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	vitals.position = Vector2(24.0, 20.0)
+	vitals.add_theme_constant_override("separation", 6)
 	vitals.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(vitals)
-	_health_bar = _bar(Color(0.72, 0.12, 0.10))
-	_stamina_bar = _bar(Color(0.85, 0.70, 0.20))
-	vitals.add_child(_health_bar)
-	vitals.add_child(_stamina_bar)
+	_health_bar = _bar(Color(0.70, 0.16, 0.13))
+	_stamina_bar = _bar(Color(0.86, 0.72, 0.30))
+	vitals.add_child(_row("VIDA", _health_bar))
+	_stamina_row = _row("FÔLEGO", _stamina_bar)
+	vitals.add_child(_stamina_row)
 	_injury_label = Label.new()
-	_injury_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_injury_label.add_theme_color_override("font_color", Color(1.0, 0.55, 0.45))
+	_injury_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
+	_injury_label.add_theme_constant_override("outline_size", 4)
 	_injury_label.add_theme_font_size_override("font_size", 14)
 	vitals.add_child(_injury_label)
 
-	var crosshair := Control.new()
-	crosshair.set_anchors_preset(Control.PRESET_CENTER)
-	crosshair.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	crosshair.draw.connect(func() -> void: crosshair.draw_circle(Vector2.ZERO, 2.5, Color(1, 1, 1, 0.75)))
-	root.add_child(crosshair)
+	# Aviso do modo de câmera (aparece na troca e some).
+	_camera_label = Label.new()
+	_camera_label.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	_camera_label.position = Vector2(-150.0, 24.0)
+	_camera_label.custom_minimum_size = Vector2(300.0, 0.0)
+	_camera_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_camera_label.add_theme_font_size_override("font_size", 16)
+	_camera_label.add_theme_color_override("font_color", Color(0.95, 0.92, 0.85))
+	_camera_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
+	_camera_label.add_theme_constant_override("outline_size", 4)
+	_camera_label.modulate.a = 0.0
+	_camera_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(_camera_label)
+
+	_crosshair = Control.new()
+	_crosshair.set_anchors_preset(Control.PRESET_CENTER)
+	_crosshair.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_crosshair.draw.connect(func() -> void:
+		_crosshair.draw_circle(Vector2.ZERO, 3.0, Color(0, 0, 0, 0.35))
+		_crosshair.draw_circle(Vector2.ZERO, 2.0, Color(1, 1, 1, 0.8)))
+	root.add_child(_crosshair)
 
 	_prompt_label = Label.new()
 	_prompt_label.set_anchors_preset(Control.PRESET_CENTER)
@@ -108,16 +140,37 @@ func _build() -> void:
 	box.add_child(_respawn_button)
 
 
+func _row(caption: String, bar: ProgressBar) -> Control:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var label := Label.new()
+	label.text = caption
+	label.custom_minimum_size = Vector2(64.0, 0.0)
+	label.add_theme_font_size_override("font_size", 12)
+	label.add_theme_color_override("font_color", Color(0.9, 0.88, 0.82, 0.85))
+	label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.7))
+	label.add_theme_constant_override("outline_size", 3)
+	row.add_child(label)
+	bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	row.add_child(bar)
+	return row
+
+
 func _bar(color: Color) -> ProgressBar:
 	var bar := ProgressBar.new()
-	bar.custom_minimum_size = Vector2(240.0, 10.0)
+	bar.custom_minimum_size = Vector2(180.0, 7.0)
 	bar.show_percentage = false
 	bar.max_value = 1.0
 	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var fill := StyleBoxFlat.new()
 	fill.bg_color = color
+	fill.set_corner_radius_all(3)
 	var background := StyleBoxFlat.new()
-	background.bg_color = Color(0.0, 0.0, 0.0, 0.45)
+	background.bg_color = Color(0.0, 0.0, 0.0, 0.42)
+	background.set_corner_radius_all(3)
+	background.border_color = Color(1, 1, 1, 0.12)
+	background.set_border_width_all(1)
 	bar.add_theme_stylebox_override("fill", fill)
 	bar.add_theme_stylebox_override("background", background)
 	return bar
@@ -128,6 +181,12 @@ func _process(delta: float) -> void:
 	_health_bar.value = health.get_ratio()
 	if player.stamina != null:
 		_stamina_bar.value = player.stamina.get_ratio()
+		var full := player.stamina.get_ratio() >= 0.999
+		_stamina_row.modulate.a = move_toward(_stamina_row.modulate.a, 0.0 if full else 1.0, delta * (0.7 if full else 4.0))
+	if _camera_label_time > 0.0:
+		_camera_label_time -= delta
+		_camera_label.modulate.a = clampf(_camera_label_time / 0.4, 0.0, 1.0)
+	_crosshair.visible = not health.is_dead
 	_injury_label.text = "Perna ferida (%d%%)" % roundi(health.leg_injury * 100.0) if health.leg_injury > 0.05 else ""
 	# Vida baixa: o vermelho pulsa no ritmo do coração.
 	var low := clampf(1.0 - health.get_ratio() / 0.3, 0.0, 1.0) if not health.is_dead else 0.0
@@ -149,6 +208,13 @@ func _process(delta: float) -> void:
 
 func _on_damaged(amount: float, _kind: StringName, _direction: Vector3) -> void:
 	_flash_alpha = clampf(_flash_alpha + 0.12 + amount / 60.0, 0.0, 0.6)
+
+
+func _on_camera_mode_changed(third_person: bool, announce: bool = true) -> void:
+	get_tree().call_group(&"camera_toggle_button", &"set_active", third_person)
+	if announce:
+		_camera_label.text = "Terceira pessoa" if third_person else "Primeira pessoa"
+		_camera_label_time = 1.6
 
 
 func _on_focus_changed(target: Interactable) -> void:

@@ -1,6 +1,6 @@
 # Último Amanhecer — Arquitetura
 
-Sobrevivência em primeira pessoa com zumbis. Godot 4.5+ (testado em 4.5.1 e 4.7.1), GDScript, renderizador **Mobile**, física **Jolt**. Plataforma inicial: Android (paisagem). PC depois.
+Sobrevivência com zumbis em primeira pessoa (com terceira pessoa opcional, como em DayZ). Godot 4.5+ (testado em 4.5.1 e 4.7.1), GDScript, renderizador **Mobile**, física **Jolt**. Plataforma inicial: Android (paisagem). PC depois.
 
 ## Princípios
 
@@ -17,26 +17,33 @@ Sobrevivência em primeira pessoa com zumbis. Godot 4.5+ (testado em 4.5.1 e 4.7
 project.godot              Configuração (Jolt, Mobile, InputMap, camadas)
 docs/                      Arquitetura e documentação de cada etapa
 scenes/
-  player/player.tscn       Personagem jogável
+  player/player.tscn       Personagem jogável (cápsula física + corpo + câmera)
+  characters/survivor.tscn Corpo do sobrevivente (gerado por tools/build_survivor.gd)
+  demo/demo_forest.tscn    Cena principal: clareira na floresta (tools/build_demo_map.gd)
   ui/touch_controls.tscn   Controles de toque
   test/                    Cenas de calibração (não são o mapa do jogo)
 scripts/
   autoload/                Singletons (GameInput)
   components/              Componentes reutilizáveis (StaminaComponent; depois Health, Hunger, Thirst…)
-  player/                  Controlador, câmera, interação, combate, morte
-  animation/               Animador em camadas e movimento secundário dos braços
+  player/                  Controlador, interação, combate, morte (ragdoll)
+  camera/                  Câmera em 1ª/3ª pessoa com transição (PlayerCameraRig)
+  animation/               Animador do corpo inteiro (BodyAnimator)
   interaction/             Interactable e objetos interagíveis
-  world/                   Perigos e alvos do cenário (arame, boneco de treino)
+  world/                   Perigos, alvos, fogueira, instâncias de vegetação (ScatterInstances)
   physics/                 SurfaceProfile e utilidades físicas
   ui/                      Controles de toque e HUD
   debug/                   Ferramentas de diagnóstico
 resources/
   player/                  Parâmetros (.tres)
   surfaces/                Perfis de superfície (.tres)
-  materials/               Shaders e materiais
+  materials/               Shaders (terreno, árvores) e materiais
+  animations/              Biblioteca retargetada do corpo (survivor_body.res)
+  models/                  Malhas geradas (roupas, terreno)
+  textures/trees/          Atlas de impostores das árvores
 tests/                     Testes automatizados (cena + script)
-tools/                     Scripts de manutenção (gerar InputMap e cena de testes)
-assets/                    (próximas etapas) modelos, texturas, áudio; cada subpasta com LICENSE/CREDITS
+tools/                     Ferramentas de produção (InputMap, retarget, personagem, impostores, mapa)
+assets/                    Assets de terceiros (CC0), cada pasta com licença/SOURCE.txt
+  _source/                 Pacotes originais grandes (fora do Git e do APK)
 ```
 
 ## Camadas de física
@@ -49,6 +56,7 @@ assets/                    (próximas etapas) modelos, texturas, áudio; cada su
 | 4 | zumbis | corpo de movimento dos zumbis | 1, 2, 3, 4 |
 | 5 | interagiveis | áreas de interação (itens, portas) | — |
 | 6 | hitboxes | partes do corpo atingíveis (cabeça, tronco, membros) | — |
+| 8 | ragdoll | ossos físicos do corpo morto | 1, 3 |
 
 ## Contrato de sinais do jogador
 
@@ -66,7 +74,7 @@ assets/                    (próximas etapas) modelos, texturas, áudio; cada su
 | `wall_impact(speed, normal)`, `head_bumped(speed)` | câmera, som, dano (etapa 5) |
 | `surface_changed(surface)`, `slide_started`, `slide_ended` | áudio, partículas, animação |
 
-`HealthComponent` emite `damaged(amount, kind, direction)`, `died` e `revived`. `FirstPersonAnimator` emite `animation_event(event, animation)` (`hit`, `contact`): combate e interação agem nesse quadro. Alvos de golpes implementam `receive_hit(hit: Dictionary)`, com as chaves `damage`, `impulse`, `direction`, `point`, `kind` e `attacker`.
+`HealthComponent` emite `damaged(amount, kind, direction)`, `died` e `revived`. `BodyAnimator` emite `animation_event(event, animation)` (`hit`, `contact`): combate e interação agem nesse quadro. `PlayerCameraRig` emite `mode_changed(third_person)` e `transition_finished(third_person)`. Alvos de golpes implementam `receive_hit(hit: Dictionary)`, com as chaves `damage`, `impulse`, `direction`, `point`, `kind` e `attacker`.
 
 Propriedades de entrada para outros sistemas: `carried_mass` (kg carregados, definido pelo inventário), `external_speed_multiplier` (ferimentos, pernas quebradas), `input_enabled`, `look_enabled` (menus e inventário). `StaminaComponent.regen_multiplier` recebe fome e sede.
 
@@ -79,13 +87,14 @@ Cada etapa só começa depois que a anterior passa nos testes e é validada no a
 | 1 | **Personagem e movimento** | controlador físico, câmera, agachar, salto, queda, degraus, rampas, empurrar objetos, resistência, controles de toque | **concluída** (`ETAPA_01_PERSONAGEM.md`) |
 | 2 | **Física avançada de movimentação** | perfis de velocidade, aderência por superfície, inércia, carga, arrasto do ar, encostas, impactos | **concluída** (`ETAPA_02_FISICA_AVANCADA.md`) |
 | 3 | **Animações em primeira pessoa** | rig e 19 animações autorais, animador em camadas sincronizado com a passada, vida e lesões, interação, combate corpo a corpo, morte e renascer, HUD | **concluída** (`ETAPA_03_ANIMACOES.md`) |
-| 4 | Interação e inventário | itens como `RigidBody3D` reais, pegar e soltar, inventário por peso e volume (define `carried_mass`), portas, UI de toque | próxima |
-| 5 | Status vitais | fome, sede, sangramento, cura; a vida e as lesões já existem | — |
-| 6 | Armas | armas brancas e de fogo (recuo, dispersão, munição) sobre o combate da etapa 3 | — |
-| 7 | Zumbis | corpo inteiro (Quaternius UAL 1/2, CC0), `NavigationAgent3D`, percepção por visão e ruído (passos com superfície), ataques com `receive_hit` | — |
-| 8 | Ragdoll e física de objetos | `PhysicalBoneSimulator3D`, transição animação → ragdoll com o impulso do golpe | — |
-| 9 | Otimização Android | perfis de qualidade, LOD, testes em aparelhos reais | — |
-| 10 | PC | configurações gráficas e de controle | — |
+| 4 | **Reconstrução visual e câmera** | corpo humano completo (CC0) com roupas, animações retargetadas, primeira pessoa verdadeira, câmera 1ª/3ª pessoa, ragdoll, cenário PBR, HUD | **concluída** (`ETAPA_04_RECONSTRUCAO.md`) |
+| 5 | Interação e inventário | itens como `RigidBody3D` reais, pegar e soltar (animação `pickup` já existe), inventário por peso e volume (define `carried_mass`), portas, UI de toque | próxima |
+| 6 | Status vitais | fome, sede, sangramento, cura; a vida e as lesões já existem | — |
+| 7 | Armas | armas brancas e de fogo (recuo, dispersão, munição) sobre o combate da etapa 3 | — |
+| 8 | Zumbis | mesmo esqueleto do sobrevivente (Quaternius UAL 1/2, CC0), `NavigationAgent3D`, percepção por visão e ruído (passos com superfície), ataques com `receive_hit` | — |
+| 9 | Ragdoll parcial e reações | o ragdoll de morte já existe (etapa 4); falta mistura física parcial em golpes fortes e zumbis | — |
+| 10 | Otimização Android | perfis de qualidade, LOD, testes em aparelhos reais | — |
+| 11 | PC | configurações gráficas e de controle | — |
 
 O mundo aberto não faz parte destas etapas.
 
@@ -97,7 +106,7 @@ O registro completo, com o que está em uso, o que foi aprovado e o que foi reje
 - a licença é verificada **por arquivo**, no momento do download, na página do autor; não se presume que a licença do repositório cobre os modelos e o áudio;
 - recursos restritos a uso não comercial ou só a testes ficam fora do repositório público e fora de builds distribuídas.
 
-Fontes a avaliar na etapa 3, com o que precisa ser conferido em cada uma:
+Fontes a avaliar, com o que precisa ser conferido em cada uma:
 
 | Fonte | O que conferir antes de usar |
 |---|---|

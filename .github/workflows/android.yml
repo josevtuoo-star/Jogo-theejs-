@@ -20,7 +20,7 @@ concurrency:
 env:
   GODOT_VERSION: "4.5.1"
   # Prefixo da versão do jogo; o último número é o número da build.
-  VERSION_PREFIX: "0.3"
+  VERSION_PREFIX: "0.4"
   APK_NAME: UltimoAmanhecer.apk
   ZIP_NAME: UltimoAmanhecer.zip
   BUILD_TOOLS: "35.0.1"

@@ -18,3 +18,6 @@ export_credentials.cfg
 # Sistema
 .DS_Store
 Thumbs.db
+
+# Fontes grandes de animação (baixadas para extração; não versionadas)
+assets/_source/

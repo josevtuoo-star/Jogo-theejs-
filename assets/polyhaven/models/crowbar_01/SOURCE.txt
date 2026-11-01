@@ -1,0 +1,6 @@
+Nome: Crowbar 01
+Autores: Alexander Otterbeck
+Licença: CC0 1.0 (Poly Haven)
+Origem: https://polyhaven.com/a/crowbar_01
+Resolução: 1k
+Polígonos: 2300
