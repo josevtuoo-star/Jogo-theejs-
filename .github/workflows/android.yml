@@ -22,6 +22,7 @@ env:
   # Prefixo da versão do jogo; o último número é o número da build.
   VERSION_PREFIX: "0.2"
   APK_NAME: UltimoAmanhecer.apk
+  ZIP_NAME: UltimoAmanhecer.zip
   BUILD_TOOLS: "35.0.1"
 
 jobs:
@@ -118,6 +119,9 @@ jobs:
           mkdir -p builds/android
           ~/godot/godot --headless --path . --export-release "Android" "builds/android/${APK_NAME}"
           "$ANDROID_HOME/build-tools/${BUILD_TOOLS}/apksigner" verify "builds/android/${APK_NAME}"
+          # Cópia em .zip: alguns navegadores (Chrome no Android) seguram
+          # downloads de .apk na verificação de segurança; .zip passa direto.
+          (cd builds/android && zip -0 -j "${ZIP_NAME}" "${APK_NAME}")
           ls -la builds/android
 
       - name: Publicar Release com link direto
@@ -126,14 +130,17 @@ jobs:
         run: |
           set -euo pipefail
           tag="v${{ steps.version.outputs.name }}"
-          link="https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/${APK_NAME}"
-          printf 'Build automática do branch `%s` (commit %s).\n\nTodos os testes de física passaram antes da exportação.\n\nDownload direto (sempre a versão mais nova): %s\n' \
-            "${GITHUB_REF_NAME}" "${GITHUB_SHA::7}" "$link" > "$RUNNER_TEMP/notes.md"
-          gh release create "$tag" "builds/android/${APK_NAME}" \
+          base="https://github.com/${GITHUB_REPOSITORY}/releases/latest/download"
+          printf 'Build automática do branch `%s` (commit %s).\n\nTodos os testes de física passaram antes da exportação.\n\nDownload direto (sempre a versão mais nova):\n- APK: %s/%s\n- ZIP (se o navegador travar no APK; extraia e toque no APK): %s/%s\n' \
+            "${GITHUB_REF_NAME}" "${GITHUB_SHA::7}" "$base" "${APK_NAME}" "$base" "${ZIP_NAME}" > "$RUNNER_TEMP/notes.md"
+          gh release create "$tag" "builds/android/${APK_NAME}" "builds/android/${ZIP_NAME}" \
             --target "$GITHUB_SHA" \
             --title "Último Amanhecer ${tag}" \
             --notes-file "$RUNNER_TEMP/notes.md" \
             --latest
-          echo "### APK publicado" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "Download direto: $link" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "### APK publicado"
+            echo ""
+            echo "- APK: $base/${APK_NAME}"
+            echo "- ZIP: $base/${ZIP_NAME}"
+          } >> "$GITHUB_STEP_SUMMARY"

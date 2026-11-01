@@ -4,7 +4,10 @@
 
 **https://github.com/josevtuoo-star/Jogo-theejs-/releases/latest/download/UltimoAmanhecer.apk**
 
-O link aponta sempre para a build mais nova. Todas as versões ficam em
+Alternativa em .zip (use se o navegador travar no APK):
+**https://github.com/josevtuoo-star/Jogo-theejs-/releases/latest/download/UltimoAmanhecer.zip**
+
+Os links apontam sempre para a build mais nova. Todas as versões ficam em
 https://github.com/josevtuoo-star/Jogo-theejs-/releases
 
 ## Instalar no celular
@@ -13,6 +16,14 @@ https://github.com/josevtuoo-star/Jogo-theejs-/releases
 2. Toque no arquivo baixado. Na primeira vez, o Android pede para permitir a instalação de apps desta fonte (navegador ou gerenciador de arquivos): permita.
 3. Requisitos: Android 7.0 ou superior e processador de 64 bits (arm64). Vulkan é recomendado (renderizador Mobile do Godot); sem Vulkan, o Godot tenta o modo de compatibilidade OpenGL.
 4. As versões seguintes instalam por cima da anterior, porque usam a mesma chave de assinatura.
+
+### Se o download travar em 100% ("Fazendo o download…")
+
+O Chrome do Android às vezes segura arquivos `.apk` no fim do download, na verificação de segurança. O arquivo costuma já estar salvo:
+
+1. Abra o app **Arquivos** (ou "Meus arquivos") → **Downloads** e toque em `UltimoAmanhecer.apk`.
+2. Se ele não estiver lá, baixe o **.zip** acima. No app Arquivos, toque nele → **Extrair**, depois toque no `UltimoAmanhecer.apk` extraído.
+3. Outra opção é baixar por outro navegador (Firefox, Samsung Internet).
 
 O jogo abre na área de calibração do movimento. Controles: direcional no lado esquerdo (pouco inclinado anda, todo inclinado trota, além da borda para frente corre), arrastar o lado direito para olhar, botões PULAR e AGACHAR.
 
