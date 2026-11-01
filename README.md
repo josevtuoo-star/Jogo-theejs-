@@ -2,6 +2,14 @@
 
 Sobrevivência em primeira pessoa com zumbis, feito em **Godot 4.5+** (GDScript) para **Android**, com suporte futuro a PC.
 
+## ⬇️ Baixar o jogo (Android)
+
+**[UltimoAmanhecer.apk — versão mais nova](https://github.com/josevtuoo-star/Jogo-theejs-/releases/latest/download/UltimoAmanhecer.apk)**
+
+Gerado automaticamente a cada atualização, só depois de todos os testes passarem. Instalação e detalhes: [`docs/DOWNLOAD.md`](docs/DOWNLOAD.md).
+
+## Documentação
+
 - Arquitetura e plano de etapas: [`docs/ARQUITETURA.md`](docs/ARQUITETURA.md)
 - Etapa 1, personagem e movimento (concluída): [`docs/ETAPA_01_PERSONAGEM.md`](docs/ETAPA_01_PERSONAGEM.md)
 - Etapa 2, física avançada de movimentação (concluída): [`docs/ETAPA_02_FISICA_AVANCADA.md`](docs/ETAPA_02_FISICA_AVANCADA.md)

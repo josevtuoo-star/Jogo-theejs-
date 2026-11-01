@@ -7,9 +7,12 @@ android/
 *.apk
 *.aab
 
-# Credenciais de assinatura nunca devem ir para o repositório
+# Credenciais de assinatura nunca devem ir para o repositório.
+# Exceção: chave de TESTE usada pelas builds automáticas quando não há
+# chave configurada nos Secrets do GitHub (ver docs/DOWNLOAD.md).
 *.keystore
 *.jks
+!export/android_teste.keystore
 export_credentials.cfg
 
 # Sistema
