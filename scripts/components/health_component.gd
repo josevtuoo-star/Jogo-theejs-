@@ -25,6 +25,9 @@ var is_dead: bool = false
 ## 0 = pernas sãs, 1 = lesão grave.
 var leg_injury: float = 0.0
 var last_damage_kind: StringName = &""
+## Filtro opcional aplicado antes do dano (defesa, armadura):
+## func(amount: float, kind: StringName, direction: Vector3) -> float.
+var damage_filter: Callable = Callable()
 
 
 func _ready() -> void:
@@ -39,6 +42,10 @@ func _physics_process(delta: float) -> void:
 func apply_damage(amount: float, kind: StringName, direction: Vector3 = Vector3.ZERO) -> void:
 	if is_dead or amount <= 0.0:
 		return
+	if damage_filter.is_valid():
+		amount = float(damage_filter.call(amount, kind, direction))
+		if amount <= 0.0:
+			return
 	last_damage_kind = kind
 	current = maxf(current - amount, 0.0)
 	health_changed.emit(current, max_health)

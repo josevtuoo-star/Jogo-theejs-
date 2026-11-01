@@ -7,7 +7,7 @@ extends Node
 
 const GYM_SCENE := "res://scenes/test/movement_test_gym.tscn"
 const ACTIONS := [&"move_forward", &"move_back", &"move_left", &"move_right", &"sprint", &"jump",
-		&"crouch_toggle", &"crouch_hold", &"walk_toggle", &"attack", &"interact", &"toggle_camera"]
+		&"crouch_toggle", &"crouch_hold", &"walk_toggle", &"attack", &"interact", &"toggle_camera", &"block"]
 const YAW_TOWARD_POSITIVE_Z := PI
 const DT := 1.0 / 60.0
 ## Área aberta do ginásio para corridas longas.
@@ -41,7 +41,7 @@ func _ready() -> void:
 	_combat = _player.get_node("Combat")
 	_interaction = _player.get_node("Interaction")
 	_death = _player.get_node("Death")
-	for bone_name in ["root", "pelvis", "Head", "foot_l", "foot_r", "hand_r", "spine_03"]:
+	for bone_name in ["root", "pelvis", "Head", "foot_l", "foot_r", "hand_l", "hand_r", "spine_03"]:
 		_bones[bone_name] = _skeleton.find_bone(bone_name)
 	await _frames(10)
 
@@ -71,6 +71,18 @@ func _ready() -> void:
 		_test_camera_rotate_during_transition,
 		_test_camera_animation_sync,
 		_test_camera_touch_button,
+		_test_touch_camera_never_attacks,
+		_test_touch_move_and_look_together,
+		_test_touch_attack_only_button,
+		_test_touch_layout_and_sprint,
+		_test_run_direction_change,
+		_test_stop_deceleration,
+		_test_crouch_and_stand,
+		_test_obstacle_collision,
+		_test_planted_feet,
+		_test_defense,
+		_test_attack_no_queue,
+		_test_arm_reach,
 		_test_ragdoll_death_and_respawn,
 		_test_touch_attack_button,
 		_test_animator_performance,
@@ -217,15 +229,22 @@ func _test_character_and_library() -> void:
 	_check(_skeleton.get_bone_count() == 65, "esqueleto humano de 65 ossos (%d)" % _skeleton.get_bone_count())
 	var expected := ["idle", "walk", "jog", "sprint", "crouch_idle", "crouch_walk", "jump_start", "fall", "land",
 			"punch_jab", "punch_cross", "punch_hook", "hit_chest", "hit_head", "hit_knockback", "interact",
-			"pickup", "push", "death", "get_up", "consume", "open_container", "walk_carry"]
+			"pickup", "push", "death", "get_up", "consume", "open_container", "walk_carry",
+			"punch_hook_recover", "block_impact"]
 	var missing := expected.filter(func(n: String) -> bool: return not _body.has_animation(n))
 	_check(missing.is_empty(), "todas as %d animações presentes %s" % [expected.size(), missing])
 	var meshes := {}
 	for child in _skeleton.get_children():
 		if child is MeshInstance3D:
 			meshes[String(child.name)] = child
-	for mesh_name in ["Body", "Jacket", "Pants", "Boots", "BodyFirstPerson", "JacketFirstPerson"]:
+	for mesh_name in ["Shirt", "Arms", "Pants", "Boots", "Head", "Hair_Beard", "Hair_Buzzed", "Eyes"]:
 		_check(meshes.has(mesh_name) and (meshes[mesh_name] as MeshInstance3D).skin != null, "malha %s com skin" % mesh_name)
+	# Proporções naturais ("Regular"): ombros e quadris do esqueleto do pacote de roupas.
+	var shoulders := _skeleton.get_bone_global_rest(_skeleton.find_bone("upperarm_l")).origin.distance_to(
+			_skeleton.get_bone_global_rest(_skeleton.find_bone("upperarm_r")).origin)
+	var hips := _skeleton.get_bone_global_rest(_skeleton.find_bone("thigh_l")).origin.distance_to(
+			_skeleton.get_bone_global_rest(_skeleton.find_bone("thigh_r")).origin)
+	_check(shoulders < 0.40 and hips < 0.20, "proporções naturais: ombros %.3f m, quadris %.3f m" % [shoulders, hips])
 	var simulator := _skeleton.get_node_or_null("PhysicalBoneSimulator3D") as PhysicalBoneSimulator3D
 	_check(simulator != null and simulator.get_child_count() == 16, "ragdoll com 16 ossos físicos")
 	var mass := 0.0
@@ -455,7 +474,12 @@ func _test_light_attack_hit_frame() -> void:
 		if frame == 4:
 			await _hold(&"attack", 2)
 	_check(dummy.hits == hits_before + 1, "um acerto, mesmo apertando de novo durante o golpe (%d)" % (dummy.hits - hits_before))
-	_check(absi(hit_frame - roundi(expected / DT)) <= 3, "acerto no quadro %d (evento em %.2f s)" % [hit_frame, expected])
+	# O braço atinge o alvo dentro da janela ativa (em volta da extensão máxima);
+	# alvo perto é atingido assim que o punho chega até ele.
+	var window_start := (_body.get_event_time(&"punch_jab", &"hit") - _combat.active_before) / _combat.light_speed
+	var window_end := (_body.get_event_time(&"punch_jab", &"hit") + _combat.active_after) / _combat.light_speed
+	_check(hit_frame >= floori(window_start / DT) - 1 and hit_frame <= ceili(window_end / DT) + 1,
+			"acerto no quadro %d, dentro da janela ativa (%.2f–%.2f s; extensão máxima em %.2f s)" % [hit_frame, window_start, window_end, expected])
 	_check(is_equal_approx(dummy.last_damage, _combat.light_damage), "dano %.0f" % dummy.last_damage)
 	_check(stamina_before - _player.stamina.current >= _combat.light_stamina_cost - 0.01, "consome resistência")
 	_check(dummy.get_sway_angle() > 0.0, "boneco balança com o golpe")
@@ -464,7 +488,8 @@ func _test_light_attack_hit_frame() -> void:
 	await _hold(&"attack", 2)
 	await _frames(3)
 	var first := _body.current_animation(BodyAnimator.SLOT_ACTION)
-	await _frames(50)
+	# O segundo soco só é aceito depois que o braço recolheu (sem fila).
+	await _frames(26)
 	await _hold(&"attack", 2)
 	await _frames(3)
 	var second := _body.current_animation(BodyAnimator.SLOT_ACTION)
@@ -514,8 +539,11 @@ func _test_punch_rigid_body() -> void:
 	var vertical := -direction.y * _combat.light_impulse
 	var speed := (horizontal - 0.75 * vertical) / crate.mass
 	var expected := speed * speed / (2.0 * 0.75 * 9.81)
-	_check(moved > expected * 0.5 and moved < expected * 2.0,
-			"caixa de 5 kg deslocada %.2f m (estimativa física %.2f m)" % [moved, expected])
+	# A estimativa ignora o tombo: o punho acerta acima do centro de massa e a
+	# caixa gira, então o deslocamento pode passar dela.
+	var travel := crate.global_position - start
+	_check(moved > expected * 0.5 and moved < expected * 3.0 and Vector2(travel.x, travel.z).normalized().dot(Vector2(direction.x, direction.z).normalized()) > 0.7,
+			"caixa de 5 kg deslocada %.2f m na direção do golpe (estimativa física sem tombo %.2f m)" % [moved, expected])
 
 
 func _test_punch_wall_recoil() -> void:
@@ -570,10 +598,11 @@ func _test_camera_first_person_view() -> void:
 			var view := String(child.get_meta(&"view", "both"))
 			if view == "full":
 				full_shadow_only = full_shadow_only and (child as MeshInstance3D).cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
-			elif view == "first_person":
-				first_person_visible = first_person_visible and child.visible
-	_check(full_shadow_only, "malhas com cabeça só projetam sombra (a sombra continua inteira)")
-	_check(first_person_visible, "malhas sem cabeça visíveis (braços e tronco sem duplicar)")
+			elif view == "both":
+				first_person_visible = first_person_visible and child.visible \
+						and (child as MeshInstance3D).cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+	_check(full_shadow_only, "cabeça, cabelo e olhos só projetam sombra (a sombra continua inteira)")
+	_check(first_person_visible, "roupa, braços e mãos visíveis em 1ª pessoa (um corpo só, sem duplicar)")
 	_player.set_view_rotation(YAW_TOWARD_POSITIVE_Z, -1.3)
 	await _frames(30)
 	var foot := _bone("foot_l")
@@ -773,11 +802,11 @@ func _test_camera_animation_sync() -> void:
 	_check(left_leads.size() >= 2 and right_leads.size() >= 2 and left_leads.min() > 0.15 and right_leads.max() < -0.15,
 			"pés em fase com os passos físicos depois de 3 trocas")
 	_check(_rig.third_person and not _body.hide_head and _body.head_follows_view, "3ª pessoa: cabeça visível e acompanhando a vista")
-	var first_person_hidden := true
+	var head_visible := true
 	for child in _skeleton.get_children():
-		if child is MeshInstance3D and String(child.get_meta(&"view", "both")) == "first_person":
-			first_person_hidden = first_person_hidden and not child.visible
-	_check(first_person_hidden, "malhas de 1ª pessoa escondidas (sem braços duplicados)")
+		if child is MeshInstance3D and String(child.get_meta(&"view", "both")) == "full":
+			head_visible = head_visible and (child as MeshInstance3D).cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+	_check(head_visible, "cabeça visível em 3ª pessoa (corpo completo, nada duplicado)")
 	await _frames(20)
 
 
@@ -809,6 +838,412 @@ func _test_camera_touch_button() -> void:
 	controls.visible = false
 	await _frames(30)
 
+
+
+# --- Controles de toque como no Android --------------------------------------
+# Os eventos entram por Input.parse_input_event (o mesmo caminho do sistema
+# operacional) com a emulação de mouse LIGADA: cada dedo também gera cliques
+# de mouse emulados, que eram a origem do soco ao girar a câmera.
+
+func _touch_setup() -> TouchControls:
+	var controls: TouchControls = _gym.get_node("TouchControlsLayer/TouchControls")
+	controls.visible = true
+	Input.emulate_mouse_from_touch = true
+	return controls
+
+
+func _touch_teardown(controls: TouchControls) -> void:
+	controls.release_all()
+	controls.visible = false
+	await _frames(5)
+
+
+func _android_touch(index: int, viewport_position: Vector2, pressed: bool) -> void:
+	var event := InputEventScreenTouch.new()
+	event.index = index
+	event.position = get_viewport().get_final_transform() * viewport_position
+	event.pressed = pressed
+	Input.parse_input_event(event)
+
+
+func _android_drag(index: int, viewport_position: Vector2, relative: Vector2) -> void:
+	var event := InputEventScreenDrag.new()
+	event.index = index
+	event.position = get_viewport().get_final_transform() * viewport_position
+	# Em coordenadas da janela, como o sistema entrega (o Godot converte para
+	# a viewport; sem tela, a janela de teste tem outra escala).
+	event.relative = get_viewport().get_final_transform().basis_xform(relative)
+	Input.parse_input_event(event)
+
+
+## Arrasta um dedo de `from` por `total` pixels em `frames` quadros.
+func _swipe(index: int, from: Vector2, total: Vector2, frames: int) -> void:
+	_android_touch(index, from, true)
+	await _frames(1)
+	var step := total / frames
+	for i in frames:
+		_android_drag(index, from + step * (i + 1), step)
+		await _frames(1)
+	_android_touch(index, from + total, false)
+	await _frames(2)
+
+
+func _screen() -> Vector2:
+	return get_viewport().get_visible_rect().size
+
+
+func _test_touch_camera_never_attacks() -> void:
+	_begin("[T1/T2] Girar a câmera pela tela nunca ataca (eventos reais de toque, mouse emulado ligado)")
+	await _reset(OPEN_LANE, YAW_TOWARD_POSITIVE_Z)
+	var controls := _touch_setup()
+	var attacks := [0]
+	var on_attack := func(_kind: StringName) -> void: attacks[0] += 1
+	_combat.attack_started.connect(on_attack)
+	var center := _screen() * Vector2(0.66, 0.42)
+	_check(controls.get_target_at(center) == &"look", "o centro-direita da tela é a área da câmera")
+	var yaw := _player.get_view_yaw()
+	await _swipe(0, center, Vector2(320.0, 0.0), 12)
+	_check(absf(angle_difference(yaw, _player.get_view_yaw())) > 0.5, "arrastar para a direita gira a câmera (%.0f°)" % rad_to_deg(angle_difference(yaw, _player.get_view_yaw())))
+	yaw = _player.get_view_yaw()
+	await _swipe(0, center, Vector2(-320.0, 0.0), 12)
+	_check(absf(angle_difference(yaw, _player.get_view_yaw())) > 0.5, "arrastar para a esquerda gira de volta")
+	var pitch := _player.get_pitch()
+	await _swipe(0, center, Vector2(0.0, 160.0), 10)
+	_check(_player.get_pitch() < pitch - 0.2, "arrastar para baixo inclina a câmera para baixo")
+	pitch = _player.get_pitch()
+	await _swipe(0, center, Vector2(0.0, -160.0), 10)
+	_check(_player.get_pitch() > pitch + 0.2, "arrastar para cima inclina para cima")
+	# Toques curtos (o que viraria "clique") e um arrasto que passa por cima
+	# do botão ATACAR depois de começar na área da câmera.
+	for i in 3:
+		_android_touch(0, center, true)
+		await _frames(3)
+		_android_touch(0, center, false)
+		await _frames(3)
+	var attack_button: TouchActionButton = controls.get_node("AttackButton")
+	var start := attack_button.get_center_global() - Vector2(260.0, 0.0)
+	await _swipe(0, start, Vector2(260.0, 0.0), 10)
+	await _frames(40)
+	_combat.attack_started.disconnect(on_attack)
+	_check(attacks[0] == 0, "nenhum ataque em giros, toques na área da câmera e arrasto sobre o botão (%d)" % attacks[0])
+	_check(_combat.state == MeleeCombat.State.IDLE and not Input.is_action_pressed(&"attack"), "ação de ataque nunca foi pressionada")
+	await _touch_teardown(controls)
+
+
+func _test_touch_move_and_look_together() -> void:
+	_begin("[T3] Direcional e câmera ao mesmo tempo (dedos identificados pelo índice)")
+	await _reset(OPEN_LANE, YAW_TOWARD_POSITIVE_Z)
+	var controls := _touch_setup()
+	var attacks := [0]
+	var on_attack := func(_kind: StringName) -> void: attacks[0] += 1
+	_combat.attack_started.connect(on_attack)
+	var stick := _screen() * Vector2(0.15, 0.72)
+	_android_touch(1, stick, true)
+	_android_drag(1, stick + Vector2(0.0, -70.0), Vector2(0.0, -70.0))
+	await _frames(20)
+	var yaw := _player.get_view_yaw()
+	var look := _screen() * Vector2(0.64, 0.40)
+	_android_touch(2, look, true)
+	for i in 20:
+		_android_drag(2, look + Vector2(10.0 * (i + 1), 0.0), Vector2(10.0, 0.0))
+		await _frames(1)
+	_check(_player.get_horizontal_speed() > 1.0, "andando com o direcional (%.2f m/s)" % _player.get_horizontal_speed())
+	_check(absf(angle_difference(yaw, _player.get_view_yaw())) > 0.4, "e girando a câmera com o outro dedo")
+	# Terceiro dedo no ATACAR enquanto os outros dois continuam na tela.
+	var attack_button: TouchActionButton = controls.get_node("AttackButton")
+	_android_touch(3, attack_button.get_center_global(), true)
+	await _frames(3)
+	_android_touch(3, attack_button.get_center_global(), false)
+	await _frames(30)
+	_check(attacks[0] == 1, "ATACAR com o terceiro dedo dá exatamente um soco (%d)" % attacks[0])
+	_check(_player.get_horizontal_speed() > 1.0, "o direcional continua funcionando durante o soco")
+	_android_touch(2, look, false)
+	_android_touch(1, stick, false)
+	await _frames(30)
+	_check(_player.get_horizontal_speed() < 0.5, "soltar o direcional para o personagem")
+	_combat.attack_started.disconnect(on_attack)
+	await _touch_teardown(controls)
+
+
+func _test_touch_attack_only_button() -> void:
+	_begin("[T4] Apertar ATACAR sem mexer a câmera")
+	var dummy := await _face_dummy()
+	var controls := _touch_setup()
+	var yaw := _player.get_view_yaw()
+	var pitch := _player.get_pitch()
+	var hits := dummy.hits
+	var button: TouchActionButton = controls.get_node("AttackButton")
+	_android_touch(4, button.get_center_global(), true)
+	await _frames(3)
+	_android_touch(4, button.get_center_global(), false)
+	await _frames(40)
+	_check(dummy.hits == hits + 1, "um soco acerta o boneco")
+	_check(absf(angle_difference(yaw, _player.get_view_yaw())) < 0.0001 and absf(pitch - _player.get_pitch()) < 0.0001,
+			"o toque no botão não gira a câmera")
+	await _touch_teardown(controls)
+
+
+func _test_touch_layout_and_sprint() -> void:
+	_begin("[T12] Layout de toque: áreas exclusivas, CORRER e DEFESA")
+	await _reset(OPEN_LANE, YAW_TOWARD_POSITIVE_Z)
+	var controls := _touch_setup()
+	var names := ["AttackButton", "JumpButton", "CrouchButton", "SprintButton", "BlockButton", "InteractButton", "CameraButton"]
+	var all_exclusive := true
+	var all_right := true
+	for name in names:
+		var button: TouchActionButton = controls.get_node(name)
+		all_exclusive = all_exclusive and controls.get_target_at(button.get_center_global()) == StringName("button:" + name)
+		all_right = all_right and button.get_center_global().x > _screen().x * 0.5
+		for other_name in names:
+			if other_name == name:
+				continue
+			var other: TouchActionButton = controls.get_node(other_name)
+			if button.get_center_global().distance_to(other.get_center_global()) < (button.radius + other.radius) * button.get_global_transform().get_scale().x:
+				all_exclusive = false
+	_check(all_exclusive, "cada botão tem a própria área, sem sobreposição")
+	_check(all_right, "botões do lado direito")
+	_check(controls.get_target_at(_screen() * Vector2(0.15, 0.7)) == &"joystick", "lado esquerdo é o direcional")
+	# CORRER: alterna a corrida enquanto o direcional anda.
+	var stick := _screen() * Vector2(0.15, 0.72)
+	_android_touch(1, stick, true)
+	_android_drag(1, stick + Vector2(0.0, -80.0), Vector2(0.0, -80.0))
+	await _frames(10)
+	var sprint_button: TouchActionButton = controls.get_node("SprintButton")
+	_android_touch(2, sprint_button.get_center_global(), true)
+	await _frames(2)
+	_android_touch(2, sprint_button.get_center_global(), false)
+	await _frames(60)
+	_check(_player.is_sprinting and _player.get_horizontal_speed() > _player.settings.jog_speed + 0.5,
+			"CORRER liga a corrida (%.2f m/s)" % _player.get_horizontal_speed())
+	_android_touch(1, stick, false)
+	await _frames(10)
+	_check(not sprint_button.is_active and not Input.is_action_pressed(&"sprint"), "soltar o direcional desliga a corrida")
+	var block_button: TouchActionButton = controls.get_node("BlockButton")
+	_android_touch(3, block_button.get_center_global(), true)
+	await _frames(20)
+	_check(_combat.is_blocking() and _body.get_layer_weights()["guard"] > 0.8, "DEFESA segurado: guarda erguida")
+	_android_touch(3, block_button.get_center_global(), false)
+	await _frames(20)
+	_check(not _combat.is_blocking(), "soltar DEFESA baixa a guarda")
+	await _touch_teardown(controls)
+
+
+# --- Movimento e física -------------------------------------------------------
+
+func _test_run_direction_change() -> void:
+	_begin("[T5] Correr e trocar de direção: curva com peso, sem virar instantâneo")
+	await _reset(OPEN_LANE, YAW_TOWARD_POSITIVE_Z, 0.0, true)
+	Input.action_press(&"move_forward")
+	Input.action_press(&"sprint")
+	await _frames(80)
+	var start_speed := _player.get_horizontal_speed()
+	var old_direction := Vector3(_player.velocity.x, 0.0, _player.velocity.z).normalized()
+	Input.action_release(&"move_forward")
+	Input.action_press(&"move_right")
+	var max_turn_rate := 0.0
+	var max_velocity_turn := 0.0
+	var min_speed := 100.0
+	var last_yaw := _player.rotation.y
+	var last_direction := old_direction
+	for i in 60:
+		await _frames(1)
+		max_turn_rate = maxf(max_turn_rate, absf(angle_difference(last_yaw, _player.rotation.y)) / DT)
+		last_yaw = _player.rotation.y
+		var direction := Vector3(_player.velocity.x, 0.0, _player.velocity.z)
+		if direction.length() > 0.3:
+			direction = direction.normalized()
+			max_velocity_turn = maxf(max_velocity_turn, rad_to_deg(last_direction.angle_to(direction)))
+			last_direction = direction
+		min_speed = minf(min_speed, _player.get_horizontal_speed())
+	var wanted := -_player.get_view_basis().z.rotated(Vector3.UP, -PI * 0.5)
+	_check(max_turn_rate <= deg_to_rad(_player.body_turn_speed_degrees) + 0.05, "corpo gira no máximo %.0f°/s (%.0f°/s)" % [_player.body_turn_speed_degrees, rad_to_deg(max_turn_rate)])
+	_check(max_velocity_turn < 12.0, "a direção do deslocamento muda aos poucos (máx. %.1f° por quadro)" % max_velocity_turn)
+	_check(min_speed < start_speed * 0.9, "a curva fechada custa velocidade (%.2f → mín. %.2f m/s)" % [start_speed, min_speed])
+	_check(last_direction.dot(wanted) > 0.9, "termina correndo na nova direção")
+	_release_all()
+	await _frames(40)
+	# Parado em 3ª pessoa, inverter a direção gira o corpo no lugar antes de andar.
+	await _reset(OPEN_LANE, YAW_TOWARD_POSITIVE_Z, 0.0, true)
+	var position := _player.global_position
+	Input.action_press(&"move_back")
+	await _frames(8)
+	var drift := Vector2(_player.global_position.x - position.x, _player.global_position.z - position.z)
+	_check(drift.dot(Vector2(_forward().x, _forward().z)) < 0.05, "parado e virando para trás: gira no lugar, não sai andando de costas nem para a frente")
+	await _frames(50)
+	_check(-_player.global_basis.z.dot(-_player.get_view_basis().z) < -0.9 and _player.get_horizontal_speed() > 1.0, "depois do giro, anda para trás da câmera")
+	_release_all()
+	await _frames(30)
+
+
+func _test_stop_deceleration() -> void:
+	_begin("[T6] Arrancar e parar de correr: aceleração e frenagem com peso")
+	await _reset(OPEN_LANE, YAW_TOWARD_POSITIVE_Z)
+	Input.action_press(&"move_forward")
+	Input.action_press(&"sprint")
+	var max_start_lean := 0.0
+	var start_lean_forward := false
+	for i in 20:
+		await _frames(1)
+		if _body.get_lean_degrees() > max_start_lean:
+			max_start_lean = _body.get_lean_degrees()
+			start_lean_forward = _body.get_body_acceleration().dot(_forward()) > 0.0
+	_check(max_start_lean > 2.0 and start_lean_forward, "arrancada inclina o tronco para a frente (%.1f°)" % max_start_lean)
+	await _frames(60)
+	var speeds: Array[float] = []
+	var top := _player.get_horizontal_speed()
+	_release_all()
+	var max_brake_lean := 0.0
+	var brake_backward := false
+	for i in 90:
+		await _frames(1)
+		speeds.append(_player.get_horizontal_speed())
+		if _body.get_lean_degrees() > max_brake_lean:
+			max_brake_lean = _body.get_lean_degrees()
+			brake_backward = _body.get_body_acceleration().dot(_forward()) < 0.0
+	var monotonic := true
+	for i in range(1, speeds.size()):
+		monotonic = monotonic and speeds[i] <= speeds[i - 1] + 0.01
+	var stop_frame := speeds.find(speeds.filter(func(v: float) -> bool: return v < 0.05).front() if speeds.any(func(v: float) -> bool: return v < 0.05) else -1.0)
+	_check(speeds[0] > top * 0.8, "não para na hora (%.2f → %.2f m/s no 1º quadro)" % [top, speeds[0]])
+	_check(monotonic, "desaceleração contínua, sem trancos")
+	_check(stop_frame >= 9 and stop_frame <= 75, "para em %.2f s" % (stop_frame * DT))
+	_check(max_brake_lean > 2.0 and brake_backward, "frenagem joga o tronco para trás (%.1f°)" % max_brake_lean)
+	await _frames(30)
+	_check(_body.get_layer_weights()["move"] < 0.05 and _body.get_lean_degrees() < 1.0, "parado: sem locomoção nem inclinação")
+
+
+func _test_crouch_and_stand() -> void:
+	_begin("[T8] Agachar e levantar")
+	await _reset(OPEN_LANE, YAW_TOWARD_POSITIVE_Z)
+	var standing := _bone_height("Head")
+	await _hold(&"crouch_toggle", 2)
+	await _frames(50)
+	var crouched := _bone_height("Head")
+	_check(crouched < standing - 0.3, "agachado: cabeça desce (%.2f → %.2f m)" % [standing, crouched])
+	Input.action_press(&"move_forward")
+	await _frames(60)
+	_check(_player.get_horizontal_speed() > 0.5 and _player.get_horizontal_speed() <= _player.settings.crouch_speed + 0.05 and _bone_height("Head") < standing - 0.3,
+			"anda agachado (%.2f m/s)" % _player.get_horizontal_speed())
+	_release_all()
+	await _hold(&"crouch_toggle", 2)
+	await _frames(50)
+	_check(absf(_bone_height("Head") - standing) < 0.05 and _body.get_layer_weights()["crouch"] < 0.01, "levanta de volta (%.2f m)" % _bone_height("Head"))
+
+
+func _test_obstacle_collision() -> void:
+	_begin("[T10] Colisão com obstáculos: correr contra a parede")
+	await _reset(Vector3(0.0, 0.0, -15.0), 0.0)
+	var ray := PhysicsRayQueryParameters3D.create(_player.global_position + Vector3.UP, _player.global_position + Vector3(0.0, 1.0, -10.0), 1)
+	ray.exclude = [_player.get_rid()]
+	var hit := _player.get_world_3d().direct_space_state.intersect_ray(ray)
+	_check(not hit.is_empty(), "parede à frente")
+	if hit.is_empty():
+		return
+	var wall: Vector3 = hit["position"]
+	Input.action_press(&"move_forward")
+	Input.action_press(&"sprint")
+	var deepest := 10.0
+	for i in 120:
+		await _frames(1)
+		deepest = minf(deepest, _player.global_position.z - wall.z)
+	_release_all()
+	var radius: float = (_player.get_node("CollisionShape3D") as CollisionShape3D).shape.get("radius")
+	_check(deepest > radius - 0.02, "a cápsula não entra na parede (folga %.3f m, raio %.2f m)" % [deepest, radius])
+	_check(_player.get_horizontal_speed() < 0.3, "parado contra a parede")
+	_check(_bone_height("Head") > 1.3, "corpo em pé depois do choque")
+	await _frames(40)
+
+
+func _test_planted_feet() -> void:
+	_begin("Girar parado: pés plantados e passo de ajuste")
+	await _reset(OPEN_LANE, YAW_TOWARD_POSITIVE_Z)
+	await _frames(30)
+	var foot := _bone("foot_l")
+	for i in 10:
+		GameInput.add_look_radians(Vector2(deg_to_rad(3.0), 0.0))
+		await _frames(1)
+	var offset := rad_to_deg(_body.get_layer_weights()["turn_offset"])
+	_check(absf(offset) > 25.0 and absf(offset) < 35.0, "girando 30°, as pernas ficam (torção %.1f°)" % offset)
+	_check(_bone("foot_l").distance_to(foot) < 0.06, "o pé esquerdo não desliza (%.3f m)" % _bone("foot_l").distance_to(foot))
+	var stepped := false
+	for i in roundi((_body.settle_delay + _body.turn_step_time + 0.4) / DT):
+		await _frames(1)
+		stepped = stepped or _body.get_layer_weights()["turn_step"] >= 0.0
+	_check(stepped and absf(rad_to_deg(_body.get_layer_weights()["turn_offset"])) < 3.0, "depois de uma pausa, um passo realinha as pernas")
+	var largest := 0.0
+	stepped = false
+	for i in 18:
+		GameInput.add_look_radians(Vector2(deg_to_rad(5.0), 0.0))
+		await _frames(1)
+		largest = maxf(largest, absf(_body.get_layer_weights()["turn_offset"]))
+		stepped = stepped or _body.get_layer_weights()["turn_step"] >= 0.0
+	_check(stepped, "giro de 90°: passo assim que passa do limite")
+	_check(rad_to_deg(largest) <= _body.max_planted_twist * 1.3 + 0.5, "torção nunca passa de %.0f° (%.1f°)" % [_body.max_planted_twist * 1.3, rad_to_deg(largest)])
+	await _frames(60)
+
+
+func _test_defense() -> void:
+	_begin("Defesa: guarda, dano reduzido pela frente, não pelas costas")
+	await _reset(OPEN_LANE, YAW_TOWARD_POSITIVE_Z)
+	Input.action_press(&"block")
+	await _frames(30)
+	_check(_combat.is_blocking() and _body.get_layer_weights()["guard"] > 0.9, "guarda erguida (%.2f)" % _body.get_layer_weights()["guard"])
+	_check(_camera.is_position_in_frustum(_bone("hand_l")) and _camera.is_position_in_frustum(_bone("hand_r")),
+			"em 1ª pessoa os dois punhos da guarda aparecem diante dos olhos")
+	var forward := -_player.get_view_basis().z
+	var stamina := _player.stamina.current
+	_health.apply_damage(20.0, &"golpe", -forward)
+	await _frames(2)
+	_check(is_equal_approx(_health.current, 95.0), "golpe pela frente: 20 → %.0f de dano" % (100.0 - _health.current))
+	_check(_body.current_animation(BodyAnimator.SLOT_HURT) == &"block_impact", "reação de impacto na guarda")
+	_check(_player.stamina.current < stamina - 5.0, "aparar custa fôlego")
+	await _frames(40)
+	_health.apply_damage(20.0, &"golpe", forward)
+	await _frames(2)
+	_check(is_equal_approx(_health.current, 75.0), "golpe pelas costas: dano inteiro")
+	Input.action_press(&"move_forward")
+	Input.action_press(&"sprint")
+	await _frames(60)
+	_check(not _player.is_sprinting and _player.get_horizontal_speed() < _player.settings.jog_speed * _combat.block_speed_multiplier + 0.1,
+			"de guarda anda devagar e não corre (%.2f m/s)" % _player.get_horizontal_speed())
+	_release_all()
+	await _frames(30)
+	_check(not _combat.is_blocking() and _body.get_layer_weights()["guard"] < 0.1 and is_equal_approx(_player.action_speed_multiplier, 1.0),
+			"soltar a defesa devolve braços e velocidade")
+
+
+func _test_attack_no_queue() -> void:
+	_begin("Golpes involuntários: apertar durante o golpe não enfileira outro")
+	var dummy := await _face_dummy()
+	await _frames(60)
+	var started := [0]
+	var on_attack := func(_kind: StringName) -> void: started[0] += 1
+	_combat.attack_started.connect(on_attack)
+	var hits := dummy.hits
+	await _hold(&"attack", 2)
+	for i in 3:
+		await _frames(3)
+		await _hold(&"attack", 2)
+	await _frames(70)
+	_combat.attack_started.disconnect(on_attack)
+	_check(started[0] == 1 and dummy.hits == hits + 1, "quatro toques rápidos: um golpe, um acerto (%d / %d)" % [started[0], dummy.hits - hits])
+	_check(_combat.state == MeleeCombat.State.IDLE, "volta ao repouso depois da recuperação")
+
+
+func _test_arm_reach() -> void:
+	_begin("Alcance real do braço: alvo longe demais não é atingido")
+	var dummy: TrainingDummy = _gym.get_node("TrainingDummyStation/TrainingDummy")
+	await _reset(Vector3(-5.0, 0.0, 10.85), 0.0)
+	await _frames(60)
+	var hits := dummy.hits
+	var missed := [false]
+	var on_miss := func(_kind: StringName) -> void: missed[0] = true
+	_combat.attack_missed.connect(on_miss)
+	await _hold(&"attack", 2)
+	await _frames(50)
+	_combat.attack_missed.disconnect(on_miss)
+	_check(dummy.hits == hits and missed[0], "a 0,9 m a mais o soco não alcança")
+	await _frames(40)
 
 # --- Morte e ragdoll ---------------------------------------------------------
 

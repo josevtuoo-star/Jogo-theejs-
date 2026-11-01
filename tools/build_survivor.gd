@@ -1,43 +1,67 @@
 extends SceneTree
 ## Ferramenta de produção: monta o personagem sobrevivente.
 ##
-## Uso: godot --headless --path . --script res://tools/build_survivor.gd
+## Uso (duas etapas, por causa da importação das texturas reduzidas):
+##   godot --headless --path . --script res://tools/build_survivor.gd
+##   godot --headless --path . --import
+##   godot --headless --path . --script res://tools/build_survivor.gd
+## Na primeira execução as texturas 4K da roupa são reduzidas e gravadas em
+## assets/characters/survivor/outfit/; na segunda, o personagem é montado.
 ##
 ## Entrada (CC0, ver ASSET_LICENSES.md):
-##   - corpo, olhos e sobrancelhas: Quaternius Universal Base Characters
-##   - cabelo raspado e barba: idem (versões presas ao osso da cabeça)
-##   - tecidos PBR: Poly Haven (algodão, jeans, couro)
+##   - roupa modelada e esqueleto em proporções naturais ("Regular"):
+##     Quaternius Modular Character Outfits – Fantasy (versão gratuita), em
+##     assets/_source/outfits_fantasy/ (fora do Git): camisa, braços com mãos,
+##     calça (Peasant) e botas de couro de cano alto (Ranger)
+##   - cabeça, olhos, sobrancelhas, cabelo raspado e barba: Quaternius
+##     Universal Base Characters (assets/characters/survivor/)
+## Os dois pacotes usam o mesmo esqueleto de 65 ossos (mesma hierarquia e
+## alturas; o "Regular" tem ombros e quadris 2 cm mais estreitos que o
+## "Superhero"). As peles (Skin) guardam as matrizes de ligação de cada osso
+## pelo nome, então a cabeça do pacote de personagens acompanha o osso Head
+## do esqueleto novo sem editar vértices.
 ## Saída:
-##   - resources/models/survivor/*.res  malhas (corpo recortado e roupas)
-##   - scenes/characters/survivor.tscn   personagem com esqueleto, malhas,
-##                                       AnimationPlayer e a biblioteca retargetada
-##
-## As roupas são geradas a partir da malha do corpo: cada triângulo é
-## classificado pela influência dos ossos (tronco/braços → jaqueta, pélvis/
-## coxas/canelas → calça, pés → botas), copiado para uma camada própria,
-## deslocado para fora pela normal média de cada posição (sem rachaduras nas
-## costuras de UV) e suavizado para apagar o relevo muscular. Cada peça avança
-## um anel de triângulos sobre a vizinha (a jaqueta cobre a cintura da calça,
-## a bota cobre a barra da calça) e a pele totalmente coberta é removida.
+##   - resources/models/survivor/*.res  malhas
+##   - scenes/characters/survivor.tscn   esqueleto, malhas, ragdoll,
+##                                       AnimationPlayer com a biblioteca
 
-const BODY_SCENE := "res://assets/characters/survivor/Superhero_Male_FullBody.gltf"
+const OUTFIT_DIR := "res://assets/_source/outfits_fantasy/"
+const OUTFIT_SKELETON_SCENE := OUTFIT_DIR + "Male_Peasant.gltf"
+const HEAD_SCENE := "res://assets/characters/survivor/Superhero_Male_FullBody.gltf"
 const HAIR_SCENES := ["res://assets/characters/survivor/hair/Hair_Buzzed.gltf",
 		"res://assets/characters/survivor/hair/Hair_Beard.gltf"]
+const TEXTURE_DIR := "res://assets/characters/survivor/outfit/"
 const LIBRARY := "res://resources/animations/survivor_body.res"
 const OUT_DIR := "res://resources/models/survivor/"
 const OUT_SCENE := "res://scenes/characters/survivor.tscn"
 const BODY_ANIMATOR_SCRIPT := "res://scripts/animation/body_animator.gd"
 
-const JACKET_BONES := ["spine_01", "spine_02", "spine_03", "clavicle_l", "clavicle_r",
-		"upperarm_l", "upperarm_r", "lowerarm_l", "lowerarm_r"]
-const PANTS_BONES := ["pelvis", "thigh_l", "thigh_r", "calf_l", "calf_r"]
-const BOOT_BONES := ["foot_l", "foot_r", "ball_l", "ball_r"]
-## Altura (m, na pose de repouso) abaixo da qual a canela vira cano da bota.
-const BOOT_TOP := 0.20
+## Peças da roupa: [nó, cena de origem, malha na cena, material, tinta]
+## A camisa clara é tingida de oliva gasto (sobrevivência, não festa medieval).
+const OUTFIT := [
+	["Shirt", "Male_Peasant.gltf", "Male_Peasant_Body", "peasant", Color(0.62, 0.62, 0.50)],
+	["Arms", "Male_Peasant.gltf", "Male_Peasant_Arms", "peasant", Color(0.62, 0.62, 0.50)],
+	["Pants", "Male_Peasant.gltf", "Male_Peasant_Legs", "peasant", Color(0.80, 0.80, 0.80)],
+	["Boots", "Male_Ranger.gltf", "Male_Ranger_Feet_Boots", "ranger", Color(0.85, 0.80, 0.75)],
+]
+## Texturas reduzidas: [arquivo de origem, nome de saída, lado (px)]
+const TEXTURES := [
+	["T_Peasant_BaseColor.png", "peasant_albedo.png", 2048],
+	["T_Peasant_Normal.png", "peasant_normal.png", 2048],
+	["T_Peasant_ORM.png", "peasant_orm.png", 2048],
+	["T_Ranger_BaseColor.png", "ranger_albedo.png", 1024],
+	["T_Ranger_Normal.png", "ranger_normal.png", 1024],
+	["T_Ranger_ORM.png", "ranger_orm.png", 1024],
+	["T_Regular_Male_Dark_BaseColor.png", "skin_albedo.png", 1024],
+	["T_Regular_Male_Normal.png", "skin_normal.png", 1024],
+	["T_Regular_Male_Roughness.png", "skin_roughness.png", 1024],
+]
 ## Cor do cabelo, barba e sobrancelhas (a textura do pacote é neutra para tingir).
 const HAIR_COLOR := Color(0.30, 0.22, 0.15)
+## Influência mínima de Head + neck_01 para um triângulo do corpo-base fazer
+## parte da cabeça (o resto do corpo-base é descartado: a roupa o substitui).
+const HEAD_WEIGHT := 0.2
 
-## [nome, camada, deslocamento (m), iterações de suavização, textura, cor, escala UV]
 ## Ragdoll: [osso, osso-filho que define o comprimento ("" = vertical), raio,
 ## massa (kg), abertura do cone (graus), torção (graus)]. Soma ≈ 80 kg.
 const RAGDOLL := [
@@ -62,19 +86,16 @@ const RAGDOLL := [
 const RAGDOLL_LAYER := 128
 const RAGDOLL_MASK := 1 | 4
 
-const GARMENTS := [
-	["Jacket", 1, 0.020, 4, "cotton_jersey", Color(0.42, 0.44, 0.30), 10.0],
-	["Pants", 2, 0.011, 3, "denim_fabric", Color(0.80, 0.82, 0.88), 9.0],
-	["Boots", 3, 0.016, 2, "brown_leather", Color(0.55, 0.45, 0.38), 6.0],
-]
-
 
 func _initialize() -> void:
-	var body_root: Node = (load(BODY_SCENE) as PackedScene).instantiate()
-	var source_skeleton: Skeleton3D = body_root.find_children("*", "Skeleton3D", true, false)[0]
-	var body_instance: MeshInstance3D = source_skeleton.get_node("SuperHero_Male")
+	if not _prepare_textures():
+		print("Texturas reduzidas gravadas em %s. Rode --import e esta ferramenta de novo." % TEXTURE_DIR)
+		quit(0)
+		return
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(OUT_DIR))
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path("res://scenes/characters"))
+	var outfit_root: Node = (load(OUTFIT_SKELETON_SCENE) as PackedScene).instantiate()
+	var source_skeleton: Skeleton3D = outfit_root.find_children("*", "Skeleton3D", true, false)[0]
 
 	var root := Node3D.new()
 	root.name = "Survivor"
@@ -95,24 +116,29 @@ func _initialize() -> void:
 	armature.add_child(skeleton)
 	skeleton.owner = root
 
-	var garments := _split_body(body_instance, source_skeleton)
-	_add_mesh(root, skeleton, "Body", garments["Body"], body_instance.skin, 0, false, "full")
-	for garment in GARMENTS:
-		var view := "full" if garment[0] == "Jacket" else "both"
-		_add_mesh(root, skeleton, garment[0], garments[garment[0]], body_instance.skin, garment[1], false, view)
-	# Primeira pessoa: corpo e jaqueta sem cabeça e pescoço (a câmera ocupa o
-	# lugar deles). As versões completas continuam projetando a sombra.
-	for name in ["Body", "Jacket"]:
-		var headless := _without_head(garments[name], body_instance.skin, source_skeleton)
-		_add_mesh(root, skeleton, name + "FirstPerson", headless, body_instance.skin, 0, false, "first_person")
+	# Roupa modelada (corpo inteiro coberto, mãos e antebraços com pele).
+	var materials := _materials()
+	for piece in OUTFIT:
+		var scene_root: Node = (load(OUTFIT_DIR + piece[1]) as PackedScene).instantiate()
+		var part := scene_root.find_child(piece[2], true, false) as MeshInstance3D
+		assert(part != null, "Peça %s não encontrada em %s" % [piece[2], piece[1]])
+		var mesh := _with_materials(part.mesh, materials, piece[3], piece[4])
+		_add_mesh(root, skeleton, piece[0], mesh, part.skin, "both")
+
+	# Cabeça e pescoço do corpo-base (o resto do corpo-base fica de fora).
+	var head_root: Node = (load(HEAD_SCENE) as PackedScene).instantiate()
+	var head_skeleton: Skeleton3D = head_root.find_children("*", "Skeleton3D", true, false)[0]
+	var base: MeshInstance3D = head_skeleton.get_node("SuperHero_Male")
+	var head := _only_bones(base.mesh, base.skin, head_skeleton, ["Head", "neck_01"], HEAD_WEIGHT)
+	_add_mesh(root, skeleton, "Head", head, base.skin, "full")
 	for name in ["Eyes", "Eyebrows"]:
-		var part: MeshInstance3D = source_skeleton.get_node(name)
+		var part: MeshInstance3D = head_skeleton.get_node(name)
 		var mesh := part.mesh if name == "Eyes" else _tinted(part.mesh, HAIR_COLOR)
-		_add_mesh(root, skeleton, name, mesh, part.skin, 0, true)
+		_add_mesh(root, skeleton, name, mesh, part.skin, "full")
 	for path in HAIR_SCENES:
 		var hair_root: Node = (load(path) as PackedScene).instantiate()
 		for part: MeshInstance3D in hair_root.find_children("*", "MeshInstance3D", true, false):
-			_add_mesh(root, skeleton, path.get_file().get_basename(), _tinted(part.mesh, HAIR_COLOR), part.skin, 0, true)
+			_add_mesh(root, skeleton, path.get_file().get_basename(), _tinted(part.mesh, HAIR_COLOR), part.skin, "full")
 
 	_build_ragdoll(skeleton, root)
 
@@ -134,24 +160,73 @@ func _initialize() -> void:
 	quit(0 if error == OK else 1)
 
 
+## Reduz as texturas 4K do pacote (memória de vídeo no celular). Retorna
+## verdadeiro se todas já existem importadas.
+func _prepare_textures() -> bool:
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(TEXTURE_DIR))
+	var ready := true
+	for entry in TEXTURES:
+		var target: String = TEXTURE_DIR + entry[1]
+		if ResourceLoader.exists(target):
+			continue
+		ready = false
+		var image := Image.load_from_file(ProjectSettings.globalize_path(OUTFIT_DIR + entry[0]))
+		var side: int = entry[2]
+		image.resize(side, side, Image.INTERPOLATE_LANCZOS)
+		image.save_png(ProjectSettings.globalize_path(target))
+	return ready
+
+
+func _materials() -> Dictionary:
+	var result := {}
+	for set_name in ["peasant", "ranger"]:
+		var material := ORMMaterial3D.new()
+		material.albedo_texture = load(TEXTURE_DIR + set_name + "_albedo.png")
+		material.normal_enabled = true
+		material.normal_texture = load(TEXTURE_DIR + set_name + "_normal.png")
+		material.orm_texture = load(TEXTURE_DIR + set_name + "_orm.png")
+		result[set_name] = material
+	var skin := StandardMaterial3D.new()
+	skin.albedo_texture = load(TEXTURE_DIR + "skin_albedo.png")
+	skin.normal_enabled = true
+	skin.normal_texture = load(TEXTURE_DIR + "skin_normal.png")
+	skin.roughness_texture = load(TEXTURE_DIR + "skin_roughness.png")
+	skin.roughness_texture_channel = BaseMaterial3D.TEXTURE_CHANNEL_RED
+	result["skin"] = skin
+	return result
+
+
+## Copia a malha trocando os materiais do pacote pelos das texturas reduzidas.
+## Superfícies de pele (MI_Regular_Male) recebem o material de pele.
+func _with_materials(mesh: Mesh, materials: Dictionary, set_name: String, tint: Color) -> Mesh:
+	var copy := mesh.duplicate() as ArrayMesh
+	for surface in copy.get_surface_count():
+		var original := copy.surface_get_material(surface)
+		var is_skin := original != null and String(original.resource_name).contains("Regular")
+		if is_skin:
+			copy.surface_set_material(surface, materials["skin"])
+		else:
+			var material := (materials[set_name] as BaseMaterial3D).duplicate() as BaseMaterial3D
+			material.albedo_color = tint
+			copy.surface_set_material(surface, material)
+	return copy
+
+
 func _add_mesh(root: Node, skeleton: Skeleton3D, node_name: String, mesh: Mesh, skin: Skin,
-		layer: int, keep_material: bool = false, view: String = "full") -> void:
+		view: String) -> void:
 	var instance := MeshInstance3D.new()
 	instance.name = node_name
 	var path := OUT_DIR + node_name.to_snake_case() + ".res"
-	if not keep_material or true:
-		ResourceSaver.save(mesh, path)
-		mesh = load(path)
-	instance.mesh = mesh
+	ResourceSaver.save(mesh, path)
+	instance.mesh = load(path)
 	instance.skin = skin
 	# Os limites mudam muito com as animações (deitar, rolar).
 	instance.custom_aabb = AABB(Vector3(-1.2, -0.2, -1.2), Vector3(2.4, 2.4, 2.4))
 	skeleton.add_child(instance)
 	instance.owner = root
 	instance.skeleton = NodePath("..")
-	instance.set_meta(&"garment_layer", layer)
-	# "full" = corpo completo (terceira pessoa; sombra em primeira pessoa),
-	# "first_person" = sem cabeça (só primeira pessoa), "both" = sempre.
+	# "full" = só em terceira pessoa (em primeira pessoa vira só sombra: a
+	# câmera ocupa o lugar da cabeça); "both" = sempre visível.
 	instance.set_meta(&"view", view)
 
 
@@ -185,8 +260,7 @@ func _build_ragdoll(skeleton: Skeleton3D, root: Node) -> void:
 		physical.collision_mask = RAGDOLL_MASK
 		physical.transform = global_rest
 		# Junta na origem do osso, eixo X (torção) ao longo do osso.
-		var joint_basis := _basis_with_x(direction)
-		physical.joint_offset = Transform3D(joint_basis, Vector3.ZERO)
+		physical.joint_offset = Transform3D(_basis_with_x(direction), Vector3.ZERO)
 		if float(spec[4]) > 0.0:
 			physical.joint_type = PhysicalBone3D.JOINT_TYPE_CONE
 			physical.set("joint_constraints/swing_span", spec[4])
@@ -219,38 +293,73 @@ func _basis_with_x(direction: Vector3) -> Basis:
 	return Basis(x, z.cross(x).normalized(), z)
 
 
-## Remove os triângulos com influência da cabeça ou do pescoço.
-func _without_head(mesh: ArrayMesh, skin: Skin, skeleton: Skeleton3D) -> ArrayMesh:
+## Só os triângulos em que todos os vértices têm influência dos ossos dados
+## acima do limiar (ex.: cabeça e pescoço do corpo-base).
+func _only_bones(mesh: ArrayMesh, skin: Skin, skeleton: Skeleton3D, bone_names: Array, threshold: float) -> ArrayMesh:
 	var arrays := mesh.surface_get_arrays(0)
 	var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
 	var bones: PackedInt32Array = arrays[Mesh.ARRAY_BONES]
 	var weights: PackedFloat32Array = arrays[Mesh.ARRAY_WEIGHTS]
 	var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
 	var influences := bones.size() / vertices.size()
-	var head_binds := {}
+	var selected_binds := {}
 	for bind in skin.get_bind_count():
 		var bone_name := String(skin.get_bind_name(bind))
 		if bone_name.is_empty():
 			bone_name = skeleton.get_bone_name(skin.get_bind_bone(bind))
-		if bone_name in ["Head", "neck_01"]:
-			head_binds[bind] = true
-	var head_weight := PackedFloat32Array()
-	head_weight.resize(vertices.size())
+		if bone_name in bone_names:
+			selected_binds[bind] = true
+	var amount := PackedFloat32Array()
+	amount.resize(vertices.size())
 	for v in vertices.size():
 		for k in influences:
-			if head_binds.has(bones[v * influences + k]):
-				head_weight[v] += weights[v * influences + k]
+			if selected_binds.has(bones[v * influences + k]):
+				amount[v] += weights[v * influences + k]
 	var kept := PackedInt32Array()
 	for t in indices.size() / 3:
-		var keep := true
-		for k in 3:
-			if head_weight[indices[t * 3 + k]] > 0.15:
-				keep = false
-		if keep:
+		if amount[indices[t * 3]] > threshold and amount[indices[t * 3 + 1]] > threshold and amount[indices[t * 3 + 2]] > threshold:
 			kept.append(t)
-	var result := _submesh(arrays, kept, PackedVector3Array(), 0.0)
+	var result := _extract(arrays, kept)
 	result.surface_set_material(0, mesh.surface_get_material(0))
 	return result
+
+
+## Nova malha com os triângulos dados (vértices não usados são descartados).
+func _extract(arrays: Array, triangles: PackedInt32Array) -> ArrayMesh:
+	var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
+	var vertex_count := (arrays[Mesh.ARRAY_VERTEX] as PackedVector3Array).size()
+	var remap := PackedInt32Array()
+	remap.resize(vertex_count)
+	remap.fill(-1)
+	var order := PackedInt32Array()
+	var new_indices := PackedInt32Array()
+	for t in triangles:
+		for k in 3:
+			var old := indices[t * 3 + k]
+			if remap[old] < 0:
+				remap[old] = order.size()
+				order.append(old)
+			new_indices.append(remap[old])
+	var result_arrays := []
+	result_arrays.resize(Mesh.ARRAY_MAX)
+	for channel in Mesh.ARRAY_MAX:
+		var data = arrays[channel]
+		if data == null or channel == Mesh.ARRAY_INDEX:
+			continue
+		var per_vertex: int = data.size() / vertex_count
+		var copy = data.duplicate()
+		copy.resize(order.size() * per_vertex)
+		for i in order.size():
+			for k in per_vertex:
+				copy[i * per_vertex + k] = data[order[i] * per_vertex + k]
+		result_arrays[channel] = copy
+	result_arrays[Mesh.ARRAY_INDEX] = new_indices
+	var mesh := ArrayMesh.new()
+	var flags := 0
+	if result_arrays[Mesh.ARRAY_BONES] != null and (result_arrays[Mesh.ARRAY_BONES] as PackedInt32Array).size() == order.size() * 8:
+		flags = Mesh.ARRAY_FLAG_USE_8_BONE_WEIGHTS
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, result_arrays, [], {}, flags)
+	return mesh
 
 
 ## Copia a malha com os materiais tingidos (multiplicando a textura).
@@ -263,239 +372,3 @@ func _tinted(mesh: Mesh, color: Color) -> Mesh:
 			tinted.albedo_color = color
 			copy.surface_set_material(surface, tinted)
 	return copy
-
-
-# =============================================================================
-# Recorte do corpo e geração das roupas
-# =============================================================================
-
-func _split_body(body: MeshInstance3D, skeleton: Skeleton3D) -> Dictionary:
-	var source: ArrayMesh = body.mesh
-	var arrays := source.surface_get_arrays(0)
-	var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
-	var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
-	var bones: PackedInt32Array = arrays[Mesh.ARRAY_BONES]
-	var weights: PackedFloat32Array = arrays[Mesh.ARRAY_WEIGHTS]
-	var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
-	var influences := bones.size() / vertices.size()
-	var skin := body.skin
-
-	# Grupo de cada vínculo da skin.
-	var bind_group: Array[int] = []
-	for bind in skin.get_bind_count():
-		var bone_name := String(skin.get_bind_name(bind))
-		if bone_name.is_empty():
-			bone_name = skeleton.get_bone_name(skin.get_bind_bone(bind))
-		if bone_name in JACKET_BONES:
-			bind_group.append(1)
-		elif bone_name in PANTS_BONES:
-			bind_group.append(2)
-		elif bone_name in BOOT_BONES:
-			bind_group.append(3)
-		else:
-			bind_group.append(0)
-
-	# Classe de cada vértice: grupo de maior peso, com o cano da bota por altura
-	# e o pulso (influência da mão) como pele.
-	var vertex_class := PackedInt32Array()
-	vertex_class.resize(vertices.size())
-	for v in vertices.size():
-		var sums := [0.0, 0.0, 0.0, 0.0]
-		for k in influences:
-			sums[bind_group[bones[v * influences + k]]] += weights[v * influences + k]
-		var best := 0
-		for g in 4:
-			if sums[g] > sums[best]:
-				best = g
-		if best == 2 and vertices[v].y < BOOT_TOP:
-			best = 3
-		if best == 1 and sums[0] > 0.25:
-			best = 0 # pulso e pescoço ficam de pele
-		vertex_class[v] = best
-
-	# Triângulo pertence à peça da maioria dos vértices.
-	var triangle_count := indices.size() / 3
-	var triangle_class := PackedInt32Array()
-	triangle_class.resize(triangle_count)
-	for t in triangle_count:
-		var counts := [0, 0, 0, 0]
-		for k in 3:
-			counts[vertex_class[indices[t * 3 + k]]] += 1
-		var best := 0
-		for g in 4:
-			if counts[g] > counts[best]:
-				best = g
-		triangle_class[t] = best
-
-	# Normal média por posição (evita rachaduras nas costuras de UV).
-	var position_key := {}
-	var averaged := PackedVector3Array()
-	averaged.resize(vertices.size())
-	for v in vertices.size():
-		var key := vertices[v].snapped(Vector3.ONE * 0.0001)
-		position_key[key] = (position_key.get(key, Vector3.ZERO) as Vector3) + normals[v]
-	for v in vertices.size():
-		averaged[v] = (position_key[vertices[v].snapped(Vector3.ONE * 0.0001)] as Vector3).normalized()
-
-	var result := {}
-	var covered := PackedByteArray()
-	covered.resize(triangle_count)
-	for garment in GARMENTS:
-		var layer: int = garment[1]
-		# Peça + um anel de triângulos vizinhos (sobreposição nas bordas).
-		var member := PackedByteArray()
-		member.resize(vertices.size())
-		for t in triangle_count:
-			if triangle_class[t] == layer:
-				for k in 3:
-					member[indices[t * 3 + k]] = 1
-		var selected := PackedInt32Array()
-		for t in triangle_count:
-			var inside := triangle_class[t] == layer
-			var touches := false
-			for k in 3:
-				touches = touches or member[indices[t * 3 + k]] == 1
-			if inside or (touches and _grows_into(layer, triangle_class[t])):
-				selected.append(t)
-				if inside:
-					covered[t] = 1
-		result[garment[0]] = _build_shell(arrays, selected, averaged, garment)
-	# Corpo: só os triângulos que nenhuma peça cobre por inteiro.
-	var body_triangles := PackedInt32Array()
-	for t in triangle_count:
-		if covered[t] == 0:
-			body_triangles.append(t)
-	var body_mesh := _submesh(arrays, body_triangles, PackedVector3Array(), 0.0)
-	body_mesh.surface_set_material(0, source.surface_get_material(0))
-	result["Body"] = body_mesh
-	return result
-
-
-## A jaqueta avança sobre a calça e a pele; a bota sobre a calça; a calça
-## sobre a pele (cintura).
-func _grows_into(layer: int, other: int) -> bool:
-	match layer:
-		1:
-			return other == 2 or other == 0
-		3:
-			return other == 2
-		2:
-			return other == 0
-	return false
-
-
-func _build_shell(arrays: Array, triangles: PackedInt32Array, averaged: PackedVector3Array, garment: Array) -> ArrayMesh:
-	var offset: float = garment[2]
-	var mesh := _submesh(arrays, triangles, averaged, offset, garment[3])
-	var material := ORMMaterial3D.new()
-	var folder := "res://assets/polyhaven/textures/%s/%s_" % [garment[4], garment[4]]
-	material.albedo_texture = load(folder + "albedo_1k.jpg")
-	material.albedo_color = garment[5]
-	material.normal_enabled = true
-	material.normal_texture = load(folder + "normal_1k.jpg")
-	material.orm_texture = load(folder + "arm_1k.jpg")
-	material.uv1_scale = Vector3.ONE * float(garment[6])
-	# A borda interna da peça aparece nos punhos e na cintura.
-	material.cull_mode = BaseMaterial3D.CULL_DISABLED
-	mesh.surface_set_material(0, material)
-	return mesh
-
-
-## Copia os triângulos escolhidos para uma malha nova, reindexada, com os
-## vértices deslocados pela normal média e suavizados (Laplaciano).
-func _submesh(arrays: Array, triangles: PackedInt32Array, averaged: PackedVector3Array,
-		offset: float, smooth_iterations: int = 0) -> ArrayMesh:
-	var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
-	var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
-	var remap := {}
-	var order := PackedInt32Array()
-	var new_indices := PackedInt32Array()
-	for t in triangles:
-		for k in 3:
-			var v := indices[t * 3 + k]
-			if not remap.has(v):
-				remap[v] = order.size()
-				order.append(v)
-			new_indices.append(remap[v])
-	var out := []
-	out.resize(Mesh.ARRAY_MAX)
-	for channel in [Mesh.ARRAY_VERTEX, Mesh.ARRAY_NORMAL, Mesh.ARRAY_TEX_UV, Mesh.ARRAY_TANGENT,
-			Mesh.ARRAY_BONES, Mesh.ARRAY_WEIGHTS]:
-		var data = arrays[channel]
-		if data == null:
-			continue
-		var width := 1
-		if channel == Mesh.ARRAY_TANGENT:
-			width = 4
-		elif channel == Mesh.ARRAY_BONES or channel == Mesh.ARRAY_WEIGHTS:
-			width = data.size() / vertices.size()
-		var copy = data.duplicate()
-		copy.resize(order.size() * width)
-		for i in order.size():
-			for k in width:
-				copy[i * width + k] = data[order[i] * width + k]
-		out[channel] = copy
-	out[Mesh.ARRAY_INDEX] = new_indices
-	if offset > 0.0:
-		var positions: PackedVector3Array = out[Mesh.ARRAY_VERTEX]
-		for i in order.size():
-			positions[i] += averaged[order[i]] * offset
-		positions = _smooth(positions, new_indices, smooth_iterations)
-		out[Mesh.ARRAY_VERTEX] = positions
-	var mesh := ArrayMesh.new()
-	var format := Mesh.ARRAY_FORMAT_VERTEX
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, out, [], {}, Mesh.ARRAY_FLAG_USE_8_BONE_WEIGHTS if (out[Mesh.ARRAY_BONES] as PackedInt32Array).size() / order.size() == 8 else 0)
-	return mesh
-
-
-## Suavização Laplaciana por posição (vértices coincidentes andam juntos);
-## vértices de borda ficam fixos para manter o encaixe com a vizinha.
-func _smooth(positions: PackedVector3Array, indices: PackedInt32Array, iterations: int) -> PackedVector3Array:
-	if iterations <= 0:
-		return positions
-	var key_of := PackedInt32Array()
-	key_of.resize(positions.size())
-	var keys := {}
-	for i in positions.size():
-		var key := positions[i].snapped(Vector3.ONE * 0.0001)
-		if not keys.has(key):
-			keys[key] = keys.size()
-		key_of[i] = keys[key]
-	var count := keys.size()
-	var neighbors: Array[Dictionary] = []
-	neighbors.resize(count)
-	for i in count:
-		neighbors[i] = {}
-	var edge_uses := {}
-	for t in indices.size() / 3:
-		for k in 3:
-			var a := key_of[indices[t * 3 + k]]
-			var b := key_of[indices[t * 3 + (k + 1) % 3]]
-			neighbors[a][b] = true
-			neighbors[b][a] = true
-			var edge := Vector2i(mini(a, b), maxi(a, b))
-			edge_uses[edge] = int(edge_uses.get(edge, 0)) + 1
-	var boundary := PackedByteArray()
-	boundary.resize(count)
-	for edge: Vector2i in edge_uses:
-		if edge_uses[edge] == 1:
-			boundary[edge.x] = 1
-			boundary[edge.y] = 1
-	var current := PackedVector3Array()
-	current.resize(count)
-	for i in positions.size():
-		current[key_of[i]] = positions[i]
-	for iteration in iterations:
-		var next := current.duplicate()
-		for i in count:
-			if boundary[i] == 1 or neighbors[i].is_empty():
-				continue
-			var mean := Vector3.ZERO
-			for n in neighbors[i]:
-				mean += current[n]
-			mean /= neighbors[i].size()
-			next[i] = current[i].lerp(mean, 0.5)
-		current = next
-	for i in positions.size():
-		positions[i] = current[key_of[i]]
-	return positions

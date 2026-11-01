@@ -22,10 +22,6 @@ ASSETS = [
     ("brown_mud_leaves_01", "textures", "1k"),
     ("gravel_floor", "textures", "1k"),
     # Roupas do sobrevivente
-    ("denim_fabric", "textures", "1k"),
-    ("cotton_jersey", "textures", "1k"),
-    ("brown_leather", "textures", "1k"),
-    ("fabric_leather_02", "textures", "1k"),
     # Modelos (props e natureza com orçamento de polígonos para celular)
     ("wooden_military_crate", "models", "1k"),
     ("old_military_crate", "models", "1k"),

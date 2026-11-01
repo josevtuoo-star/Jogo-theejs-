@@ -1,40 +1,38 @@
 class_name TouchActionButton
 extends Control
-## Botão circular de toque que pressiona uma ação do InputMap enquanto o
-## dedo estiver sobre ele. O roteamento multitoque é feito por TouchControls.
+## Botão circular de toque. O roteamento multitoque (qual dedo pertence a
+## qual botão) é feito por TouchControls; o botão só reage a press/release.
+##
+## Modos:
+## - HOLD: pressiona `action` enquanto o dedo estiver no botão (pular,
+##   atacar, defender, usar).
+## - TOGGLE: cada toque alterna o estado e emite `toggled`; não pressiona a
+##   ação sozinho. Quem decide o efeito é o dono da ação (ex.: TouchControls
+##   combina o botão de corrida com o direcional).
+## - TAP: pressiona `action` por um instante a cada toque (alternar câmera).
+
+signal toggled(active: bool)
+
+enum Mode { HOLD, TOGGLE, TAP }
 
 @export var action: StringName = &"jump"
+@export var mode: Mode = Mode.HOLD
 @export var label: String = "PULAR"
 @export_range(16.0, 200.0, 1.0) var radius: float = 52.0
-## Margem extra de acerto (pixels), facilitando o toque sem olhar.
-@export_range(0.0, 60.0, 1.0) var hit_padding: float = 14.0
+## Margem extra de acerto (pixels), facilitando o toque sem olhar. Quando as
+## margens de dois botões se sobrepõem, vale o botão de centro mais próximo.
+@export_range(0.0, 60.0, 1.0) var hit_padding: float = 10.0
 @export var idle_color: Color = Color(1, 1, 1, 0.2)
 @export var pressed_color: Color = Color(1, 1, 1, 0.45)
 @export var font_size: int = 18
-## Botões de alternância (ex.: câmera) mostram o estado: anel destacado e
-## rótulo próprio quando ativos.
+## Rótulo e anel destacados quando o estado está ativo (alternância).
 @export var active_label: String = ""
 @export var active_color: Color = Color(0.95, 0.78, 0.35, 0.9)
 
 var is_pressed: bool = false
 var is_active: bool = false
 var _feedback: float = 0.0
-
-
-## Estado de alternância exibido pelo botão (não pressiona a ação).
-func set_active(active: bool) -> void:
-	is_active = active
-	_feedback = 1.0
-	set_process(true)
-	queue_redraw()
-
-
-func _process(delta: float) -> void:
-	# Pulso curto confirmando a troca de estado.
-	_feedback = maxf(_feedback - delta * 3.0, 0.0)
-	queue_redraw()
-	if _feedback <= 0.0:
-		set_process(false)
+var _tap_frames: int = 0
 
 
 func _ready() -> void:
@@ -47,16 +45,33 @@ func get_center_global() -> Vector2:
 	return get_global_rect().get_center()
 
 
+func get_hit_radius_global() -> float:
+	return (radius + hit_padding) * get_global_transform().get_scale().x
+
+
 func contains_global_point(point: Vector2) -> bool:
-	var scale_factor := get_global_transform().get_scale().x
-	return point.distance_to(get_center_global()) <= (radius + hit_padding) * scale_factor
+	return point.distance_to(get_center_global()) <= get_hit_radius_global()
+
+
+## Distância do ponto ao centro em múltiplos do raio de acerto (< 1 = dentro).
+func hit_distance(point: Vector2) -> float:
+	return point.distance_to(get_center_global()) / get_hit_radius_global()
 
 
 func press() -> void:
 	if is_pressed:
 		return
 	is_pressed = true
-	Input.action_press(action)
+	match mode:
+		Mode.HOLD:
+			Input.action_press(action)
+		Mode.TOGGLE:
+			set_active(not is_active)
+			toggled.emit(is_active)
+		Mode.TAP:
+			Input.action_press(action)
+			_tap_frames = 2
+			set_process(true)
 	queue_redraw()
 
 
@@ -64,8 +79,32 @@ func release() -> void:
 	if not is_pressed:
 		return
 	is_pressed = false
-	Input.action_release(action)
+	if mode == Mode.HOLD:
+		Input.action_release(action)
 	queue_redraw()
+
+
+## Estado de alternância exibido pelo botão (não pressiona a ação).
+func set_active(active: bool) -> void:
+	if active == is_active:
+		return
+	is_active = active
+	_feedback = 1.0
+	set_process(true)
+	queue_redraw()
+
+
+func _process(delta: float) -> void:
+	if _tap_frames > 0:
+		# O toque dura dois quadros: tempo para o leitor de borda ver a ação.
+		_tap_frames -= 1
+		if _tap_frames == 0:
+			Input.action_release(action)
+	# Pulso curto confirmando a troca de estado.
+	_feedback = maxf(_feedback - delta * 3.0, 0.0)
+	queue_redraw()
+	if _feedback <= 0.0 and _tap_frames == 0:
+		set_process(false)
 
 
 func _notification(what: int) -> void:
@@ -73,6 +112,8 @@ func _notification(what: int) -> void:
 		release()
 	elif what == NOTIFICATION_EXIT_TREE:
 		release()
+		if _tap_frames > 0:
+			Input.action_release(action)
 
 
 func _draw() -> void:

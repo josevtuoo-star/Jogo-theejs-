@@ -24,6 +24,10 @@ func _ready() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	# Mouse emulado a partir do toque não é mouse: a visão por toque vem só de
+	# TouchControls (por índice de dedo). Ignorar evita giro duplicado.
+	if (event is InputEventMouse) and event.device == InputEvent.DEVICE_ID_EMULATION:
+		return
 	if event is InputEventMouseMotion:
 		if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 			_look_delta += (event as InputEventMouseMotion).screen_relative * mouse_sensitivity

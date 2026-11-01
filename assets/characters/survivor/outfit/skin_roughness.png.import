@@ -2,9 +2,9 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://ju851be6usys"
-path.s3tc="res://.godot/imported/brown_leather_arm_1k.jpg-19d313460d8c27e1fd3341c5cbc21ebd.s3tc.ctex"
-path.etc2="res://.godot/imported/brown_leather_arm_1k.jpg-19d313460d8c27e1fd3341c5cbc21ebd.etc2.ctex"
+uid="uid://c7xcmpi7inpog"
+path.s3tc="res://.godot/imported/skin_roughness.png-9299eef693ff1b035c19d97bd166448b.s3tc.ctex"
+path.etc2="res://.godot/imported/skin_roughness.png-9299eef693ff1b035c19d97bd166448b.etc2.ctex"
 metadata={
 "imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
@@ -12,8 +12,8 @@ metadata={
 
 [deps]
 
-source_file="res://assets/polyhaven/textures/brown_leather/brown_leather_arm_1k.jpg"
-dest_files=["res://.godot/imported/brown_leather_arm_1k.jpg-19d313460d8c27e1fd3341c5cbc21ebd.s3tc.ctex", "res://.godot/imported/brown_leather_arm_1k.jpg-19d313460d8c27e1fd3341c5cbc21ebd.etc2.ctex"]
+source_file="res://assets/characters/survivor/outfit/skin_roughness.png"
+dest_files=["res://.godot/imported/skin_roughness.png-9299eef693ff1b035c19d97bd166448b.s3tc.ctex", "res://.godot/imported/skin_roughness.png-9299eef693ff1b035c19d97bd166448b.etc2.ctex"]
 
 [params]
 
@@ -39,4 +39,4 @@ process/normal_map_invert_y=false
 process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
 process/size_limit=0
-detect_3d/compress_to=0
+detect_3d/compress_to=1

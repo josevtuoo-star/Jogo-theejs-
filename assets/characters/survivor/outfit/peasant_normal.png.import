@@ -2,9 +2,9 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://bjb3322pgwfoo"
-path.s3tc="res://.godot/imported/denim_fabric_normal_1k.jpg-175dec5ddaad0fa1429f19a1f8382e0e.s3tc.ctex"
-path.etc2="res://.godot/imported/denim_fabric_normal_1k.jpg-175dec5ddaad0fa1429f19a1f8382e0e.etc2.ctex"
+uid="uid://crlpyi6kwjyyk"
+path.s3tc="res://.godot/imported/peasant_normal.png-a08d25008c8a247ef864eb93517222a4.s3tc.ctex"
+path.etc2="res://.godot/imported/peasant_normal.png-a08d25008c8a247ef864eb93517222a4.etc2.ctex"
 metadata={
 "imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
@@ -12,8 +12,8 @@ metadata={
 
 [deps]
 
-source_file="res://assets/polyhaven/textures/denim_fabric/denim_fabric_normal_1k.jpg"
-dest_files=["res://.godot/imported/denim_fabric_normal_1k.jpg-175dec5ddaad0fa1429f19a1f8382e0e.s3tc.ctex", "res://.godot/imported/denim_fabric_normal_1k.jpg-175dec5ddaad0fa1429f19a1f8382e0e.etc2.ctex"]
+source_file="res://assets/characters/survivor/outfit/peasant_normal.png"
+dest_files=["res://.godot/imported/peasant_normal.png-a08d25008c8a247ef864eb93517222a4.s3tc.ctex", "res://.godot/imported/peasant_normal.png-a08d25008c8a247ef864eb93517222a4.etc2.ctex"]
 
 [params]
 
@@ -39,4 +39,4 @@ process/normal_map_invert_y=false
 process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
 process/size_limit=0
-detect_3d/compress_to=0
+detect_3d/compress_to=1

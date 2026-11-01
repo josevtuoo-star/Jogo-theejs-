@@ -2,9 +2,9 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cvprq5jj1fl6m"
-path.s3tc="res://.godot/imported/cotton_jersey_arm_1k.jpg-738c2af89d6b103a040afcf98e8141cd.s3tc.ctex"
-path.etc2="res://.godot/imported/cotton_jersey_arm_1k.jpg-738c2af89d6b103a040afcf98e8141cd.etc2.ctex"
+uid="uid://ct107hdedw0dg"
+path.s3tc="res://.godot/imported/ranger_normal.png-265d9ea221f970ee55f2776d709ab024.s3tc.ctex"
+path.etc2="res://.godot/imported/ranger_normal.png-265d9ea221f970ee55f2776d709ab024.etc2.ctex"
 metadata={
 "imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
@@ -12,8 +12,8 @@ metadata={
 
 [deps]
 
-source_file="res://assets/polyhaven/textures/cotton_jersey/cotton_jersey_arm_1k.jpg"
-dest_files=["res://.godot/imported/cotton_jersey_arm_1k.jpg-738c2af89d6b103a040afcf98e8141cd.s3tc.ctex", "res://.godot/imported/cotton_jersey_arm_1k.jpg-738c2af89d6b103a040afcf98e8141cd.etc2.ctex"]
+source_file="res://assets/characters/survivor/outfit/ranger_normal.png"
+dest_files=["res://.godot/imported/ranger_normal.png-265d9ea221f970ee55f2776d709ab024.s3tc.ctex", "res://.godot/imported/ranger_normal.png-265d9ea221f970ee55f2776d709ab024.etc2.ctex"]
 
 [params]
 
@@ -23,7 +23,7 @@ compress/lossy_quality=0.7
 compress/uastc_level=0
 compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
-compress/normal_map=0
+compress/normal_map=1
 compress/channel_pack=0
 mipmaps/generate=true
 mipmaps/limit=-1
@@ -39,4 +39,4 @@ process/normal_map_invert_y=false
 process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
 process/size_limit=0
-detect_3d/compress_to=0
+detect_3d/compress_to=1

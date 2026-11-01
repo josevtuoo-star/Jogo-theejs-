@@ -4,14 +4,14 @@ extends Control
 ##
 ## O toque é roteado por TouchControls. A base aparece onde o dedo tocou;
 ## a saída pressiona as ações de movimento do InputMap com intensidade
-## analógica. Empurrar o direcional além da borda, para frente, ativa a
-## corrida (zona de sprint), como em jogos móveis modernos.
+## analógica. Empurrar o direcional além da borda, para frente, entra na
+## zona de corrida (`is_sprint_zone`). O direcional NÃO pressiona a ação de
+## correr: TouchControls é o único dono dela e combina a zona com o botão.
 
 @export var action_left: StringName = &"move_left"
 @export var action_right: StringName = &"move_right"
 @export var action_forward: StringName = &"move_forward"
 @export var action_back: StringName = &"move_back"
-@export var action_sprint: StringName = &"sprint"
 
 ## Raio de deslocamento máximo do manche (pixels da viewport base).
 @export_range(20.0, 300.0, 1.0) var radius: float = 90.0
@@ -77,11 +77,10 @@ func _press_actions() -> void:
 	_set_action(action_right, maxf(output.x, 0.0))
 	_set_action(action_forward, maxf(-output.y, 0.0))
 	_set_action(action_back, maxf(output.y, 0.0))
-	_set_action(action_sprint, 1.0 if is_sprint_zone else 0.0)
 
 
 func _release_actions() -> void:
-	for action in [action_left, action_right, action_forward, action_back, action_sprint]:
+	for action in [action_left, action_right, action_forward, action_back]:
 		Input.action_release(action)
 
 

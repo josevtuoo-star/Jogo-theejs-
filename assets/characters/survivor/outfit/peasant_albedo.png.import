@@ -2,9 +2,9 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cd2s7if3ft47c"
-path.s3tc="res://.godot/imported/denim_fabric_arm_1k.jpg-8a4937af8ab00037e3a7c8a60f9fb7d7.s3tc.ctex"
-path.etc2="res://.godot/imported/denim_fabric_arm_1k.jpg-8a4937af8ab00037e3a7c8a60f9fb7d7.etc2.ctex"
+uid="uid://c0wiw6v3m7211"
+path.s3tc="res://.godot/imported/peasant_albedo.png-242f754398c2fe3d399cba8d4e18c24e.s3tc.ctex"
+path.etc2="res://.godot/imported/peasant_albedo.png-242f754398c2fe3d399cba8d4e18c24e.etc2.ctex"
 metadata={
 "imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
@@ -12,8 +12,8 @@ metadata={
 
 [deps]
 
-source_file="res://assets/polyhaven/textures/denim_fabric/denim_fabric_arm_1k.jpg"
-dest_files=["res://.godot/imported/denim_fabric_arm_1k.jpg-8a4937af8ab00037e3a7c8a60f9fb7d7.s3tc.ctex", "res://.godot/imported/denim_fabric_arm_1k.jpg-8a4937af8ab00037e3a7c8a60f9fb7d7.etc2.ctex"]
+source_file="res://assets/characters/survivor/outfit/peasant_albedo.png"
+dest_files=["res://.godot/imported/peasant_albedo.png-242f754398c2fe3d399cba8d4e18c24e.s3tc.ctex", "res://.godot/imported/peasant_albedo.png-242f754398c2fe3d399cba8d4e18c24e.etc2.ctex"]
 
 [params]
 
@@ -39,4 +39,4 @@ process/normal_map_invert_y=false
 process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
 process/size_limit=0
-detect_3d/compress_to=0
+detect_3d/compress_to=1

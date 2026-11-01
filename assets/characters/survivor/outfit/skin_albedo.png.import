@@ -2,9 +2,9 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cs4qjvisti63k"
-path.s3tc="res://.godot/imported/fabric_leather_02_albedo_1k.jpg-6d579e8641880a0cf0a0d28a04c6e030.s3tc.ctex"
-path.etc2="res://.godot/imported/fabric_leather_02_albedo_1k.jpg-6d579e8641880a0cf0a0d28a04c6e030.etc2.ctex"
+uid="uid://bjrb4043ehkv4"
+path.s3tc="res://.godot/imported/skin_albedo.png-c7473bc1dcb564d2be419c09fd68fb2c.s3tc.ctex"
+path.etc2="res://.godot/imported/skin_albedo.png-c7473bc1dcb564d2be419c09fd68fb2c.etc2.ctex"
 metadata={
 "imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
@@ -12,8 +12,8 @@ metadata={
 
 [deps]
 
-source_file="res://assets/polyhaven/textures/fabric_leather_02/fabric_leather_02_albedo_1k.jpg"
-dest_files=["res://.godot/imported/fabric_leather_02_albedo_1k.jpg-6d579e8641880a0cf0a0d28a04c6e030.s3tc.ctex", "res://.godot/imported/fabric_leather_02_albedo_1k.jpg-6d579e8641880a0cf0a0d28a04c6e030.etc2.ctex"]
+source_file="res://assets/characters/survivor/outfit/skin_albedo.png"
+dest_files=["res://.godot/imported/skin_albedo.png-c7473bc1dcb564d2be419c09fd68fb2c.s3tc.ctex", "res://.godot/imported/skin_albedo.png-c7473bc1dcb564d2be419c09fd68fb2c.etc2.ctex"]
 
 [params]
 
@@ -39,4 +39,4 @@ process/normal_map_invert_y=false
 process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
 process/size_limit=0
-detect_3d/compress_to=0
+detect_3d/compress_to=1

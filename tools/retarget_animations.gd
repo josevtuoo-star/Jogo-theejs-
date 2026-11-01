@@ -18,7 +18,9 @@ extends SceneTree
 ## eixos diferentes do personagem) e preserva a pose física. O deslocamento
 ## da pélvis é escalado pela razão entre as alturas de pélvis.
 
-const TARGET_SCENE := "res://assets/characters/survivor/Superhero_Male_FullBody.gltf"
+## Esqueleto do personagem (proporções "Regular" do pacote de roupas; mesma
+## hierarquia do corpo-base). Ver tools/build_survivor.gd.
+const TARGET_SCENE := "res://assets/_source/outfits_fantasy/Male_Peasant.gltf"
 const OUTPUT := "res://resources/animations/survivor_body.res"
 const FPS := 30.0
 ## Caminho das trilhas no personagem (relativo ao nó raiz do modelo).
@@ -55,6 +57,11 @@ const CLIPS := [
 	["res://assets/_source/UAL2_Standard.glb", "Consume", "consume", false],
 	["res://assets/_source/UAL2_Standard.glb", "Chest_Open", "open_container", false],
 	["res://assets/_source/UAL2_Standard.glb", "Walk_Carry", "walk_carry", true],
+	# Recuperação do gancho: termina com os dois punhos diante do rosto, a
+	# guarda de defesa (o quadro final é a pose de bloqueio).
+	["res://assets/_source/UAL2_Standard.glb", "Melee_Hook_Rec", "punch_hook_recover", false],
+	# Impacto recebido na defesa (tronco recua; usado só da cintura para cima).
+	["res://assets/_source/UAL2_Standard.glb", "Sword_Block", "block_impact", false],
 ]
 
 

@@ -13,6 +13,7 @@ func _init() -> void:
 	_add_action("look_up", 0.15, [_axis(JOY_AXIS_RIGHT_Y, -1.0)])
 	_add_action("look_down", 0.15, [_axis(JOY_AXIS_RIGHT_Y, 1.0)])
 	_add_action("sprint", 0.5, [_key(KEY_SHIFT), _button(JOY_BUTTON_LEFT_STICK)])
+	_add_action("block", 0.5, [_key(KEY_Q), _mouse(MOUSE_BUTTON_RIGHT), _button(JOY_BUTTON_LEFT_SHOULDER)])
 	_add_action("jump", 0.5, [_key(KEY_SPACE), _button(JOY_BUTTON_A)])
 	_add_action("crouch_toggle", 0.5, [_key(KEY_C), _button(JOY_BUTTON_B)])
 	_add_action("crouch_hold", 0.5, [_key(KEY_CTRL)])
@@ -25,6 +26,11 @@ func _init() -> void:
 	_add_action("toggle_mouse_capture", 0.5, [_key(KEY_ESCAPE)])
 	_add_action("debug_toggle", 0.5, [_key(KEY_F3)])
 	_add_action("debug_cycle_load", 0.5, [_key(KEY_F4)])
+	# A emulação de mouse a partir do toque continua ligada: é por ela que os
+	# botões da interface (Button, menus) recebem toques no Android. O que
+	# impede um arrasto de virar ataque é a regra de _mouse(): as ações de jogo
+	# só aceitam o mouse físico (dispositivo 0), nunca o emulado (-1).
+	ProjectSettings.set_setting("input_devices/pointing/emulate_mouse_from_touch", true)
 	var error := ProjectSettings.save()
 	print("Mapa de entrada salvo: ", error_string(error))
 	quit(0 if error == OK else 1)
@@ -41,9 +47,13 @@ func _key(keycode: Key) -> InputEventKey:
 	return event
 
 
+## Botões do mouse valem só para o mouse físico (dispositivo 0). Eventos de
+## mouse emulados a partir do toque usam InputEvent.DEVICE_ID_EMULATION (-1)
+## e não acionam ações: um arrasto na tela jamais vira ataque, mesmo que a
+## emulação seja ligada.
 func _mouse(button: MouseButton) -> InputEventMouseButton:
 	var event := InputEventMouseButton.new()
-	event.device = -1
+	event.device = 0
 	event.button_index = button
 	return event
 

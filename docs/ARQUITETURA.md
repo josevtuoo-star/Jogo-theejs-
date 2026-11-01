@@ -88,13 +88,14 @@ Cada etapa só começa depois que a anterior passa nos testes e é validada no a
 | 2 | **Física avançada de movimentação** | perfis de velocidade, aderência por superfície, inércia, carga, arrasto do ar, encostas, impactos | **concluída** (`ETAPA_02_FISICA_AVANCADA.md`) |
 | 3 | **Animações em primeira pessoa** | rig e 19 animações autorais, animador em camadas sincronizado com a passada, vida e lesões, interação, combate corpo a corpo, morte e renascer, HUD | **concluída** (`ETAPA_03_ANIMACOES.md`) |
 | 4 | **Reconstrução visual e câmera** | corpo humano completo (CC0) com roupas, animações retargetadas, primeira pessoa verdadeira, câmera 1ª/3ª pessoa, ragdoll, cenário PBR, HUD | **concluída** (`ETAPA_04_RECONSTRUCAO.md`) |
-| 5 | Interação e inventário | itens como `RigidBody3D` reais, pegar e soltar (animação `pickup` já existe), inventário por peso e volume (define `carried_mass`), portas, UI de toque | próxima |
-| 6 | Status vitais | fome, sede, sangramento, cura; a vida e as lesões já existem | — |
-| 7 | Armas | armas brancas e de fogo (recuo, dispersão, munição) sobre o combate da etapa 3 | — |
-| 8 | Zumbis | mesmo esqueleto do sobrevivente (Quaternius UAL 1/2, CC0), `NavigationAgent3D`, percepção por visão e ruído (passos com superfície), ataques com `receive_hit` | — |
-| 9 | Ragdoll parcial e reações | o ragdoll de morte já existe (etapa 4); falta mistura física parcial em golpes fortes e zumbis | — |
-| 10 | Otimização Android | perfis de qualidade, LOD, testes em aparelhos reais | — |
-| 11 | PC | configurações gráficas e de controle | — |
+| 5 | **Correção profunda da jogabilidade** | origem do soco ao arrastar no toque, controles por índice de dedo e áreas exclusivas, personagem em proporções naturais com roupa modelada, pés plantados, inclinação pela aceleração, curvas centrípetas, combate em máquina de estados com impacto pelo braço, defesa | **concluída** (`ETAPA_05_JOGABILIDADE.md`) |
+| 6 | Interação e inventário | itens como `RigidBody3D` reais, pegar e soltar (animação `pickup` já existe), inventário por peso e volume (define `carried_mass`), portas, UI de toque | próxima |
+| 7 | Status vitais | fome, sede, sangramento, cura; a vida e as lesões já existem | — |
+| 8 | Armas | armas brancas e de fogo (recuo, dispersão, munição) sobre o combate da etapa 3 | — |
+| 9 | Zumbis | mesmo esqueleto do sobrevivente (Quaternius UAL 1/2, CC0), `NavigationAgent3D`, percepção por visão e ruído (passos com superfície), ataques com `receive_hit` | — |
+| 10 | Ragdoll parcial e reações | o ragdoll de morte já existe (etapa 4); falta mistura física parcial em golpes fortes e zumbis | — |
+| 11 | Otimização Android | perfis de qualidade, LOD, testes em aparelhos reais | — |
+| 12 | PC | configurações gráficas e de controle | — |
 
 O mundo aberto não faz parte destas etapas.
 

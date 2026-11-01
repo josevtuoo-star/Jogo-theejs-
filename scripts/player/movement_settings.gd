@@ -133,7 +133,7 @@ extends Resource
 ## apoiado não desliza no chão.
 @export_range(0.2, 2.0, 0.01) var walk_stride: float = 0.67
 @export_range(0.2, 3.0, 0.01) var jog_stride: float = 1.44
-@export_range(0.2, 3.0, 0.01) var sprint_stride: float = 1.38
+@export_range(0.2, 3.0, 0.01) var sprint_stride: float = 1.28
 @export_range(0.2, 2.0, 0.01) var crouch_stride: float = 0.70
 
 @export_group("Resistência")

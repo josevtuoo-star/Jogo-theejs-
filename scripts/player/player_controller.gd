@@ -62,6 +62,13 @@ var look_enabled: bool = true
 var third_person: bool = false
 ## Velocidade de giro do corpo em terceira pessoa (graus/s).
 var body_turn_speed_degrees: float = 540.0
+## Desvio máximo entre a frente do corpo e a direção do deslocamento em
+## terceira pessoa: o corpo conduz o movimento, então mudanças bruscas de
+## direção viram curvas, com perda de velocidade.
+var max_travel_offset_degrees: float = 35.0
+## Multiplicador de velocidade imposto por ações (defesa, golpe carregado).
+## Abaixo de 1 também impede a corrida.
+var action_speed_multiplier: float = 1.0
 
 var stance: Stance = Stance.STANDING
 var movement_state: MovementState = MovementState.IDLE
@@ -341,7 +348,7 @@ func _update_sprint(delta: float, grounded: bool) -> void:
 	var moving_forward := _move_input.y < -0.5 or (third_person and _move_input.length() > 0.5)
 	var allowed := _sprint_held and moving_forward and stance == Stance.STANDING and not is_sliding \
 			and _stagger_timer <= 0.0 and (stamina == null or stamina.can_sprint()) \
-			and get_leg_injury() < 0.5
+			and get_leg_injury() < 0.5 and action_speed_multiplier >= 0.99
 	if grounded:
 		is_sprinting = allowed
 	elif not allowed:
@@ -405,7 +412,12 @@ func _apply_ground_movement(delta: float) -> void:
 	var target_speed := 0.0
 	_uphill_amount = 0.0
 	if wish_direction != Vector3.ZERO:
-		target_speed = get_target_speed() * _get_slope_multiplier(wish_direction)
+		var turn_factor := 1.0
+		if third_person and _face_view_timer <= 0.0:
+			var steered := _steer_toward_facing(wish_direction)
+			turn_factor = steered.w
+			wish_direction = Vector3(steered.x, steered.y, steered.z)
+		target_speed = get_target_speed() * _get_slope_multiplier(wish_direction) * turn_factor
 	var target := wish_direction * target_speed
 
 	var horizontal := Vector3(velocity.x, 0.0, velocity.z)
@@ -432,24 +444,50 @@ func _apply_ground_movement(delta: float) -> void:
 	velocity.z = horizontal.z
 
 
-## Acelera ao longo da direção desejada e freia a componente lateral
-## separadamente: curvas fechadas perdem velocidade como um corpo real.
+## Terceira pessoa: o deslocamento segue a frente do corpo (que gira com
+## velocidade limitada) e não a entrada crua. Retorna a direção (xyz) e o
+## fator de velocidade da curva (w): curvas fechadas perdem velocidade e,
+## quase parado, uma inversão de sentido gira o corpo no lugar antes de andar.
+func _steer_toward_facing(wish_direction: Vector3) -> Vector4:
+	var facing := -global_basis.z
+	facing.y = 0.0
+	facing = facing.normalized()
+	var angle := facing.signed_angle_to(wish_direction, Vector3.UP)
+	var limit := deg_to_rad(max_travel_offset_degrees)
+	var direction := facing.rotated(Vector3.UP, clampf(angle, -limit, limit))
+	var factor := lerpf(1.0, 0.35, clampf((absf(angle) - deg_to_rad(30.0)) / deg_to_rad(120.0), 0.0, 1.0))
+	if get_horizontal_speed() < 1.0 and absf(angle) > deg_to_rad(100.0):
+		factor = 0.0
+	return Vector4(direction.x, direction.y, direction.z, factor)
+
+
+## Muda a velocidade em direção ao alvo como um corpo com peso:
+## - mudança de direção até 100°: a velocidade CURVA (força centrípeta),
+##   girando no máximo o que `turn_friction` (m/s² laterais) permite, e o
+##   módulo acelera/freia separadamente. Correr e virar a câmera não "freia"
+##   o corpo: só o que excede a aderência (círculo de atrito, depois) se perde;
+## - inversão (> 100°): freia na direção antiga e acelera na nova.
 func _accelerate(current: Vector3, target: Vector3, acceleration: float,
 		deceleration: float, turn_friction: float, delta: float) -> Vector3:
 	if target.length_squared() < 0.0001:
 		return current.move_toward(Vector3.ZERO, deceleration * delta)
 	var target_speed := target.length()
 	var direction := target / target_speed
-	var along := current.dot(direction)
-	var lateral := current - direction * along
-	lateral = lateral.move_toward(Vector3.ZERO, turn_friction * delta)
-	if along < 0.0:
+	var speed := current.length()
+	if speed < 0.05:
+		return direction * move_toward(speed, target_speed, acceleration * delta)
+	var current_direction := current / speed
+	var angle := current_direction.angle_to(direction)
+	if angle > deg_to_rad(100.0):
+		var along := current.dot(direction)
+		var lateral := current - direction * along
+		lateral = lateral.move_toward(Vector3.ZERO, turn_friction * delta)
 		along = move_toward(along, target_speed, deceleration * delta)
-	elif along < target_speed:
-		along = move_toward(along, target_speed, acceleration * delta)
-	else:
-		along = move_toward(along, target_speed, deceleration * delta)
-	return direction * along + lateral
+		return direction * along + lateral
+	var max_turn := turn_friction * delta / speed
+	var turned := current_direction.slerp(direction, minf(1.0, max_turn / maxf(angle, 0.0001))).normalized()
+	var rate := acceleration if speed < target_speed else deceleration
+	return turned * move_toward(speed, target_speed, rate * delta)
 
 
 ## Velocidade desejada (m/s) para a entrada atual, antes do efeito da inclinação.
@@ -472,7 +510,7 @@ func get_target_speed() -> float:
 		base = lerpf(settings.walk_speed, settings.jog_speed, t)
 	if is_walk_mode and not crouched:
 		base = minf(base, settings.walk_speed)
-	return base * _get_direction_multiplier() * external_speed_multiplier * _get_stagger_multiplier() \
+	return base * _get_direction_multiplier() * external_speed_multiplier * action_speed_multiplier * _get_stagger_multiplier() \
 			* get_load_speed_multiplier() * current_surface.speed_multiplier * (1.0 - 0.45 * get_leg_injury())
 
 

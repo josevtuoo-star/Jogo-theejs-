@@ -7,7 +7,7 @@
 [node name="TouchControlsLayer" type="CanvasLayer"]
 layer = 10
 
-[node name="TouchControls" type="Control" parent="." node_paths=PackedStringArray("joystick", "buttons")]
+[node name="TouchControls" type="Control" parent="." node_paths=PackedStringArray("joystick", "buttons", "sprint_button")]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
@@ -17,7 +17,8 @@ grow_vertical = 2
 mouse_filter = 2
 script = ExtResource("1_controls")
 joystick = NodePath("Joystick")
-buttons = [NodePath("JumpButton"), NodePath("CrouchButton"), NodePath("AttackButton"), NodePath("InteractButton"), NodePath("CameraButton")]
+buttons = [NodePath("AttackButton"), NodePath("JumpButton"), NodePath("CrouchButton"), NodePath("SprintButton"), NodePath("BlockButton"), NodePath("InteractButton"), NodePath("CameraButton")]
+sprint_button = NodePath("SprintButton")
 
 [node name="Joystick" type="Control" parent="TouchControls"]
 layout_mode = 1
@@ -29,70 +30,30 @@ grow_vertical = 2
 mouse_filter = 2
 script = ExtResource("2_joystick")
 
-[node name="JumpButton" type="Control" parent="TouchControls"]
-custom_minimum_size = Vector2(104, 104)
-layout_mode = 1
-anchors_preset = 3
-anchor_left = 1.0
-anchor_top = 1.0
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = -150.0
-offset_top = -176.0
-offset_right = -46.0
-offset_bottom = -72.0
-grow_horizontal = 0
-grow_vertical = 0
-mouse_filter = 2
-script = ExtResource("3_button")
-action = &"jump"
-label = "PULAR"
-radius = 52.0
-
-[node name="CrouchButton" type="Control" parent="TouchControls"]
-custom_minimum_size = Vector2(88, 88)
-layout_mode = 1
-anchors_preset = 3
-anchor_left = 1.0
-anchor_top = 1.0
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = -268.0
-offset_top = -118.0
-offset_right = -180.0
-offset_bottom = -30.0
-grow_horizontal = 0
-grow_vertical = 0
-mouse_filter = 2
-script = ExtResource("3_button")
-action = &"crouch_toggle"
-label = "AGACHAR"
-radius = 44.0
-font_size = 15
-
 [node name="AttackButton" type="Control" parent="TouchControls"]
-custom_minimum_size = Vector2(116, 116)
+custom_minimum_size = Vector2(124, 124)
 layout_mode = 1
 anchors_preset = 3
 anchor_left = 1.0
 anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = -176.0
-offset_top = -330.0
-offset_right = -60.0
-offset_bottom = -214.0
+offset_left = -174.0
+offset_top = -212.0
+offset_right = -50.0
+offset_bottom = -88.0
 grow_horizontal = 0
 grow_vertical = 0
 mouse_filter = 2
 script = ExtResource("3_button")
 action = &"attack"
+mode = 0
 label = "ATACAR"
-radius = 58.0
+radius = 62.0
 idle_color = Color(0.85, 0.3, 0.25, 0.22)
 pressed_color = Color(0.95, 0.35, 0.3, 0.5)
 
-[node name="InteractButton" type="Control" parent="TouchControls"]
+[node name="BlockButton" type="Control" parent="TouchControls"]
 custom_minimum_size = Vector2(88, 88)
 layout_mode = 1
 anchors_preset = 3
@@ -100,18 +61,108 @@ anchor_left = 1.0
 anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = -300.0
-offset_top = -250.0
-offset_right = -212.0
-offset_bottom = -162.0
+offset_left = -156.0
+offset_top = -344.0
+offset_right = -68.0
+offset_bottom = -256.0
+grow_horizontal = 0
+grow_vertical = 0
+mouse_filter = 2
+script = ExtResource("3_button")
+action = &"block"
+mode = 0
+label = "DEFESA"
+radius = 44.0
+font_size = 15
+
+[node name="JumpButton" type="Control" parent="TouchControls"]
+custom_minimum_size = Vector2(96, 96)
+layout_mode = 1
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -306.0
+offset_top = -134.0
+offset_right = -210.0
+offset_bottom = -38.0
+grow_horizontal = 0
+grow_vertical = 0
+mouse_filter = 2
+script = ExtResource("3_button")
+action = &"jump"
+mode = 0
+label = "PULAR"
+radius = 48.0
+
+[node name="CrouchButton" type="Control" parent="TouchControls"]
+custom_minimum_size = Vector2(84, 84)
+layout_mode = 1
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -422.0
+offset_top = -108.0
+offset_right = -338.0
+offset_bottom = -24.0
+grow_horizontal = 0
+grow_vertical = 0
+mouse_filter = 2
+script = ExtResource("3_button")
+action = &"crouch_toggle"
+mode = 0
+label = "AGACHAR"
+radius = 42.0
+font_size = 14
+
+[node name="SprintButton" type="Control" parent="TouchControls"]
+custom_minimum_size = Vector2(88, 88)
+layout_mode = 1
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -306.0
+offset_top = -266.0
+offset_right = -218.0
+offset_bottom = -178.0
+grow_horizontal = 0
+grow_vertical = 0
+mouse_filter = 2
+script = ExtResource("3_button")
+action = &"sprint"
+mode = 1
+label = "CORRER"
+radius = 44.0
+font_size = 15
+active_label = "CORRENDO"
+active_color = Color(1, 0.75, 0.3, 0.9)
+
+[node name="InteractButton" type="Control" parent="TouchControls"]
+custom_minimum_size = Vector2(80, 80)
+layout_mode = 1
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -438.0
+offset_top = -226.0
+offset_right = -358.0
+offset_bottom = -146.0
 grow_horizontal = 0
 grow_vertical = 0
 mouse_filter = 2
 script = ExtResource("3_button")
 action = &"interact"
+mode = 0
 label = "USAR"
-radius = 44.0
-font_size = 16
+radius = 40.0
+font_size = 15
 
 [node name="CameraButton" type="Control" parent="TouchControls" groups=["camera_toggle_button"]]
 custom_minimum_size = Vector2(80, 80)
@@ -127,6 +178,7 @@ grow_horizontal = 0
 mouse_filter = 2
 script = ExtResource("3_button")
 action = &"toggle_camera"
+mode = 2
 label = "1ª P"
 radius = 40.0
 font_size = 17

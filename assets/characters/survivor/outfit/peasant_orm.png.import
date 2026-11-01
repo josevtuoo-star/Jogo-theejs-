@@ -2,9 +2,9 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://bgm8ys163rhij"
-path.s3tc="res://.godot/imported/cotton_jersey_albedo_1k.jpg-82d95381bfba566d6f816f7ceb6ab0ae.s3tc.ctex"
-path.etc2="res://.godot/imported/cotton_jersey_albedo_1k.jpg-82d95381bfba566d6f816f7ceb6ab0ae.etc2.ctex"
+uid="uid://b7mjee71bpsan"
+path.s3tc="res://.godot/imported/peasant_orm.png-a9cc562ca5b18d2a828381ba3e4cfc08.s3tc.ctex"
+path.etc2="res://.godot/imported/peasant_orm.png-a9cc562ca5b18d2a828381ba3e4cfc08.etc2.ctex"
 metadata={
 "imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
@@ -12,8 +12,8 @@ metadata={
 
 [deps]
 
-source_file="res://assets/polyhaven/textures/cotton_jersey/cotton_jersey_albedo_1k.jpg"
-dest_files=["res://.godot/imported/cotton_jersey_albedo_1k.jpg-82d95381bfba566d6f816f7ceb6ab0ae.s3tc.ctex", "res://.godot/imported/cotton_jersey_albedo_1k.jpg-82d95381bfba566d6f816f7ceb6ab0ae.etc2.ctex"]
+source_file="res://assets/characters/survivor/outfit/peasant_orm.png"
+dest_files=["res://.godot/imported/peasant_orm.png-a9cc562ca5b18d2a828381ba3e4cfc08.s3tc.ctex", "res://.godot/imported/peasant_orm.png-a9cc562ca5b18d2a828381ba3e4cfc08.etc2.ctex"]
 
 [params]
 
@@ -39,4 +39,4 @@ process/normal_map_invert_y=false
 process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
 process/size_limit=0
-detect_3d/compress_to=0
+detect_3d/compress_to=1

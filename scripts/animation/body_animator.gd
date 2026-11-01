@@ -18,6 +18,13 @@ extends Node3D
 ##   - tronco e pescoço dobram com a inclinação do olhar (os braços seguem a mira)
 ##   - em terceira pessoa parado, a cabeça acompanha a direção da câmera
 ##   - em primeira pessoa a cabeça é escondida e a câmera fica nos olhos
+##   - pés plantados: girando parado, as pernas ficam no lugar (a pélvis
+##     gira de volta) e, passado o limite ou depois de uma pausa, dão um
+##     passo de ajuste com o ciclo de caminhada capturado
+##   - inclinação: o tronco inclina na direção da aceleração real da cápsula
+##     (curvas, arrancadas e frenagens), como um corpo com peso
+##   - guarda: com a defesa ativa, braços diante do rosto (quadro final da
+##     recuperação do gancho, captura real), só da cintura para cima
 
 signal animation_event(event: StringName, animation: StringName)
 signal overlay_finished(slot: StringName, animation: StringName)
@@ -37,6 +44,15 @@ const PITCH_BONES := {"spine_01": 0.05, "spine_02": 0.10, "spine_03": 0.15, "nec
 const TWIST_BONES := {"spine_01": 0.3, "spine_02": 0.3, "spine_03": 0.4}
 ## Olhar da cabeça em terceira pessoa (soma = 1).
 const HEAD_LOOK_BONES := {"spine_03": 0.3, "neck_01": 0.3, "Head": 0.4}
+## Inclinação pela aceleração, da lombar para o peito (soma = 1).
+const LEAN_BONES := {"spine_01": 0.45, "spine_02": 0.35, "spine_03": 0.2}
+## Clipe e quadro (fração) usados como pose de guarda.
+const GUARD_CLIP := &"punch_hook_recover"
+const GUARD_FRAME := 0.97
+## Guarda em primeira pessoa: punhos diante do rosto, no espaço da câmera
+## (x direita, y cima, -z frente; m). A mão esquerda vai à frente (base de boxe).
+const FP_GUARD_LEFT := Vector3(-0.13, -0.12, -0.36)
+const FP_GUARD_RIGHT := Vector3(0.14, -0.15, -0.29)
 
 @export var player: PlayerController
 @export var health: HealthComponent
@@ -60,6 +76,18 @@ const HEAD_LOOK_BONES := {"spine_03": 0.3, "neck_01": 0.3, "Head": 0.4}
 @export_range(0.0, 10.0, 0.1) var landing_min_impact: float = 3.0
 ## Deslocamento do olho em relação ao osso da cabeça (espaço do personagem).
 @export var eye_offset: Vector3 = Vector3(0.0, 0.075, -0.085)
+
+@export_group("Pés plantados e inclinação")
+## Torção máxima entre pernas e tronco antes de um passo de ajuste (graus).
+@export_range(10.0, 90.0, 1.0) var max_planted_twist: float = 50.0
+## Torção que, mantida por `settle_delay`, também provoca o passo (graus).
+@export_range(0.0, 45.0, 1.0) var settle_twist: float = 15.0
+@export_range(0.1, 3.0, 0.05) var settle_delay: float = 0.7
+## Duração do passo de ajuste (s).
+@export_range(0.15, 1.5, 0.01) var turn_step_time: float = 0.45
+## Fração do ângulo de equilíbrio (atan(a/g)) usada na inclinação.
+@export_range(0.0, 1.0, 0.01) var lean_amount: float = 0.6
+@export_range(0.0, 30.0, 0.5) var max_lean_degrees: float = 12.0
 
 class Clip:
 	var animation: Animation
@@ -128,6 +156,18 @@ var _limp_weight: float = 0.0
 var _lower_body_yaw: float = 0.0
 var _backward_weight: float = 0.0
 var _head_look_yaw: float = 0.0
+var _guard_target: bool = false
+var _guard_weight: float = 0.0
+## 1 em primeira pessoa (suavizado): a guarda passa para a IK diante dos olhos.
+var _first_person_weight: float = 0.0
+var _planted_yaw: float = 0.0
+var _turn_offset: float = 0.0
+var _turn_step: float = -1.0
+var _turn_step_from: float = 0.0
+var _turn_settle_time: float = 0.0
+var _last_body_yaw: float = 0.0
+var _previous_velocity: Vector3 = Vector3.ZERO
+var _acceleration: Vector3 = Vector3.ZERO
 ## Tempo da última atualização, em microssegundos (diagnóstico de desempenho).
 var last_update_usec: int = 0
 
@@ -166,6 +206,8 @@ func _ready() -> void:
 		_clips[StringName(anim_name)] = _build_clip(animation_player.get_animation(anim_name))
 	animation_player.active = false
 	if player != null:
+		_planted_yaw = player.rotation.y
+		_last_body_yaw = _planted_yaw
 		player.landed.connect(_on_player_landed)
 		player.jumped.connect(func(_speed: float) -> void: _air_time = 0.0)
 	if health != null:
@@ -271,12 +313,41 @@ func stop(slot: StringName) -> void:
 
 func get_layer_weights() -> Dictionary:
 	return {"move": _move_weight, "air": _air_weight, "limp": _limp_weight, "crouch": _crouch_weight(),
-			"backward": _backward_weight, "lower_body_yaw": _lower_body_yaw}
+			"backward": _backward_weight, "lower_body_yaw": _lower_body_yaw, "guard": _guard_weight,
+			"turn_offset": _turn_offset, "turn_step": _turn_step, "lean": get_lean_degrees()}
+
+
+## Defesa: braços na guarda (com transição) enquanto ativa.
+func set_guard(enabled: bool) -> void:
+	_guard_target = enabled
+
+
+func is_guarding() -> bool:
+	return _guard_target
+
+
+## Inclinação atual do tronco pela aceleração (graus).
+func get_lean_degrees() -> float:
+	return rad_to_deg(minf(atan(_acceleration.length() / 9.81) * lean_amount, deg_to_rad(max_lean_degrees)))
+
+
+## Aceleração horizontal suavizada do corpo (m/s², mundo).
+func get_body_acceleration() -> Vector3:
+	return _acceleration
 
 
 func reset_state() -> void:
 	_overlays.clear()
 	_retiring.clear()
+	_guard_target = false
+	_guard_weight = 0.0
+	_acceleration = Vector3.ZERO
+	_previous_velocity = Vector3.ZERO
+	_turn_step = -1.0
+	_turn_offset = 0.0
+	if player != null:
+		_planted_yaw = player.rotation.y
+		_last_body_yaw = _planted_yaw
 	_air_weight = 0.0
 	_air_time = 0.0
 	_air_latched = false
@@ -366,6 +437,58 @@ func _update_weights(delta: float) -> void:
 		look_target = clampf(wrapf(player.get_view_yaw() - player.rotation.y, -PI, PI),
 				-deg_to_rad(max_head_look_yaw), deg_to_rad(max_head_look_yaw))
 	_head_look_yaw = _approach(_head_look_yaw, look_target, 6.0, delta)
+	_guard_weight = _approach(_guard_weight, 1.0 if _guard_target else 0.0, 12.0, delta)
+	_first_person_weight = _approach(_first_person_weight, 1.0 if hide_head else 0.0, 10.0, delta)
+	_update_planted_feet(delta, grounded, speed)
+	_update_acceleration(delta, grounded)
+
+
+## Pernas plantadas ao girar parado; passo de ajuste quando a torção passa do
+## limite ou fica parada torcida por algum tempo.
+func _update_planted_feet(delta: float, grounded: bool, speed: float) -> void:
+	var body_yaw := player.rotation.y
+	var yaw_rate := absf(angle_difference(_last_body_yaw, body_yaw)) / maxf(delta, 0.0001)
+	_last_body_yaw = body_yaw
+	var still := grounded and speed < 0.3 and _air_weight < 0.3 and not _overlays.has(SLOT_DEATH)
+	if not still:
+		# Andando, as pernas já seguem o corpo (a locomoção cuida dos pés).
+		_planted_yaw = body_yaw
+		_turn_step = -1.0
+		_turn_settle_time = 0.0
+		_turn_offset = _approach(_turn_offset, 0.0, 10.0, delta)
+		return
+	var limit := deg_to_rad(max_planted_twist)
+	if _turn_step >= 0.0:
+		_turn_step += delta / turn_step_time
+		var eased := smoothstep(0.0, 1.0, minf(_turn_step, 1.0))
+		_planted_yaw = lerp_angle(_turn_step_from, body_yaw, eased)
+		if _turn_step >= 1.0:
+			_turn_step = -1.0
+			_planted_yaw = body_yaw
+			_turn_settle_time = 0.0
+	else:
+		var offset := angle_difference(body_yaw, _planted_yaw)
+		_turn_settle_time = _turn_settle_time + delta if yaw_rate < deg_to_rad(20.0) else 0.0
+		if absf(offset) > limit or (absf(offset) > deg_to_rad(settle_twist) and _turn_settle_time > settle_delay):
+			_turn_step = 0.0
+			_turn_step_from = _planted_yaw
+	# Girando mais rápido que o passo: as pernas são arrastadas no limite.
+	var current := angle_difference(body_yaw, _planted_yaw)
+	if absf(current) > limit * 1.3:
+		_planted_yaw = body_yaw + signf(current) * limit * 1.3
+	_turn_offset = angle_difference(body_yaw, _planted_yaw)
+
+
+## Aceleração horizontal real da cápsula, suavizada (sem picos de teleporte).
+func _update_acceleration(delta: float, grounded: bool) -> void:
+	var velocity := player.velocity
+	velocity.y = 0.0
+	var raw := (velocity - _previous_velocity) / maxf(delta, 0.0001)
+	_previous_velocity = velocity
+	if not grounded or raw.length() > 40.0:
+		raw = Vector3.ZERO
+	raw = raw.limit_length(12.0)
+	_acceleration = _acceleration.lerp(raw, 1.0 - exp(-6.0 * delta))
 
 
 func _approach(current: float, target: float, rate: float, delta: float) -> float:
@@ -425,6 +548,10 @@ func _compose() -> void:
 				_sample_gait(&"crouch_walk", player.get_gait_phase(), _scratch)
 				_mix(_layer, _scratch, _move_weight)
 			_mix(_pose, _layer, crouch)
+		if _turn_step >= 0.0:
+			# Passo de ajuste: meio ciclo de caminhada só nas pernas.
+			_sample_gait(&"walk", minf(_turn_step, 1.0) * 0.5, _scratch)
+			_mix_lower(_pose, _scratch, sin(PI * minf(_turn_step, 1.0)) * 0.8)
 		if _air_weight > 0.001:
 			# Impulsão a partir da decolagem (0,35 s do clipe), depois queda.
 			_sample(&"jump_start", 0.35 + _air_time, _layer)
@@ -433,6 +560,10 @@ func _compose() -> void:
 				_sample(&"fall", _idle_time, _scratch)
 				_mix(_layer, _scratch, fall_amount)
 			_mix(_pose, _layer, _air_weight)
+	if _guard_weight > 0.001 and _clips.has(GUARD_CLIP):
+		var guard: Clip = _clips[GUARD_CLIP]
+		_sample_clip(guard, guard.animation.length * GUARD_FRAME, _layer)
+		_mix_clip(_pose, _layer, guard, _guard_weight, true)
 	for old in _retiring:
 		_sample_clip(old.clip, old.time, _layer)
 		_mix_clip(_pose, _layer, old.clip, old.weight(), old.upper_body)
@@ -502,6 +633,17 @@ func _mix(target: Pose, source: Pose, weight: float) -> void:
 	target.pelvis = target.pelvis.lerp(source.pelvis, weight)
 
 
+## Mistura só a metade inferior (pélvis e pernas).
+func _mix_lower(target: Pose, source: Pose, weight: float) -> void:
+	if weight <= 0.0:
+		return
+	weight = minf(weight, 1.0)
+	for bone in _bone_count:
+		if _upper_mask[bone] == 0:
+			target.rotations[bone] = target.rotations[bone].slerp(source.rotations[bone], weight)
+	target.pelvis = target.pelvis.lerp(source.pelvis, weight)
+
+
 func _mix_clip(target: Pose, source: Pose, clip: Clip, weight: float, upper_body: bool) -> void:
 	if weight <= 0.0:
 		return
@@ -520,10 +662,25 @@ func _apply() -> void:
 	skeleton.set_bone_pose_position(_pelvis_bone, _pose.pelvis)
 	if player != null and not _overlays.has(SLOT_DEATH):
 		# Pélvis gira para o lado do movimento; o tronco gira de volta.
-		if absf(_lower_body_yaw) > 0.001:
-			_rotate_global(_pelvis_bone, Vector3.UP, _lower_body_yaw)
+		var twist := _lower_body_yaw + _turn_offset
+		if absf(twist) > 0.001:
+			_rotate_global(_pelvis_bone, Vector3.UP, twist)
 			for bone_name in TWIST_BONES:
-				_rotate_global(skeleton.find_bone(bone_name), Vector3.UP, -_lower_body_yaw * TWIST_BONES[bone_name])
+				_rotate_global(skeleton.find_bone(bone_name), Vector3.UP, -twist * TWIST_BONES[bone_name])
+		# Inclinação na direção da aceleração (no espaço do esqueleto).
+		var lean := deg_to_rad(get_lean_degrees())
+		if lean > 0.001:
+			var local := skeleton.global_basis.orthonormalized().inverse() * _acceleration
+			local.y = 0.0
+			if local.length_squared() > 0.0001:
+				var axis := Vector3.UP.cross(local.normalized()).normalized()
+				for bone_name in LEAN_BONES:
+					_rotate_global(skeleton.find_bone(bone_name), axis, lean * LEAN_BONES[bone_name])
+		# Guarda em primeira pessoa: os punhos vão para diante dos olhos (IK de
+		# dois ossos), cotovelos para baixo. Em terceira pessoa vale a captura.
+		var fp_guard := _guard_weight * _first_person_weight
+		if fp_guard > 0.001 and not _overlays.has(SLOT_ACTION):
+			_apply_first_person_guard(fp_guard)
 		# Cabeça acompanha a câmera (terceira pessoa).
 		if absf(_head_look_yaw) > 0.001:
 			for bone_name in HEAD_LOOK_BONES:
@@ -535,6 +692,66 @@ func _apply() -> void:
 			for bone_name in PITCH_BONES:
 				_rotate_global(skeleton.find_bone(bone_name), Vector3.LEFT, pitch * PITCH_BONES[bone_name])
 	_apply_view_mode()
+
+
+func _apply_first_person_guard(weight: float) -> void:
+	var view := Basis.from_euler(Vector3(player.get_pitch(), player.get_view_yaw(), 0.0))
+	var eye := get_eye_position()
+	var to_skeleton := skeleton.global_transform.affine_inverse()
+	for side in [["_l", FP_GUARD_LEFT, -1.0], ["_r", FP_GUARD_RIGHT, 1.0]]:
+		var target: Vector3 = to_skeleton * (eye + view * (side[1] as Vector3))
+		# Polo: abaixo e para fora do ombro (cotovelo baixo, junto ao corpo).
+		var outward := view.x * float(side[2])
+		var shoulder_world := skeleton.global_transform * skeleton.get_bone_global_pose(skeleton.find_bone("upperarm" + side[0])).origin
+		var pole: Vector3 = to_skeleton * (shoulder_world + Vector3.DOWN * 0.6 + outward * 0.25 - view.z * 0.1)
+		var hand := skeleton.find_bone("hand" + side[0])
+		_solve_two_bone_ik(skeleton.find_bone("upperarm" + side[0]), skeleton.find_bone("lowerarm" + side[0]),
+				hand, target, pole, weight)
+		# Punho fechado com os nós dos dedos para a frente e para cima (o dorso
+		# da mão voltado para fora), não o ângulo da captura feita de longe.
+		var knuckles := skeleton.get_bone_global_pose(skeleton.find_bone("middle_01" + side[0])).origin \
+				- skeleton.get_bone_global_pose(hand).origin
+		var aim: Vector3 = to_skeleton.basis * (view * Vector3(-0.15 * float(side[2]), 0.55, -1.0).normalized())
+		_rotate_global_q(hand, _arc(knuckles.normalized(), aim.normalized()), weight)
+
+
+## IK analítica de dois ossos (braço e antebraço) no espaço do esqueleto.
+func _solve_two_bone_ik(upper: int, lower: int, hand: int, target: Vector3, pole: Vector3, weight: float) -> void:
+	var a := skeleton.get_bone_global_pose(upper).origin
+	var b := skeleton.get_bone_global_pose(lower).origin
+	var c := skeleton.get_bone_global_pose(hand).origin
+	var upper_length := a.distance_to(b)
+	var lower_length := b.distance_to(c)
+	var to_target := target - a
+	var distance := clampf(to_target.length(), absf(upper_length - lower_length) + 0.01, upper_length + lower_length - 0.001)
+	var direction := to_target.normalized()
+	var cos_shoulder := clampf((upper_length * upper_length + distance * distance - lower_length * lower_length) / (2.0 * upper_length * distance), -1.0, 1.0)
+	var bend := (pole - a) - direction * (pole - a).dot(direction)
+	if bend.length_squared() < 0.000001:
+		return
+	bend = bend.normalized()
+	var elbow := a + direction * cos_shoulder * upper_length + bend * sqrt(1.0 - cos_shoulder * cos_shoulder) * upper_length
+	var wrist := a + direction * distance
+	_rotate_global_q(upper, _arc((b - a).normalized(), (elbow - a).normalized()), weight)
+	var b2 := skeleton.get_bone_global_pose(lower).origin
+	var c2 := skeleton.get_bone_global_pose(hand).origin
+	_rotate_global_q(lower, _arc((c2 - b2).normalized(), (wrist - b2).normalized()), weight)
+
+
+static func _arc(from: Vector3, to: Vector3) -> Quaternion:
+	var axis := from.cross(to)
+	var cosine := clampf(from.dot(to), -1.0, 1.0)
+	if axis.length_squared() < 0.0000001:
+		return Quaternion.IDENTITY
+	return Quaternion(axis.normalized(), acos(cosine))
+
+
+## Aplica uma rotação (espaço do esqueleto) a um osso, com peso, mantendo a origem.
+func _rotate_global_q(bone: int, rotation: Quaternion, weight: float) -> void:
+	var applied := Quaternion.IDENTITY.slerp(rotation, clampf(weight, 0.0, 1.0))
+	var global_rotation := skeleton.get_bone_global_pose(bone).basis.get_rotation_quaternion()
+	var delta := global_rotation.inverse() * applied * global_rotation
+	skeleton.set_bone_pose_rotation(bone, skeleton.get_bone_pose_rotation(bone) * delta)
 
 
 ## Gira um osso em torno de um eixo do espaço do esqueleto, mantendo a origem.
@@ -556,6 +773,9 @@ func _on_player_landed(impact_speed: float) -> void:
 
 func _on_damaged(amount: float, kind: StringName, _direction: Vector3) -> void:
 	if kind == &"queda" or health.is_dead:
+		return
+	# Golpe aparado pela guarda: a reação de bloqueio já foi tocada.
+	if current_animation(SLOT_HURT) == &"block_impact" and get_overlay_time(SLOT_HURT) < 0.05:
 		return
 	if amount >= 30.0:
 		play(SLOT_HURT, &"hit_knockback", 1.0, 0.05, 0.25)
