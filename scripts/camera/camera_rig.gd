@@ -26,12 +26,17 @@ signal transition_finished(third_person: bool)
 @export var camera: Camera3D
 
 @export_group("Primeira pessoa")
-## Quanto a câmera segue a cabeça animada (0 = só o ponto da física), na
-## vertical e na horizontal. A captura balança a cabeça bastante na corrida;
-## seguir pouco na horizontal deixa a mira estável (como em DayZ) e ainda
-## transmite o peso do corpo no sobe-e-desce.
+## Quanto do sobe-e-desce RÁPIDO da cabeça (passada) a câmera segue; os
+## movimentos lentos (inclinar, agachar) são seguidos inteiros.
 @export_range(0.0, 1.0, 0.01) var head_bone_follow: float = 0.35
-@export_range(0.0, 1.0, 0.01) var head_bone_follow_horizontal: float = 0.12
+## Na horizontal a câmera segue a cabeça INTEIRA nos movimentos lentos
+## (inclinar o tronco na corrida, agachar, olhar para baixo), senão ela fica
+## para trás, dentro da gola e dos ombros, quando o corpo se inclina. Só o
+## balanço rápido da passada é filtrado (filtro passa-baixa), o que mantém a
+## mira estável como em DayZ.
+@export_range(0.0, 1.0, 0.01) var head_bone_follow_horizontal: float = 1.0
+## Corte do filtro horizontal (1/s): mais baixo = menos balanço lateral.
+@export_range(0.5, 30.0, 0.1) var head_sway_filter: float = 3.5
 @export_range(1.0, 60.0, 0.5) var head_smoothing: float = 22.0
 @export_range(0.01, 0.3, 0.01) var eye_wall_margin: float = 0.08
 ## Avanço da câmera ao olhar totalmente para baixo (m): mostra o peito e as
@@ -65,6 +70,8 @@ var _progress: float = 0.0
 var _arm_length: float = 0.0
 var _eye_smoothed: Vector3
 var _has_eye: bool = false
+var _head_horizontal: Vector3 = Vector3.ZERO
+var _head_vertical: float = 0.0
 var _toggle_previous: bool = false
 var _sprint_blend: float = 0.0
 var _crouch_blend: float = 0.0
@@ -102,6 +109,8 @@ func snap() -> void:
 	_progress = 1.0 if third_person else 0.0
 	blend = _progress
 	_has_eye = false
+	_head_horizontal = Vector3.ZERO
+	_head_vertical = 0.0
 
 
 func is_transitioning() -> bool:
@@ -151,13 +160,23 @@ func _update_camera(delta: float) -> void:
 	var anchor := first_person_anchor.global_transform
 	var eye := anchor.origin
 	if body != null and head_bone_follow > 0.0:
-		var head_eye := body.get_eye_position()
+		# Tudo no espaço do corpo: suavizar uma posição do MUNDO de um corpo
+		# a 5,8 m/s deixaria a câmera v/k ≈ 26 cm para trás (dentro da gola).
+		var to_body := Basis(Vector3.UP, player.rotation.y).inverse()
+		var head_local := to_body * (body.get_eye_position() - player.global_position)
+		var anchor_local := to_body * (eye - player.global_position)
 		if not _has_eye:
-			_eye_smoothed = head_eye
+			_eye_smoothed = head_local
 			_has_eye = true
-		_eye_smoothed = _eye_smoothed.lerp(head_eye, 1.0 - exp(-head_smoothing * delta))
-		var follow := _eye_smoothed - eye
-		eye += Vector3(follow.x * head_bone_follow_horizontal, follow.y * head_bone_follow, follow.z * head_bone_follow_horizontal)
+		_eye_smoothed = _eye_smoothed.lerp(head_local, 1.0 - exp(-head_smoothing * delta))
+		var follow := _eye_smoothed - anchor_local
+		_head_horizontal = _head_horizontal.lerp(Vector3(follow.x, 0.0, follow.z), 1.0 - exp(-head_sway_filter * delta))
+		# Vertical: a parte lenta (inclinar na corrida, agachar) é seguida
+		# inteira; do sobe-e-desce rápido da passada, só `head_bone_follow`.
+		_head_vertical = lerpf(_head_vertical, follow.y, 1.0 - exp(-head_sway_filter * delta))
+		var vertical := _head_vertical + (follow.y - _head_vertical) * head_bone_follow
+		var offset := _head_horizontal * head_bone_follow_horizontal + Vector3.UP * vertical
+		eye += Basis(Vector3.UP, player.rotation.y) * offset
 	var look_down := clampf(-player.get_pitch() / deg_to_rad(80.0), 0.0, 1.0)
 	eye += -player.get_view_basis().z * look_down_forward * look_down * look_down
 	eye = _clamp_eye(eye)

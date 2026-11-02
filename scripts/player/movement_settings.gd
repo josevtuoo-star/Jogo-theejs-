@@ -25,12 +25,12 @@ extends Resource
 
 @export_group("Aceleração, frenagem e aderência")
 ## Aceleração a partir do repouso (m/s²).
-@export_range(1.0, 40.0, 0.1) var ground_acceleration: float = 9.0
+@export_range(1.0, 40.0, 0.1) var ground_acceleration: float = 7.5
 ## Fração da aceleração que resta ao atingir a velocidade de corrida. Como no
 ## corpo humano, arrancar é rápido e chegar à velocidade máxima é gradual.
 @export_range(0.05, 1.0, 0.01) var acceleration_falloff: float = 0.45
 ## Frenagem ao soltar o direcional ou reduzir a velocidade (m/s²).
-@export_range(1.0, 40.0, 0.1) var ground_deceleration: float = 12.0
+@export_range(1.0, 40.0, 0.1) var ground_deceleration: float = 7.0
 ## Atrito lateral em curvas (m/s²). Limita o raio de curva em alta velocidade.
 @export_range(1.0, 40.0, 0.1) var ground_turn_friction: float = 14.0
 ## Aproveitamento do atrito pelas pernas. A variação total de velocidade no

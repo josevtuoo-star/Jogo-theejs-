@@ -113,3 +113,68 @@ Na bateria de movimento:
 - **Animações:** continuam sendo capturas genéricas gratuitas (Quaternius UAL). Pés no terreno, inclinação, pés plantados e passo de ajuste deixam o corpo mais crível. Animações dedicadas (andar de lado, virar no lugar, parar) exigiriam a versão paga ou capturas novas.
 - **Materiais do personagem:** o modelo enviado usa cores planas, sem texturas, e o resultado mantém esse estilo low-poly. Texturas pintadas no modelo seriam usadas automaticamente pelo `build_survivor.gd` com pequenas mudanças.
 - **Desempenho:** o mapa maior foi feito com blocos e distâncias de desenho pensando no celular, mas a confirmação depende de rodar no seu aparelho.
+
+## 9. Ajustes depois do teste no celular (v0.6.7)
+
+O dono do projeto testou a v0.6.6 no aparelho e apontou quatro problemas: sons artificiais, câmera em primeira pessoa ruim e física da corrida artificial. Na captura de tela, uma mancha verde enorme cobria o canto inferior esquerdo.
+
+### Câmera em primeira pessoa: a mancha verde era a gola da jaqueta vista por dentro
+
+**Causa:** na corrida, a animação capturada e a inclinação levam a cabeça até 0,42 m para a frente e 13 cm para baixo. A câmera seguia a cabeça suavizando uma posição do **mundo**. Com o corpo a 5,8 m/s, o filtro deixava a câmera v/k ≈ 0,26 m para trás, dentro da gola e dos ombros. Um teste novo reproduziu o erro: 0,235 m de afastamento, com a câmera 0,15 m **atrás** da cabeça.
+
+**Correção** (`scripts/camera/camera_rig.gd`): o deslocamento da cabeça é suavizado no **espaço do corpo**. A parte lenta (inclinar, agachar) é seguida inteira, na horizontal e na vertical. Do balanço rápido da passada, só passa uma fração (35% na vertical, quase nada na horizontal), o que mantém a mira estável.
+
+Resultado medido:
+- afastamento máximo de 0,07 m dos olhos;
+- câmera sempre à frente da cabeça;
+- a altura da câmera acompanha os olhos (1,50 m = 1,50 m).
+
+Também mudaram:
+- **Campo de visão:** havia uma falha minha na v0.6.6. O FOV de 70° nunca valeu, porque o `CameraEffects` sobrescrevia com 75°. Agora são 70° parado e 76° correndo (sensação de velocidade), com transição suave.
+- **Balanço do passo:** menor, e o plano de corte próximo passou de 0,05 para 0,08 m.
+
+### Física da corrida
+
+- **Frenagem:** de 12 para 7 m/s². Da corrida até parar são 2,35 m e 0,8 s, em vez de 0,45 s seco. Do trote são 0,89 m.
+  - Os testes antigos fixavam números da versão anterior. Agora conferem a física: d = v²/2a com tolerância de 15%.
+- **Arrancada:** de 9 para 7,5 m/s²; chegar à velocidade máxima é mais gradual.
+- **Curva na corrida:** em terceira pessoa o corpo vira 45% da velocidade normal (243°/s), então a curva fica aberta.
+- **Inclinação do tronco** pela aceleração: no máximo 7° (antes 12°, exagerado).
+- **Empurrar objetos:** as pernas empurram pela intenção (direção e velocidade desejadas), não só pela velocidade do instante.
+  - Encostado numa caixa, o corpo quase para a cada choque, mas continua fazendo força nela, como uma pessoa empurrando.
+  - A arrancada mais suave expôs esse defeito: a caixa de 5 kg andava 0,82 m no Godot 4.7.1 e 1,13 m no 4.5.1. Agora anda 2,45 m e 2,43 m (os dois motores concordam). O bloco de 300 kg continua sem se mexer, porque a aderência da sola limita a força.
+
+### Sons
+
+A causa principal era a **mistura**: na v0.6.6, todos os sons tinham o mesmo volume normalizado. Um passo soava tão alto quanto um soco, e o ambiente ficava baixo.
+
+- **Proporções reais:**
+  - passo de -26 dB (agachado) a -10 dB (correndo), bem abaixo do soco;
+  - braço cortando o ar baixo;
+  - ambiente da floresta presente.
+- **Cada som varia** ±2 dB de volume, além do tom.
+- **Passo no chão de floresta em duas camadas sorteadas:**
+  - calcanhar abafado, o passo do Kenney com filtro passa-baixa, sem o estalo de sola dura;
+  - folhas secas, 20 farfalhares de qubodup, CC0, em trechos curtos.
+  - Saiu o passo de "areia", que soava a cascalho.
+- **Aterrissagem** = os dois pés batendo no chão, com 40 ms de diferença, mais o corpo absorvendo o impacto. Gemido só em quedas fortes.
+- **Respiração cansada** (mikeask, CC0) em laço:
+  - surge depois de uns 3 s de corrida e cresce com o esforço;
+  - some aos poucos parado (cerca de 10 s).
+- **Voz:**
+  - sem gemido a cada salto;
+  - dor só com dano de 8 ou mais e no máximo a cada 1,2 s.
+- **Vento** na copa com rajadas, gerado (ruído marrom filtrado), como terceira camada do ambiente.
+  - As três camadas (mata, vento, passarinhos) têm ciclos diferentes, então nenhum laço fica óbvio.
+- **Reverberação curta de mata** e um leve corte de agudos no barramento de efeitos. Os sons deixam de soar "secos de estúdio".
+
+Testes novos:
+- câmera nos olhos e à frente da cabeça correndo;
+- FOV abre e volta;
+- duas camadas por passo;
+- aterrissagem com os dois pés;
+- esforço sobe correndo e cai parado.
+
+Os testes de movimento conferem a frenagem pela física.
+
+**Limitação que continua:** escolho e mixo os sons pelas descrições, pela duração, pelo pico e pela loudness medida, mas não consigo ouvi-los. A opinião no aparelho continua sendo a referência; trocar qualquer som é uma linha em `tools/prepare_audio.py`.

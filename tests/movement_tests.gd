@@ -174,8 +174,11 @@ func _test_jog_acceleration_and_braking() -> void:
 	_check(_player.velocity.z > 0.0 and absf(_player.velocity.x) < 0.01, "desloca na direção do olhar")
 	_check(_player.movement_state == PlayerController.MovementState.JOGGING, "estado JOGGING")
 	var stop := await _measure_stop(120)
-	_check(stop.x >= 10 and stop.x <= 22, "frenagem com inércia em %d quadros" % int(stop.x))
-	_check(stop.y > 0.3 and stop.y < 0.8, "distância de parada %.2f m (cerca de meio passo)" % stop.y)
+	# Frenagem com o peso do corpo: d = v²/(2a) e t = v/a (até plantar o pé).
+	var jog_distance := cruise * cruise / (2.0 * _settings.ground_deceleration)
+	var jog_time := cruise / _settings.ground_deceleration
+	_check(absf(stop.x * DT - jog_time) < 0.12, "frenagem com inércia em %.2f s (física: %.2f s)" % [stop.x * DT, jog_time])
+	_check(absf(stop.y - jog_distance) < jog_distance * 0.15, "distância de parada do trote %.2f m (física: %.2f m)" % [stop.y, jog_distance])
 	var rest := _player.global_position
 	await _frames(30)
 	_check(rest.distance_to(_player.global_position) < 0.001, "parado não desliza (pé plantado)")
@@ -255,7 +258,8 @@ func _test_sprint_acceleration_curve_and_stop() -> void:
 	_check(accel_pitch < -deg_to_rad(0.3), "ao arrancar, o tronco inclina para frente (%.2f°)" % rad_to_deg(accel_pitch))
 	await _frames(90)
 	var stop := await _measure_stop(180)
-	_check(stop.y > 1.0 and stop.y < 2.0, "parada da corrida em %.2f m (%.2f s)" % [stop.y, stop.x * DT])
+	var sprint_distance := _settings.sprint_speed * _settings.sprint_speed / (2.0 * _settings.ground_deceleration)
+	_check(absf(stop.y - sprint_distance) < sprint_distance * 0.15, "parada da corrida em %.2f m, %.2f s (física: %.2f m)" % [stop.y, stop.x * DT, sprint_distance])
 
 
 func _test_sprint_turn_inertia() -> void:

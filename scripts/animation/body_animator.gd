@@ -98,8 +98,8 @@ const FP_GUARD_RIGHT := Vector3(0.14, -0.15, -0.29)
 ## Duração do passo de ajuste (s).
 @export_range(0.15, 1.5, 0.01) var turn_step_time: float = 0.45
 ## Fração do ângulo de equilíbrio (atan(a/g)) usada na inclinação.
-@export_range(0.0, 1.0, 0.01) var lean_amount: float = 0.6
-@export_range(0.0, 30.0, 0.5) var max_lean_degrees: float = 12.0
+@export_range(0.0, 1.0, 0.01) var lean_amount: float = 0.4
+@export_range(0.0, 30.0, 0.5) var max_lean_degrees: float = 7.0
 
 class Clip:
 	var animation: Animation

@@ -42,8 +42,12 @@ script = ExtResource("3_camera")
 player = NodePath("../..")
 camera = NodePath("../../CameraRig/Camera3D")
 bob_enabled = true
-sprint_bob_vertical = 0.02
-sprint_bob_lateral = 0.012
+sprint_bob_vertical = 0.018
+sprint_bob_lateral = 0.008
+bob_roll_degrees = 0.2
+base_fov = 70.0
+sprint_fov_bonus = 6.0
+fov_smoothing = 3.0
 
 [node name="CameraRig" type="Node3D" parent="." node_paths=PackedStringArray("player", "body", "first_person_anchor", "camera")]
 script = ExtResource("8_rig")
@@ -55,7 +59,7 @@ camera = NodePath("Camera3D")
 [node name="Camera3D" type="Camera3D" parent="CameraRig"]
 current = true
 fov = 70.0
-near = 0.05
+near = 0.08
 far = 400.0
 
 [node name="Health" type="Node" parent="."]

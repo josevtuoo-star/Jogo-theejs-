@@ -30,7 +30,7 @@ func _ready() -> void:
 ## Toca um som do conjunto. `volume_db` relativo; `pitch` com variação
 ## aleatória de ±`pitch_jitter`. `at` (mundo) posiciona; senão, no emissor.
 func play(category: StringName, sounds: SoundSet, volume_db: float = 0.0, pitch: float = 1.0,
-		pitch_jitter: float = 0.06, at: Variant = null) -> void:
+		pitch_jitter: float = 0.06, at: Variant = null, volume_jitter_db: float = 2.0) -> void:
 	if sounds == null:
 		return
 	var stream := sounds.pick()
@@ -39,7 +39,8 @@ func play(category: StringName, sounds: SoundSet, volume_db: float = 0.0, pitch:
 	var player := _players[_next]
 	_next = (_next + 1) % _players.size()
 	player.stream = stream
-	player.volume_db = volume_db
+	# Nenhum som se repete igual: volume e tom variam um pouco a cada vez.
+	player.volume_db = volume_db + randf_range(-volume_jitter_db, volume_jitter_db)
 	player.pitch_scale = maxf(pitch * randf_range(1.0 - pitch_jitter, 1.0 + pitch_jitter), 0.1)
 	player.global_position = at if at is Vector3 else global_position
 	player.play()

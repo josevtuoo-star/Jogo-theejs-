@@ -1,20 +1,14 @@
 # Origem de cada som
 
-Todos CC0 1.0 (OpenGameArt). Pacotes, páginas e licenças: `ASSET_LICENSES.md`, seção Sons. Gerados por `tools/prepare_audio.py`.
+Todos CC0 1.0 (OpenGameArt), exceto o vento, gerado pelo projeto. Pacotes, páginas e licenças: `ASSET_LICENSES.md`, seção Sons. Gerados por `tools/prepare_audio.py`.
 
 | Arquivo | Origem no pacote | Autor |
 |---|---|---|
-| `footsteps/terra_0.ogg` | `Fantozzi-footsteps/Fantozzi-footsteps/ogg/Fantozzi-SandL1.ogg` | Fantozzi |
 | `footsteps/pedra_0.ogg` | `Fantozzi-footsteps/Fantozzi-footsteps/ogg/Fantozzi-StoneL1.ogg` | Fantozzi |
-| `footsteps/terra_1.ogg` | `Fantozzi-footsteps/Fantozzi-footsteps/ogg/Fantozzi-SandR1.ogg` | Fantozzi |
 | `footsteps/pedra_1.ogg` | `Fantozzi-footsteps/Fantozzi-footsteps/ogg/Fantozzi-StoneR1.ogg` | Fantozzi |
-| `footsteps/terra_2.ogg` | `Fantozzi-footsteps/Fantozzi-footsteps/ogg/Fantozzi-SandL2.ogg` | Fantozzi |
 | `footsteps/pedra_2.ogg` | `Fantozzi-footsteps/Fantozzi-footsteps/ogg/Fantozzi-StoneL2.ogg` | Fantozzi |
-| `footsteps/terra_3.ogg` | `Fantozzi-footsteps/Fantozzi-footsteps/ogg/Fantozzi-SandR2.ogg` | Fantozzi |
 | `footsteps/pedra_3.ogg` | `Fantozzi-footsteps/Fantozzi-footsteps/ogg/Fantozzi-StoneR2.ogg` | Fantozzi |
-| `footsteps/terra_4.ogg` | `Fantozzi-footsteps/Fantozzi-footsteps/ogg/Fantozzi-SandL3.ogg` | Fantozzi |
 | `footsteps/pedra_4.ogg` | `Fantozzi-footsteps/Fantozzi-footsteps/ogg/Fantozzi-StoneL3.ogg` | Fantozzi |
-| `footsteps/terra_5.ogg` | `Fantozzi-footsteps/Fantozzi-footsteps/ogg/Fantozzi-SandR3.ogg` | Fantozzi |
 | `footsteps/pedra_5.ogg` | `Fantozzi-footsteps/Fantozzi-footsteps/ogg/Fantozzi-StoneR3.ogg` | Fantozzi |
 | `footsteps/grama_0.ogg` | `RPGsounds_Kenney/OGG/footstep00.ogg` | Kenney |
 | `footsteps/grama_1.ogg` | `RPGsounds_Kenney/OGG/footstep01.ogg` | Kenney |
@@ -32,6 +26,36 @@ Todos CC0 1.0 (OpenGameArt). Pacotes, páginas e licenças: `ASSET_LICENSES.md`,
 | `footsteps/gelo_3.ogg` | `corsica_s-walking_in_snow/Corsica_S-Walking_in_Snow/Corsica_S-Walking_on_snow_covered_gravel_and_ice_07.flac` | Corsica_S / qubodup |
 | `footsteps/gelo_4.ogg` | `corsica_s-walking_in_snow/Corsica_S-Walking_in_Snow/Corsica_S-Walking_on_snow_covered_gravel_and_ice_08.flac` | Corsica_S / qubodup |
 | `footsteps/gelo_5.ogg` | `corsica_s-walking_in_snow/Corsica_S-Walking_in_Snow/Corsica_S-Walking_on_snow_covered_gravel_and_ice_10.flac` | Corsica_S / qubodup |
+| `footsteps/calcanhar_0.ogg` | `RPGsounds_Kenney/OGG/footstep00.ogg` | Kenney |
+| `footsteps/calcanhar_1.ogg` | `RPGsounds_Kenney/OGG/footstep01.ogg` | Kenney |
+| `footsteps/calcanhar_2.ogg` | `RPGsounds_Kenney/OGG/footstep02.ogg` | Kenney |
+| `footsteps/calcanhar_3.ogg` | `RPGsounds_Kenney/OGG/footstep03.ogg` | Kenney |
+| `footsteps/calcanhar_4.ogg` | `RPGsounds_Kenney/OGG/footstep04.ogg` | Kenney |
+| `footsteps/calcanhar_5.ogg` | `RPGsounds_Kenney/OGG/footstep05.ogg` | Kenney |
+| `footsteps/calcanhar_6.ogg` | `RPGsounds_Kenney/OGG/footstep06.ogg` | Kenney |
+| `footsteps/calcanhar_7.ogg` | `RPGsounds_Kenney/OGG/footstep07.ogg` | Kenney |
+| `footsteps/calcanhar_8.ogg` | `RPGsounds_Kenney/OGG/footstep08.ogg` | Kenney |
+| `footsteps/calcanhar_9.ogg` | `RPGsounds_Kenney/OGG/footstep09.ogg` | Kenney |
+| `footsteps/folhas_0.ogg` | `qubodup-rustle/rustle/rustle01.flac` | qubodup |
+| `footsteps/folhas_1.ogg` | `qubodup-rustle/rustle/rustle02.flac` | qubodup |
+| `footsteps/folhas_2.ogg` | `qubodup-rustle/rustle/rustle03.flac` | qubodup |
+| `footsteps/folhas_3.ogg` | `qubodup-rustle/rustle/rustle04.flac` | qubodup |
+| `footsteps/folhas_4.ogg` | `qubodup-rustle/rustle/rustle05.flac` | qubodup |
+| `footsteps/folhas_5.ogg` | `qubodup-rustle/rustle/rustle06.flac` | qubodup |
+| `footsteps/folhas_6.ogg` | `qubodup-rustle/rustle/rustle07.flac` | qubodup |
+| `footsteps/folhas_7.ogg` | `qubodup-rustle/rustle/rustle08.flac` | qubodup |
+| `footsteps/folhas_8.ogg` | `qubodup-rustle/rustle/rustle09.flac` | qubodup |
+| `footsteps/folhas_9.ogg` | `qubodup-rustle/rustle/rustle10.flac` | qubodup |
+| `footsteps/folhas_10.ogg` | `qubodup-rustle/rustle/rustle11.flac` | qubodup |
+| `footsteps/folhas_11.ogg` | `qubodup-rustle/rustle/rustle12.flac` | qubodup |
+| `footsteps/folhas_12.ogg` | `qubodup-rustle/rustle/rustle13.flac` | qubodup |
+| `footsteps/folhas_13.ogg` | `qubodup-rustle/rustle/rustle14.flac` | qubodup |
+| `footsteps/folhas_14.ogg` | `qubodup-rustle/rustle/rustle15.flac` | qubodup |
+| `footsteps/folhas_15.ogg` | `qubodup-rustle/rustle/rustle16.flac` | qubodup |
+| `footsteps/folhas_16.ogg` | `qubodup-rustle/rustle/rustle17.flac` | qubodup |
+| `footsteps/folhas_17.ogg` | `qubodup-rustle/rustle/rustle18.flac` | qubodup |
+| `footsteps/folhas_18.ogg` | `qubodup-rustle/rustle/rustle19.flac` | qubodup |
+| `footsteps/folhas_19.ogg` | `qubodup-rustle/rustle/rustle20.flac` | qubodup |
 | `body/aterrissagem_0.ogg` | `Jump 1.wav` | Macro |
 | `body/aterrissagem_1.ogg` | `Jump 2.wav` | Macro |
 | `body/aterrissagem_2.ogg` | `Jump 3.wav` | Macro |
@@ -96,6 +120,8 @@ Todos CC0 1.0 (OpenGameArt). Pacotes, páginas e licenças: `ASSET_LICENSES.md`,
 | `interact/clique.ogg` | `RPGsounds_Kenney/OGG/metalClick.ogg` | Kenney |
 | `interact/couro.ogg` | `RPGsounds_Kenney/OGG/handleSmallLeather.ogg` | Kenney |
 | `interact/porta_abre.ogg` | `RPGsounds_Kenney/OGG/doorOpen_1.ogg` | Kenney |
+| `voice/respiracao.ogg` | `breathing tired.wav` | mikeask |
 | `world/fogueira.ogg` | `fire-1.ogg` | AntumDeluge |
 | `ambience/floresta.ogg` | `Forest_Ambience.mp3` | TinyWorlds |
 | `ambience/passaros.ogg` | `birds-isaiah658.ogg` | isaiah658 |
+| `ambience/vento.ogg` | gerado por `tools/prepare_audio.py` (ruído marrom filtrado com rajadas) | do projeto |

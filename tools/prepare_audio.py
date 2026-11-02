@@ -24,19 +24,29 @@ OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "assets", "
 SOUNDS = {}
 
 
-def add(target, source, lufs=-18.0, stereo=False):
-    SOUNDS[target] = (source, lufs, stereo)
+def add(target, source, lufs=-18.0, stereo=False, extra=None):
+    SOUNDS[target] = (source, lufs, stereo, extra)
 
 
 # Passos (por superfície). L/R alternados quando o pacote os separa.
 for i, (side, n) in enumerate([(s, n) for n in (1, 2, 3) for s in ("L", "R")]):
-    add(f"footsteps/terra_{i}.ogg", f"P:Fantozzi-footsteps/Fantozzi-footsteps/ogg/Fantozzi-Sand{side}{n}.ogg", -20)
     add(f"footsteps/pedra_{i}.ogg", f"P:Fantozzi-footsteps/Fantozzi-footsteps/ogg/Fantozzi-Stone{side}{n}.ogg", -20)
 for i in range(10):
     add(f"footsteps/grama_{i}.ogg", f"P:RPGsounds_Kenney/OGG/footstep0{i}.ogg", -21)
 for i, n in enumerate(["02", "04", "05", "07", "08", "10"]):
     add(f"footsteps/gelo_{i}.ogg", f"P:corsica_s-walking_in_snow/Corsica_S-Walking_in_Snow/Corsica_S-Walking_on_snow_covered_gravel_and_ice_{n}.flac", -21)
 # Lama: os passos de terra, mais graves e úmidos, são gerados no motor (tom).
+
+# Camadas do passo no chão de floresta: o calcanhar abafado (passo do Kenney
+# com passa-baixa: sem o estalo de sola dura) + folhas secas (trecho curto de
+# farfalhar, sem graves). O jogo sorteia uma de cada a cada passo.
+for i in range(10):
+    add(f"footsteps/calcanhar_{i}.ogg", f"P:RPGsounds_Kenney/OGG/footstep0{i}.ogg", -21,
+        extra="lowpass=f=1800,highpass=f=60")
+for i, n in enumerate(range(1, 21)):
+    start = 0.05 + (i % 3) * 0.12
+    add(f"footsteps/folhas_{i}.ogg", f"P:qubodup-rustle/rustle/rustle{n:02d}.flac", -23,
+        extra=f"atrim=start={start}:duration=0.38,asetpts=PTS-STARTPTS,highpass=f=350,afade=t=out:st=0.22:d=0.16")
 
 # Corpo
 for i, n in enumerate([1, 2, 3]):
@@ -84,18 +94,37 @@ add("interact/clique.ogg", "P:RPGsounds_Kenney/OGG/metalClick.ogg", -20)
 add("interact/couro.ogg", "P:RPGsounds_Kenney/OGG/handleSmallLeather.ogg", -20)
 add("interact/porta_abre.ogg", "P:RPGsounds_Kenney/OGG/doorOpen_1.ogg", -19)
 
+# Respiração cansada depois de correr (em laço, com o volume pelo esforço).
+add("voice/respiracao.ogg", "L:breathing tired.wav", -22,
+    extra="afade=t=in:d=0.08,afade=t=out:st=3.0:d=0.16")
+
 # Mundo
 add("world/fogueira.ogg", "L:fire-1.ogg", -20)
 add("ambience/floresta.ogg", "L:Forest_Ambience.mp3", -24, True)
 add("ambience/passaros.ogg", "L:birds-isaiah658.ogg", -27, True)
 
 
-def convert(target, source, lufs, stereo):
+def wind(dst, seconds=64):
+    """Vento na copa, gerado: ruído marrom filtrado na faixa do farfalhar
+    das agulhas, com rajadas lentas (período que divide o laço: emenda
+    sem salto de volume)."""
+    gust = f"0.55+0.3*sin(2*PI*t/{seconds / 4})+0.15*sin(2*PI*t/{seconds / 7})"
+    graph = (f"anoisesrc=color=brown:duration={seconds}:sample_rate=44100:amplitude=0.6,"
+             f"highpass=f=120,lowpass=f=1400,volume='{gust}':eval=frame,"
+             f"aecho=0.6:0.5:60|110:0.25|0.15,loudnorm=I=-26:TP=-3")
+    cmd = ["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", graph, "-ac", "2",
+           "-c:a", "libvorbis", "-q:a", "3", dst]
+    subprocess.run(cmd, check=True)
+
+
+def convert(target, source, lufs, stereo, extra=None):
     kind, rel = source.split(":", 1)
     src = os.path.join(PACKS if kind == "P" else LOOSE, rel)
     dst = os.path.join(OUT, target)
     os.makedirs(os.path.dirname(dst), exist_ok=True)
     filters = [f"loudnorm=I={lufs}:TP=-2:LRA=11"]
+    if extra:
+        filters.insert(0, extra)
     if not target.startswith("ambience/") and not target.startswith("world/"):
         # Corta o silêncio do começo (o som nasce no quadro do evento).
         filters.insert(0, "silenceremove=start_periods=1:start_threshold=-50dB")
@@ -105,6 +134,7 @@ def convert(target, source, lufs, stereo):
 
 
 if __name__ == "__main__":
-    for target, (source, lufs, stereo) in SOUNDS.items():
-        convert(target, source, lufs, stereo)
-    print(f"{len(SOUNDS)} sons gerados em {os.path.normpath(OUT)}")
+    for target, (source, lufs, stereo, extra) in SOUNDS.items():
+        convert(target, source, lufs, stereo, extra)
+    wind(os.path.join(OUT, "ambience", "vento.ogg"))
+    print(f"{len(SOUNDS) + 1} sons gerados em {os.path.normpath(OUT)}")

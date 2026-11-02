@@ -87,6 +87,8 @@ func _ready() -> void:
 		_test_sounds,
 		_test_joystick_dead_zone,
 		_test_demo_map,
+		_test_first_person_running_camera,
+		_test_sound_mix,
 		_test_ragdoll_death_and_respawn,
 		_test_touch_attack_button,
 		_test_animator_performance,
@@ -1373,6 +1375,60 @@ func _test_demo_map() -> void:
 	map.free()
 
 
+
+func _test_first_person_running_camera() -> void:
+	_begin("1ª pessoa correndo: câmera nos olhos (nunca atrás, dentro da gola), FOV de velocidade")
+	await _reset(OPEN_LANE, YAW_TOWARD_POSITIVE_Z)
+	var base_fov := _camera.fov
+	Input.action_press(&"move_forward")
+	Input.action_press(&"sprint")
+	await _frames(60)
+	var worst_gap := 0.0
+	var worst_behind := 1.0
+	for i in 60:
+		await _frames(1)
+		var eye := _body.get_eye_position()
+		var gap := Vector2(_camera.global_position.x - eye.x, _camera.global_position.z - eye.z).length()
+		worst_gap = maxf(worst_gap, gap)
+		worst_behind = minf(worst_behind, (_camera.global_position - _bone("Head")).dot(_forward()))
+	_check(worst_gap < 0.08, "câmera acompanha os olhos com o tronco inclinado (afastamento máx. %.3f m)" % worst_gap)
+	_check(worst_behind > 0.0, "a câmera fica sempre à frente da cabeça (mín. %.3f m)" % worst_behind)
+	_check(_camera.fov > base_fov + 3.0, "campo de visão abre na corrida (%.1f° → %.1f°)" % [base_fov, _camera.fov])
+	_release_all()
+	await _frames(90)
+	_check(absf(_camera.fov - base_fov) < 1.0, "e volta ao parar (%.1f°)" % _camera.fov)
+
+
+func _test_sound_mix() -> void:
+	_begin("Sons: camadas do passo, aterrissagem com os dois pés, respiração pelo esforço")
+	var sounds: PlayerSounds = _player.get_node("Sounds")
+	await _reset(OPEN_LANE, YAW_TOWARD_POSITIVE_Z)
+	var steps := sounds.count(&"passo")
+	var leaves := sounds.count(&"passo_folhas")
+	Input.action_press(&"move_forward")
+	await _frames(90)
+	_release_all()
+	var made := sounds.count(&"passo") - steps
+	_check(made >= 2 and sounds.count(&"passo_folhas") - leaves == made, "chão de floresta: calcanhar + folhas em cada passo (%d passos)" % made)
+	await _frames(30)
+	_player.teleport(_player.global_position + Vector3.UP * 3.0)
+	var before := sounds.count(&"passo")
+	await _frames(90)
+	_check(sounds.count(&"passo") - before >= 2, "aterrissagem: os dois pés batendo no chão")
+	await _reset(OPEN_LANE, YAW_TOWARD_POSITIVE_Z)
+	sounds.effort = 0.0
+	Input.action_press(&"move_forward")
+	Input.action_press(&"sprint")
+	await _frames(60 * 5)
+	_check(sounds.effort > 0.5, "correr 5 s cansa (esforço %.2f)" % sounds.effort)
+	_release_all()
+	await _frames(60)
+	var after_stop := sounds.effort
+	await _frames(120)
+	_check(sounds.effort < after_stop and sounds.effort > 0.0, "parado, o fôlego volta aos poucos (%.2f → %.2f)" % [after_stop, sounds.effort])
+
+
+# --- Morte e ragdoll ---------------------------------------------------------
 
 func _test_ragdoll_death_and_respawn() -> void:
 	_begin("Morte: ragdoll físico, câmera segue o corpo, renascer")

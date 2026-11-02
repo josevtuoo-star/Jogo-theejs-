@@ -289,7 +289,8 @@ func _update_body_yaw(delta: float) -> void:
 	if wish == Vector3.ZERO:
 		return
 	var target := atan2(-wish.x, -wish.z)
-	var rate := deg_to_rad(body_turn_speed_degrees) * (0.6 if is_sprinting else 1.0)
+	# Correndo, o corpo vira mais devagar (momento): a curva fica aberta.
+	var rate := deg_to_rad(body_turn_speed_degrees) * (0.45 if is_sprinting else 1.0)
 	rotation.y = rotate_toward(rotation.y, target, rate * delta)
 
 
@@ -824,7 +825,13 @@ func _interact_with_rigid_body(collision: KinematicCollision3D, body: RigidBody3
 	if push_direction.length_squared() < 0.0001:
 		return
 	push_direction = push_direction.normalized()
+	# As pernas empurram pela intenção (direção e velocidade desejadas), não só
+	# pela velocidade do instante: encostado na caixa o corpo quase para a cada
+	# choque, mas continua fazendo força nela, como uma pessoa empurrando.
 	var push_speed := Vector3(pre_move_velocity.x, 0.0, pre_move_velocity.z).dot(push_direction)
+	var wish := _get_wish_direction()
+	if wish != Vector3.ZERO:
+		push_speed = maxf(push_speed, get_target_speed() * maxf(wish.dot(push_direction), 0.0))
 	if push_speed <= 0.05:
 		return
 	var body_speed := body.linear_velocity.dot(push_direction)

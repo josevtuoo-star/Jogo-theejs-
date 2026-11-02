@@ -20,8 +20,8 @@ Licença conferida no campo "License(s)" da página de cada pacote e nos arquivo
 
 | Pacote | Autor | Página | Uso |
 |---|---|---|---|
-| Fantozzi's Footsteps (Grass/Sand & Stone) | Fantozzi | https://opengameart.org/content/fantozzis-footsteps-grasssand-stone | passos na terra e na pedra |
-| 50 RPG sound effects | Kenney | https://opengameart.org/content/50-rpg-sound-effects | passos na grama, roupa, interruptor, couro |
+| Fantozzi's Footsteps (Grass/Sand & Stone) | Fantozzi | https://opengameart.org/content/fantozzis-footsteps-grasssand-stone | passos na pedra |
+| 50 RPG sound effects | Kenney | https://opengameart.org/content/50-rpg-sound-effects | passos na grama e calcanhar abafado do passo na terra, roupa, interruptor, couro |
 | 42 Snow and Gravel Footsteps | Corsica_S (extração: qubodup) | https://opengameart.org/content/42-snow-and-gravel-footsteps | passos no gelo |
 | 37 hits/punches | Independent.nu | https://opengameart.org/content/37-hitspunches | soco acertando o corpo |
 | 75 CC0 breaking/falling/hit sfx | rubberduck | https://opengameart.org/content/75-cc0-breaking-falling-hit-sfx | impactos em madeira, metal e genéricos, objetos caindo, corpo caindo, defesa |
@@ -32,6 +32,8 @@ Licença conferida no campo "License(s)" da página de cada pacote e nos arquivo
 | Fire Crackling | AntumDeluge | https://opengameart.org/content/fire-crackling | fogueira |
 | Forest Ambience | TinyWorlds | https://opengameart.org/content/forest-ambience | ambiente da floresta |
 | Ambient Bird Sounds | isaiah658 | https://opengameart.org/content/ambient-bird-sounds | passarinhos |
+| 20 rustles (dry leaves) | qubodup | https://opengameart.org/content/20-rustles-dry-leaves | folhas secas sob o pé (camada do passo no chão de floresta) |
+| Breathing tired | mikeask | https://opengameart.org/content/breathing-tired | respiração cansada depois de correr |
 
 ## Cenário (Poly Haven, CC0 1.0 — https://polyhaven.com/license)
 
