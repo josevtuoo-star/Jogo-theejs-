@@ -43,6 +43,9 @@ enum State { IDLE, PRESSED, CHARGING, WINDUP, ACTIVE, RECOVERY, BLOCKING }
 @export var view_origin: Node3D
 @export var animator: BodyAnimator
 @export var stamina: StaminaComponent
+## Arma na mão (opcional). Com arma: golpes de arma, dano, impulso e alcance
+## da arma; sem arma: socos.
+@export var equipment: PlayerEquipment
 
 @export_group("Soco rápido")
 @export_range(0.0, 200.0, 0.5) var light_damage: float = 12.0
@@ -130,7 +133,7 @@ func can_attack() -> bool:
 ## Soco rápido já recolhido: o próximo pode começar (cancelando o fim da
 ## animação), sem fila de comandos.
 func _combo_ready() -> bool:
-	if _recovery_clip != &"punch_jab" and _recovery_clip != &"punch_cross":
+	if _recovery_clip != &"punch_jab" and _recovery_clip != &"punch_cross" and _recovery_clip != &"weapon_swing_a":
 		return false
 	if animator.current_animation(BodyAnimator.SLOT_ACTION) != _recovery_clip:
 		return false
@@ -210,7 +213,23 @@ func _physics_process(delta: float) -> void:
 		player.action_speed_multiplier = 1.0
 
 
+func _weapon() -> WeaponData:
+	return equipment.weapon if equipment != null else null
+
+
 func _start_light() -> void:
+	var weapon := _weapon()
+	if weapon != null:
+		_chaining = false
+		_active_kind = &"weapon_swing_a"
+		charge = 0.0
+		player.face_view_for(0.7)
+		animator.play(BodyAnimator.SLOT_ACTION, _active_kind, weapon.light_speed, 0.06, 0.18, 1.0, false, true)
+		_recovery_clip = _active_kind
+		_recovery_timer = weapon.light_recovery
+		_set_state(State.WINDUP)
+		attack_started.emit(&"attack_light")
+		return
 	# Um-dois: um segundo soco logo depois do primeiro sai com a outra mão.
 	# Encadeado (ainda na recuperação) ou logo depois do anterior: alterna.
 	if not _chaining and _clock - _last_light_end > 0.8:
@@ -229,6 +248,18 @@ func _start_light() -> void:
 
 
 func _start_heavy() -> void:
+	var weapon := _weapon()
+	if weapon != null:
+		# Golpe amplo de arma: segura na preparação enquanto carrega.
+		_active_kind = &"weapon_swing_b"
+		charge = 0.0
+		player.face_view_for(1.5)
+		animator.play(BodyAnimator.SLOT_ACTION, _active_kind, 1.0, 0.08, 0.2, 1.0, true, true)
+		_recovery_clip = _active_kind
+		_recovery_timer = weapon.heavy_recovery
+		_set_state(State.CHARGING)
+		attack_started.emit(&"attack_heavy")
+		return
 	_active_kind = &"punch_hook"
 	charge = 0.0
 	player.face_view_for(1.5)
@@ -292,7 +323,10 @@ func _aim_point(space: PhysicsDirectSpaceState3D) -> Vector3:
 func _sweep_arm() -> bool:
 	var points := _arm_points()
 	var shoulder := points[0]
-	var extension := shoulder.distance_to(points[1]) + fist_margin
+	var weapon := _weapon()
+	# Com arma, o alcance é o braço mais o comprimento útil da arma.
+	var extension := shoulder.distance_to(points[1]) + (weapon.reach if weapon != null else fist_margin)
+	_sphere.radius = weapon.hit_radius if weapon != null else hit_radius
 	var space := view_origin.get_world_3d().direct_space_state
 	var aim := (_aim_point(space) - shoulder).normalized()
 	_query.transform = Transform3D(Basis.IDENTITY, shoulder)
@@ -311,9 +345,13 @@ func _sweep_arm() -> bool:
 
 
 func _apply_hit(target: Node, point: Vector3, direction: Vector3) -> void:
-	var heavy := _active_kind == &"punch_hook"
+	var heavy := _active_kind == &"punch_hook" or _active_kind == &"weapon_swing_b"
 	var damage := lerpf(heavy_min_damage, heavy_max_damage, charge) if heavy else light_damage
 	var impulse := lerpf(heavy_min_impulse, heavy_max_impulse, charge) if heavy else light_impulse
+	var weapon := _weapon()
+	if weapon != null:
+		damage = lerpf(weapon.heavy_min_damage, weapon.heavy_max_damage, charge) if heavy else weapon.light_damage
+		impulse = lerpf(weapon.heavy_min_impulse, weapon.heavy_max_impulse, charge) if heavy else weapon.light_impulse
 	if heavy:
 		_tired = stamina != null and not stamina.try_consume(heavy_stamina_cost)
 	if _tired:
@@ -323,6 +361,7 @@ func _apply_hit(target: Node, point: Vector3, direction: Vector3) -> void:
 	var hit := {
 		"damage": damage, "impulse": impulse, "direction": direction, "point": point,
 		"kind": _active_kind, "attacker": player,
+		"weapon": weapon.id if weapon != null else &"",
 	}
 	last_hit = hit.duplicate()
 	last_hit["target"] = target
@@ -335,7 +374,8 @@ func _apply_hit(target: Node, point: Vector3, direction: Vector3) -> void:
 		body.apply_impulse(direction * impulse, point - body.global_position)
 		hit_landed.emit(body, 0.0, _active_kind)
 	else:
-		# Superfície rígida: o golpe é rebatido e o tronco recua.
+		# Superfície rígida: o golpe é rebatido e o tronco recua (com arma, o
+		# impacto volta pelo cabo da mesma forma).
 		animator.play(BodyAnimator.SLOT_ACTION, &"hit_head", 1.4, 0.03, 0.15, 1.0, false, true)
 		_recovery_clip = &"hit_head"
 		hit_obstacle.emit(point)

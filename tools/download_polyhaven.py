@@ -42,6 +42,21 @@ ASSETS = [
     ("crowbar_01", "models", "1k"),
     ("machete", "models", "1k"),
     ("wooden_axe", "models", "1k"),
+    # Etapa 7: armas
+    ("baseball_bat", "models", "1k"),
+    ("wooden_axe_02", "models", "1k"),
+    # Etapa 7: mundo procedural (estrada abandonada, entulho, cavernas)
+    ("covered_car", "models", "1k"),
+    ("rusted_wheel_rim_01", "models", "1k"),
+    ("vintage_suitcase", "models", "1k"),
+    ("trashbag", "models", "1k"),
+    ("plastic_jerrycan", "models", "1k"),
+    ("rock_face_01", "models", "1k"),
+    ("dry_branches_medium_01", "models", "1k"),
+    ("rusty_painted_metal", "textures", "1k"),
+    ("rust_coarse_01", "textures", "1k"),
+    ("road_damaged", "textures", "1k"),
+    ("mossy_rock", "textures", "1k"),
 ]
 
 # Mapas usados de cada textura (formato jpg; normal no padrão OpenGL usado pelo Godot).

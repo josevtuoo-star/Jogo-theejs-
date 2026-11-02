@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="WeaponData" load_steps=3 format=3]
+
+[ext_resource type="ArrayMesh" path="res://resources/models/weapons/machado.res" id="1_rxxhd"]
+[ext_resource type="Script" path="res://scripts/weapons/weapon_data.gd" id="2_jkcxr"]
+
+[resource]
+script = ExtResource("2_jkcxr")
+id = &"machado"
+display_name = "Machado de bombeiro"
+mesh = ExtResource("1_rxxhd")
+mass = 2.8
+reach = 0.68
+hit_radius = 0.13
+light_damage = 30.0
+light_impulse = 18.0
+light_speed = 0.82
+light_recovery = 0.28
+heavy_min_damage = 44.0
+heavy_max_damage = 75.0
+heavy_min_impulse = 28.0
+heavy_max_impulse = 52.0
+heavy_recovery = 0.5

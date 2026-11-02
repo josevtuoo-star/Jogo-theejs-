@@ -67,7 +67,6 @@ func _initialize() -> void:
 	_lookout()
 	_outer_details()
 	_boundaries()
-	_ambience()
 	_player_and_ui()
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path("res://scenes/demo"))
 	var packed := PackedScene.new()
@@ -356,7 +355,22 @@ func _checkpoint() -> void:
 	_prop("machete", Vector3(5.9, 0.0, 1.6), 30.0, 0.7, 1.0, true, group)
 	_prop("wooden_axe", Vector3(-8.6, 0.0, 3.6), -50.0, 1.4, 1.0, true, group)
 	_prop("crowbar_01", Vector3(-3.6, 0.0, -8.4), 75.0, 2.0, 1.0, true, group)
+	# Armas brancas (etapa 7): deitadas no chão do posto, para pegar com USAR.
+	_weapon_spawn("taco", Vector3(5.0, 0.0, -1.6), 20.0, group)
+	_weapon_spawn("machado", Vector3(-7.6, 0.0, 3.4), -70.0, group)
+	_weapon_spawn("picareta", Vector3(-2.6, 0.0, -8.0), 110.0, group)
 	_barbed_wire(Vector3(road_center + 6.5, 0.0, -6.4), group)
+
+
+func _weapon_spawn(id: String, position: Vector3, yaw_degrees: float, parent: Node) -> void:
+	var marker := Marker3D.new()
+	marker.name = "Arma_" + id
+	marker.set_script(load("res://scripts/weapons/weapon_spawn.gd"))
+	marker.set(&"weapon", load("res://resources/weapons/%s.tres" % id))
+	# Deitada (cabo na horizontal), um palmo acima do chão: assenta pela física.
+	marker.transform = Transform3D(Basis(Vector3.UP, deg_to_rad(yaw_degrees)) * Basis(Vector3.FORWARD, PI * 0.5),
+			Vector3(position.x, height_at(position.x, position.z) + 0.12, position.z))
+	_own(marker, parent)
 
 
 func _barbed_wire(center: Vector3, parent: Node) -> void:
@@ -557,20 +571,7 @@ func _forest() -> void:
 		_own(shape, colliders)
 	var inner_count := placed.size()
 	_outer_forest(transforms, trunk_transforms, colliders)
-	var trunk_mesh := CylinderMesh.new()
-	trunk_mesh.top_radius = 0.05
-	trunk_mesh.bottom_radius = 0.17
-	trunk_mesh.height = 1.0
-	trunk_mesh.radial_segments = 8
-	trunk_mesh.rings = 1
-	var bark := ORMMaterial3D.new()
-	var folder := PH + "textures/pine_bark/pine_bark_"
-	bark.albedo_texture = load(folder + "albedo_1k.jpg")
-	bark.normal_enabled = true
-	bark.normal_texture = load(folder + "normal_1k.jpg")
-	bark.orm_texture = load(folder + "arm_1k.jpg")
-	bark.uv1_scale = Vector3(2.0, 4.0, 1.0)
-	trunk_mesh.material = bark
+	var trunk_mesh := TreeCards.trunk_mesh()
 	var cards: Array[Mesh] = []
 	for variant in 3:
 		cards.append(_card_mesh(variant, atlas))
@@ -675,45 +676,8 @@ func _scatter(node_name: String, mesh: Mesh, list: Array, max_distance: float = 
 	return scatter
 
 
-## Três planos cruzados (0°, 60°, 120°) com os quadros da variante no atlas.
 func _card_mesh(variant: int, atlas: Texture2D) -> ArrayMesh:
-	var height: float = TREE_HEIGHTS[variant]
-	var width := height * 0.5
-	var bottom := -height * 0.01
-	var vertices := PackedVector3Array()
-	var uvs := PackedVector2Array()
-	var indices := PackedInt32Array()
-	for column in 3:
-		var basis := Basis(Vector3.UP, deg_to_rad(column * 60.0))
-		var u0 := column / 3.0
-		var u1 := (column + 1) / 3.0
-		var v0 := variant / 3.0
-		var v1 := (variant + 1) / 3.0
-		var base := vertices.size()
-		vertices.append(basis * Vector3(-width * 0.5, bottom, 0.0))
-		vertices.append(basis * Vector3(width * 0.5, bottom, 0.0))
-		vertices.append(basis * Vector3(width * 0.5, bottom + height, 0.0))
-		vertices.append(basis * Vector3(-width * 0.5, bottom + height, 0.0))
-		uvs.append_array([Vector2(u0, v1), Vector2(u1, v1), Vector2(u1, v0), Vector2(u0, v0)])
-		indices.append_array([base, base + 2, base + 1, base, base + 3, base + 2])
-	var arrays := []
-	arrays.resize(Mesh.ARRAY_MAX)
-	arrays[Mesh.ARRAY_VERTEX] = vertices
-	arrays[Mesh.ARRAY_TEX_UV] = uvs
-	arrays[Mesh.ARRAY_INDEX] = indices
-	var normals := PackedVector3Array()
-	normals.resize(vertices.size())
-	normals.fill(Vector3.UP)
-	arrays[Mesh.ARRAY_NORMAL] = normals
-	var mesh := ArrayMesh.new()
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-	var material := ShaderMaterial.new()
-	material.shader = load("res://resources/materials/tree_card.gdshader")
-	material.set_shader_parameter("atlas", atlas)
-	material.set_shader_parameter("card_height", height)
-	mesh.surface_set_material(0, material)
-	mesh.custom_aabb = AABB(Vector3(-width, bottom, -width), Vector3(width * 2.0, height, width * 2.0))
-	return mesh
+	return TreeCards.card_mesh(variant, atlas)
 
 
 # --- Ampliação: pontos de interesse e detalhes -------------------------------
@@ -830,13 +794,6 @@ func _first_mesh(asset: String) -> Array:
 	for node: MeshInstance3D in model.find_children("*", "MeshInstance3D", true, false):
 		return [node.mesh, _relative_transform(model, node)]
 	return [null, Transform3D.IDENTITY]
-
-
-func _ambience() -> void:
-	var ambience := Node.new()
-	ambience.name = "Ambience"
-	ambience.set_script(load("res://scripts/audio/ambience.gd"))
-	_own(ambience)
 
 
 func _boundaries() -> void:

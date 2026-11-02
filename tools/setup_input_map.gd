@@ -20,6 +20,7 @@ func _init() -> void:
 	_add_action("walk_toggle", 0.5, [_key(KEY_ALT), _button(JOY_BUTTON_RIGHT_STICK)])
 	_add_action("attack", 0.5, [_mouse(MOUSE_BUTTON_LEFT), _button(JOY_BUTTON_RIGHT_SHOULDER)])
 	_add_action("interact", 0.5, [_key(KEY_E), _button(JOY_BUTTON_X)])
+	_add_action("drop_weapon", 0.5, [_key(KEY_G), _button(JOY_BUTTON_DPAD_DOWN)])
 	_add_action("toggle_camera", 0.5, [_key(KEY_V), _button(JOY_BUTTON_BACK)])
 	_add_action("camera_zoom_in", 0.5, [_mouse(MOUSE_BUTTON_WHEEL_UP)])
 	_add_action("camera_zoom_out", 0.5, [_mouse(MOUSE_BUTTON_WHEEL_DOWN)])

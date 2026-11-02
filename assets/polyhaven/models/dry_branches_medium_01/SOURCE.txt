@@ -1,0 +1,6 @@
+Nome: Dry Branches Medium 01
+Autores: Rico Cilliers
+Licença: CC0 1.0 (Poly Haven)
+Origem: https://polyhaven.com/a/dry_branches_medium_01
+Resolução: 1k
+Polígonos: 16803

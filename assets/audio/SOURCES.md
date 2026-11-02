@@ -120,8 +120,10 @@ Todos CC0 1.0 (OpenGameArt), exceto o vento, gerado pelo projeto. Pacotes, pági
 | `interact/clique.ogg` | `RPGsounds_Kenney/OGG/metalClick.ogg` | Kenney |
 | `interact/couro.ogg` | `RPGsounds_Kenney/OGG/handleSmallLeather.ogg` | Kenney |
 | `interact/porta_abre.ogg` | `RPGsounds_Kenney/OGG/doorOpen_1.ogg` | Kenney |
-| `voice/respiracao.ogg` | `breathing tired.wav` | mikeask |
+| `voice/respiracao_0.ogg` | `breathing tired.wav` (0–1,05 s) | mikeask |
+| `voice/respiracao_1.ogg` | `breathing tired.wav` (1,05–2,2 s) | mikeask |
+| `voice/respiracao_2.ogg` | `breathing tired.wav` (2,2–3,17 s) | mikeask |
 | `world/fogueira.ogg` | `fire-1.ogg` | AntumDeluge |
-| `ambience/floresta.ogg` | `Forest_Ambience.mp3` | TinyWorlds |
-| `ambience/passaros.ogg` | `birds-isaiah658.ogg` | isaiah658 |
-| `ambience/vento.ogg` | gerado por `tools/prepare_audio.py` (ruído marrom filtrado com rajadas) | do projeto |
+| `ambience/vento.ogg` | gerado por `tools/prepare_audio.py` (ruído marrom + rosa, constante; volume, tom e filtro vêm do sistema de vento do jogo) | do projeto |
+
+Removidos na etapa 7: `ambience/floresta.ogg` (Forest Ambience, TinyWorlds) e `ambience/passaros.ogg` (Ambient Bird Sounds, isaiah658) — o ambiente agora é só o vento.

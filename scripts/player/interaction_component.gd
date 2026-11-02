@@ -20,7 +20,7 @@ signal interaction_completed(interactable: Interactable)
 ## Alcance do braço (m) a partir dos olhos.
 @export_range(0.5, 5.0, 0.05) var reach: float = 2.0
 ## Camadas consultadas: mundo (1) e interagíveis (5).
-@export_flags_3d_physics var collision_mask: int = 1 | 16
+@export_flags_3d_physics var collision_mask: int = 1 | 4 | 16
 
 ## Velocidade da animação de interação (a original é lenta para um gesto rápido).
 const INTERACT_SPEED := 1.6
@@ -92,11 +92,19 @@ func _on_animation_event(event: StringName, animation: StringName) -> void:
 		return
 	var target := _pending
 	_pending = null
-	# A mão chegou: o objeto ainda precisa estar em foco e ao alcance.
-	_update_focus()
-	if focused == target:
+	# A mão chegou: o objeto ainda precisa existir e estar ao alcance do braço.
+	# (Não exige a mira exata: durante o gesto a cabeça se move e o raio da
+	# câmera pode escapar de um objeto fino, como um cabo no chão.)
+	if is_instance_valid(target) and target.enabled and _distance_to(target) <= reach + 0.25:
 		target.interact(player)
 		interaction_completed.emit(target)
+
+
+func _distance_to(target: Interactable) -> float:
+	var body := (target as Node) as Node3D
+	if body == null:
+		body = target.get_parent() as Node3D
+	return body.global_position.distance_to(view_origin.global_position) if body != null else 0.0
 
 
 func _on_overlay_finished(slot: StringName, animation: StringName) -> void:

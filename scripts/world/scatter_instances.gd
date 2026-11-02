@@ -10,6 +10,9 @@ extends MultiMeshInstance3D
 
 @export var mesh: Mesh
 @export var transforms: Array[Transform3D] = []
+## Dado por instância lido pelo shader (INSTANCE_CUSTOM), ex.: cor e
+## ferrugem das carcaças. Vazio = sem dado.
+@export var custom_data: PackedColorArray = PackedColorArray()
 ## Esconde a partir desta distância da câmera (0 = sempre visível).
 @export_range(0.0, 1000.0, 1.0) var max_distance: float = 0.0
 
@@ -21,10 +24,14 @@ func _ready() -> void:
 func rebuild() -> void:
 	var multi := MultiMesh.new()
 	multi.transform_format = MultiMesh.TRANSFORM_3D
+	var with_custom := custom_data.size() == transforms.size() and not custom_data.is_empty()
+	multi.use_custom_data = with_custom
 	multi.mesh = mesh
 	multi.instance_count = transforms.size()
 	for i in transforms.size():
 		multi.set_instance_transform(i, transforms[i])
+		if with_custom:
+			multi.set_instance_custom_data(i, custom_data[i])
 	multimesh = multi
 	if max_distance > 0.0:
 		visibility_range_end = max_distance

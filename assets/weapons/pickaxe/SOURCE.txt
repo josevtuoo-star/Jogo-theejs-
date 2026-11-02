@@ -1,0 +1,5 @@
+Nome: Survival Tools — Pickaxe (pacote com martelo, machadinha e picareta)
+Autor: Gar5546x
+Licença: CC0 1.0 (campo "License(s)" da página no OpenGameArt)
+Origem: https://opengameart.org/content/survival-tools
+Arquivos: Pickaxe.fbx (versão "General") e as texturas PBR 2K compartilhadas

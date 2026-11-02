@@ -1,4 +1,4 @@
-[gd_resource type="AudioBusLayout" load_steps=3 format=3]
+[gd_resource type="AudioBusLayout" load_steps=4 format=3]
 
 [sub_resource type="AudioEffectReverb" id="AudioEffectReverb_mata"]
 resource_name = "Mata"
@@ -15,6 +15,11 @@ wet = 0.1
 resource_name = "Ar"
 cutoff_hz = 11000.0
 
+[sub_resource type="AudioEffectLowPassFilter" id="AudioEffectLowPassFilter_vento"]
+resource_name = "Vento"
+cutoff_hz = 1500.0
+resonance = 0.3
+
 [resource]
 bus/1/name = &"Efeitos"
 bus/1/solo = false
@@ -26,9 +31,11 @@ bus/1/effect/0/effect = SubResource("AudioEffectReverb_mata")
 bus/1/effect/0/enabled = true
 bus/1/effect/1/effect = SubResource("AudioEffectLowPassFilter_ar")
 bus/1/effect/1/enabled = true
-bus/2/name = &"Ambiente"
+bus/2/name = &"Vento"
 bus/2/solo = false
 bus/2/mute = false
 bus/2/bypass_fx = false
 bus/2/volume_db = 0.0
 bus/2/send = &"Master"
+bus/2/effect/0/effect = SubResource("AudioEffectLowPassFilter_vento")
+bus/2/effect/0/enabled = true

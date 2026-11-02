@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="WeaponData" load_steps=3 format=3]
+
+[ext_resource type="ArrayMesh" path="res://resources/models/weapons/picareta.res" id="1_cibop"]
+[ext_resource type="Script" path="res://scripts/weapons/weapon_data.gd" id="2_kqe23"]
+
+[resource]
+script = ExtResource("2_kqe23")
+id = &"picareta"
+display_name = "Picareta"
+mesh = ExtResource("1_cibop")
+mass = 2.6
+reach = 0.66
+light_damage = 26.0
+light_impulse = 16.0
+light_speed = 0.85
+light_recovery = 0.25
+heavy_min_damage = 38.0
+heavy_max_damage = 66.0
+heavy_min_impulse = 26.0
+heavy_max_impulse = 50.0
+heavy_recovery = 0.45

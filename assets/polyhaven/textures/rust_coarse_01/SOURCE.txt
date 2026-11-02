@@ -1,0 +1,5 @@
+Nome: Rust Coarse 01
+Autores: Dimitrios Savva, Rico Cilliers
+Licença: CC0 1.0 (Poly Haven)
+Origem: https://polyhaven.com/a/rust_coarse_01
+Resolução: 1k

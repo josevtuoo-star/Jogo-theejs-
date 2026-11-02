@@ -1,4 +1,4 @@
-[gd_scene load_steps=14 format=3]
+[gd_scene load_steps=15 format=3]
 
 [ext_resource type="Script" path="res://scripts/player/player_controller.gd" id="1_controller"]
 [ext_resource type="Resource" path="res://resources/player/default_movement_settings.tres" id="2_settings"]
@@ -11,6 +11,7 @@
 [ext_resource type="Script" path="res://scripts/player/melee_combat.gd" id="10_combat"]
 [ext_resource type="Script" path="res://scripts/player/player_death.gd" id="11_death"]
 [ext_resource type="Script" path="res://scripts/audio/player_sounds.gd" id="12_sounds"]
+[ext_resource type="Script" path="res://scripts/weapons/player_equipment.gd" id="13_equipment"]
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_body"]
 radius = 0.3
@@ -72,11 +73,12 @@ camera = NodePath("../CameraRig/Camera3D")
 view_origin = NodePath("../Head/CameraEffects")
 animator = NodePath("../Survivor")
 
-[node name="Combat" type="Node" parent="." node_paths=PackedStringArray("player", "view_origin", "animator")]
+[node name="Combat" type="Node" parent="." node_paths=PackedStringArray("player", "view_origin", "animator", "equipment")]
 script = ExtResource("10_combat")
 player = NodePath("..")
 view_origin = NodePath("../Head/CameraEffects")
 animator = NodePath("../Survivor")
+equipment = NodePath("../Equipment")
 
 [node name="Death" type="Node" parent="." node_paths=PackedStringArray("player", "health", "camera_rig", "body")]
 script = ExtResource("11_death")
@@ -92,3 +94,8 @@ player = NodePath("..")
 health = NodePath("../Health")
 combat = NodePath("../Combat")
 interaction = NodePath("../Interaction")
+
+[node name="Equipment" type="Node" parent="." node_paths=PackedStringArray("player", "body")]
+script = ExtResource("13_equipment")
+player = NodePath("..")
+body = NodePath("../Survivor")

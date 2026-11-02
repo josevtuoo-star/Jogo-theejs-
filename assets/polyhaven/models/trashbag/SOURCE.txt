@@ -1,0 +1,6 @@
+Nome: Trashbag
+Autores: Benny Weimer
+Licença: CC0 1.0 (Poly Haven)
+Origem: https://polyhaven.com/a/trashbag
+Resolução: 1k
+Polígonos: 4482

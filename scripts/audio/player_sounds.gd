@@ -23,26 +23,20 @@ var _sets: Dictionary = {}
 var _last_pain: float = -10.0
 var _clock: float = 0.0
 var _step_count: int = 0
-var _breath: AudioStreamPlayer3D
 ## Esforço acumulado da corrida (0..1): a respiração aparece depois de
 ## alguns segundos correndo e some aos poucos depois de parar.
 var effort: float = 0.0
+## Respirações avulsas, com intervalo pelo esforço (não um laço ofegante).
+var _breaths: SoundSet
+var _next_breath: float = 0.0
+var breaths_played: int = 0
 
 
 func _ready() -> void:
 	super._ready()
 	for surface in ["calcanhar", "folhas", "grama", "gelo", "pedra"]:
 		_steps[surface] = SoundSet.load_set("footsteps/" + surface)
-	_breath = AudioStreamPlayer3D.new()
-	var breath := SoundSet.load_set("voice/respiracao").pick()
-	if breath is AudioStreamOggVorbis:
-		breath = breath.duplicate()
-		(breath as AudioStreamOggVorbis).loop = true
-	_breath.stream = breath
-	_breath.bus = bus
-	_breath.volume_db = -60.0
-	_breath.unit_size = 2.0
-	add_child(_breath)
+	_breaths = SoundSet.load_set("voice/respiracao")
 	for key in ["body/aterrissagem", "body/queda_corpo", "body/roupa", "voice/esforco", "voice/dor",
 			"voice/morte", "combat/golpe_ar", "combat/soco_corpo", "combat/impacto_madeira",
 			"combat/impacto_metal", "combat/impacto_generico", "combat/parede", "combat/defesa",
@@ -71,16 +65,23 @@ func _process(delta: float) -> void:
 	_clock += delta
 	if player == null:
 		return
-	# Esforço: sobe correndo (cheio em ~8 s), desce parado (~10 s).
+	# Esforço: sobe correndo (cheio em ~8 s) e desce devagar (~25 s), como
+	# o fôlego de quem correu e está se recuperando.
 	var sprinting := player.is_sprinting and player.get_horizontal_speed() > player.settings.jog_speed
-	effort = clampf(effort + (delta / 8.0 if sprinting else -delta / 10.0), 0.0, 1.0)
-	var audible := effort > 0.25 and not player.is_dead()
-	if audible and not _breath.playing:
-		_breath.play()
-	elif not audible and _breath.playing and effort < 0.2:
-		_breath.stop()
-	_breath.volume_db = lerpf(-30.0, -8.0, smoothstep(0.25, 1.0, effort))
-	_breath.global_position = player.global_position + Vector3.UP * 1.6
+	effort = clampf(effort + (delta / 8.0 if sprinting else -delta / 25.0), 0.0, 1.0)
+	# Uma respiração por vez: cansado, a cada ~1,6 s (≈37 por minuto, ritmo
+	# de quem correu muito); recuperando, o intervalo cresce até ~3,2 s
+	# (≈19/min) e some. Intervalo e volume variam um pouco a cada respiração.
+	if effort > 0.3 and not player.is_dead():
+		_next_breath -= delta
+		if _next_breath <= 0.0:
+			var heavy := smoothstep(0.3, 1.0, effort)
+			play(&"respiracao", _breaths, lerpf(-26.0, -14.0, heavy), lerpf(0.94, 1.0, heavy), 0.04,
+					player.global_position + Vector3.UP * 1.6, 1.5)
+			breaths_played += 1
+			_next_breath = lerpf(3.2, 1.6, heavy) * randf_range(0.88, 1.12)
+	else:
+		_next_breath = minf(_next_breath, 0.8)
 
 
 func _play_body(category: StringName, key: String, volume_db: float = 0.0, height: float = 1.0) -> void:
@@ -178,7 +179,14 @@ func _on_combat_state(state: int) -> void:
 	if state == MeleeCombat.State.WINDUP:
 		# O braço corta o ar quando o golpe sai (soco rápido ou gancho solto).
 		var heavy := combat.charge > 0.0
-		_play_body(&"golpe_ar", "combat/golpe_ar", -10.0 if heavy else -15.0, 1.4)
+		var weapon := _weapon()
+		if weapon == null:
+			_play_body(&"golpe_ar", "combat/golpe_ar", -10.0 if heavy else -15.0, 1.4)
+			return
+		# Arma: deslocamento de ar mais grave e mais forte quanto mais pesada.
+		var weight := clampf((weapon.mass - 1.0) / 2.0, 0.0, 1.0)
+		play(&"golpe_ar", _sets["combat/golpe_ar"], (-6.0 if heavy else -9.0) + weight * 2.0,
+				lerpf(0.9, 0.68, weight), 0.06, player.global_position + Vector3.UP * 1.4)
 
 
 func _on_hit_landed(target: Node, _damage: float, _kind: StringName) -> void:
@@ -193,6 +201,17 @@ func _on_hit_landed(target: Node, _damage: float, _kind: StringName) -> void:
 			play(&"impacto_metal", _sets["combat/impacto_metal"], -2.0, 1.0, 0.08, point)
 		_:
 			play(&"impacto_generico", _sets["combat/impacto_generico"], 0.0, 1.0, 0.08, point)
+	# Com arma, soa também o material dela (madeira do taco, aço do machado e
+	# da picareta), mais baixo no corpo, que abafa.
+	var weapon := _weapon()
+	if weapon != null and weapon.impact_material != material:
+		var key := "combat/impacto_metal" if weapon.impact_material == &"metal" else "combat/impacto_madeira"
+		play(&"impacto_arma", _sets[key], -9.0 if material == &"corpo" else -4.0, 1.0, 0.08, point)
+
+
+func _weapon() -> WeaponData:
+	var equipment := player.get_node_or_null("Equipment") as PlayerEquipment
+	return equipment.weapon if equipment != null else null
 
 
 func _on_interaction_completed(target: Interactable) -> void:

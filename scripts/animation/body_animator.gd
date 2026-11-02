@@ -168,6 +168,8 @@ var _limp_weight: float = 0.0
 var _lower_body_yaw: float = 0.0
 var _backward_weight: float = 0.0
 var _head_look_yaw: float = 0.0
+## Clipe da pose de guarda (punhos; com arma, a postura de arma empunhada).
+var guard_clip: StringName = GUARD_CLIP
 var _guard_target: bool = false
 var _guard_weight: float = 0.0
 ## 1 em primeira pessoa (suavizado): a guarda passa para a IK diante dos olhos.
@@ -582,8 +584,8 @@ func _compose() -> void:
 				_sample(&"fall", _idle_time, _scratch)
 				_mix(_layer, _scratch, fall_amount)
 			_mix(_pose, _layer, _air_weight)
-	if _guard_weight > 0.001 and _clips.has(GUARD_CLIP):
-		var guard: Clip = _clips[GUARD_CLIP]
+	if _guard_weight > 0.001 and _clips.has(guard_clip):
+		var guard: Clip = _clips[guard_clip]
 		_sample_clip(guard, guard.animation.length * GUARD_FRAME, _layer)
 		_mix_clip(_pose, _layer, guard, _guard_weight, true)
 	for old in _retiring:

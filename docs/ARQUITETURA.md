@@ -19,30 +19,35 @@ docs/                      Arquitetura e documentação de cada etapa
 scenes/
   player/player.tscn       Personagem jogável (cápsula física + corpo + câmera)
   characters/survivor.tscn Corpo do sobrevivente (gerado por tools/build_survivor.gd)
-  demo/demo_forest.tscn    Cena principal: clareira na floresta (tools/build_demo_map.gd)
+  world/mundo.tscn         Cena principal: mundo procedural por pedaços (tools/build_world_scene.gd)
+  demo/demo_forest.tscn    Mapa fixo da clareira na floresta (tools/build_demo_map.gd)
   ui/touch_controls.tscn   Controles de toque
   test/                    Cenas de calibração (não são o mapa do jogo)
 scripts/
-  autoload/                Singletons (GameInput)
+  autoload/                Singletons (GameInput; Wind fica em world/)
   components/              Componentes reutilizáveis (StaminaComponent; depois Health, Hunger, Thirst…)
   player/                  Controlador, interação, combate, morte (ragdoll)
   camera/                  Câmera em 1ª/3ª pessoa com transição (PlayerCameraRig)
   animation/               Animador do corpo inteiro (BodyAnimator)
-  audio/                   Sons: SoundSet, SoundEmitter, PlayerSounds, ImpactSound, Ambience
+  audio/                   Sons: SoundSet, SoundEmitter, PlayerSounds, ImpactSound
+  weapons/                 Armas brancas: WeaponData, PlayerEquipment, WeaponPickup, WeaponSpawn
   interaction/             Interactable e objetos interagíveis
-  world/                   Perigos, alvos, fogueira, instâncias de vegetação (ScatterInstances)
+  world/                   Vento (singleton Wind), perigos, alvos, fogueira, instâncias (ScatterInstances), impostores (TreeCards)
+    procedural/            Mundo infinito: WorldGenerator (relevo, estradas, cavernas, surface nets, objetos),
+                           ProceduralWorld (pedaços em segundo plano), CaveAtmosphere (luz nas cavernas, lanterna)
   physics/                 SurfaceProfile e utilidades físicas
   ui/                      Controles de toque e HUD
   debug/                   Ferramentas de diagnóstico
 resources/
   player/                  Parâmetros (.tres)
   surfaces/                Perfis de superfície (.tres)
-  materials/               Shaders (terreno, árvores) e materiais
+  materials/               Shaders (terrenos, árvores, carcaças) e materiais
+  weapons/                 Dados das armas (WeaponData .tres)
   animations/              Biblioteca retargetada do corpo (survivor_body.res)
-  models/                  Malhas geradas (roupas, terreno)
+  models/                  Malhas geradas (roupas, armas, objetos e carcaças do mundo)
   textures/trees/          Atlas de impostores das árvores
 tests/                     Testes automatizados (cena + script)
-tools/                     Ferramentas de produção (InputMap, retarget, personagem, impostores, mapa)
+tools/                     Ferramentas de produção (InputMap, retarget, personagem, impostores, mapas, armas, objetos do mundo)
 assets/                    Assets: personagem do dono do projeto e de terceiros (CC0), cada pasta com licença/SOURCE.txt
   audio/                   Sons OGG (CC0), origem de cada um em SOURCES.md
   _source/                 Pacotes originais grandes (fora do Git e do APK)
@@ -92,15 +97,16 @@ Cada etapa só começa depois que a anterior passa nos testes e é validada no a
 | 4 | **Reconstrução visual e câmera** | corpo humano completo (CC0) com roupas, animações retargetadas, primeira pessoa verdadeira, câmera 1ª/3ª pessoa, ragdoll, cenário PBR, HUD | **concluída** (`ETAPA_04_RECONSTRUCAO.md`) |
 | 5 | **Correção profunda da jogabilidade** | origem do soco ao arrastar no toque, controles por índice de dedo e áreas exclusivas, personagem em proporções naturais com roupa modelada, pés plantados, inclinação pela aceleração, curvas centrípetas, combate em máquina de estados com impacto pelo braço, defesa | **concluída** (`ETAPA_05_JOGABILIDADE.md`) |
 | 6 | **Sobrevivente, sons e mapa ampliado** | personagem do `Sobrevivente.fbx` com animações retargetadas, resistência desligada, defesa por toque, pés no terreno (IK), câmera e toque ajustados, 95 sons CC0, mapa de 400 m preservando a clareira | **concluída** (`ETAPA_06_SOBREVIVENTE_SONS_MAPA.md`) |
-| 7 | Interação e inventário | itens como `RigidBody3D` reais, pegar e soltar (animação `pickup` já existe), inventário por peso e volume (define `carried_mass`), portas, UI de toque | próxima |
-| 8 | Status vitais | fome, sede, sangramento, cura; a vida e as lesões já existem | — |
-| 9 | Armas | armas brancas e de fogo (recuo, dispersão, munição) sobre o combate da etapa 3 | — |
-| 10 | Zumbis | mesmo esqueleto do sobrevivente (Quaternius UAL 1/2, CC0), `NavigationAgent3D`, percepção por visão e ruído (passos com superfície), ataques com `receive_hit` | — |
-| 11 | Ragdoll parcial e reações | o ragdoll de morte já existe (etapa 4); falta mistura física parcial em golpes fortes e zumbis | — |
-| 12 | Otimização Android | perfis de qualidade, LOD, testes em aparelhos reais | — |
-| 13 | PC | configurações gráficas e de controle | — |
+| 7 | **Armas brancas e mundo procedural** | picareta, machado de bombeiro e taco com pregos (pegar, trocar, soltar, golpes próprios); mundo infinito por pedaços com cavernas, rodovias abandonadas, floresta e lanterna de cabeça; ambiente só com vento variável | **concluída** (`ETAPA_07_ARMAS_MUNDO_PROCEDURAL.md`) |
+| 8 | Interação e inventário | inventário por peso e volume (define `carried_mass`), portas, UI de toque; as armas já são corpos físicos que se pegam e soltam | próxima |
+| 9 | Status vitais | fome, sede, sangramento, cura; a vida e as lesões já existem | — |
+| 10 | Armas de fogo | recuo, dispersão, munição, sobre o combate e o equipamento da etapa 7 | — |
+| 11 | Zumbis | mesmo esqueleto do sobrevivente (Quaternius UAL 1/2, CC0), `NavigationAgent3D` sobre o mundo gerado, percepção por visão e ruído (passos com superfície), ataques com `receive_hit` | — |
+| 12 | Ragdoll parcial e reações | o ragdoll de morte já existe (etapa 4); falta mistura física parcial em golpes fortes e zumbis | — |
+| 13 | Otimização Android | perfis de qualidade, LOD, testes em aparelhos reais | — |
+| 14 | PC | configurações gráficas e de controle | — |
 
-O mundo aberto não faz parte destas etapas.
+O mundo aberto entrou na etapa 7, a pedido do dono do projeto: procedural e infinito, carregado por pedaços.
 
 ## Assets
 

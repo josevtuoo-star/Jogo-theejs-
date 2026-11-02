@@ -94,24 +94,27 @@ add("interact/clique.ogg", "P:RPGsounds_Kenney/OGG/metalClick.ogg", -20)
 add("interact/couro.ogg", "P:RPGsounds_Kenney/OGG/handleSmallLeather.ogg", -20)
 add("interact/porta_abre.ogg", "P:RPGsounds_Kenney/OGG/doorOpen_1.ogg", -19)
 
-# Respiração cansada depois de correr (em laço, com o volume pelo esforço).
-add("voice/respiracao.ogg", "L:breathing tired.wav", -22,
-    extra="afade=t=in:d=0.08,afade=t=out:st=3.0:d=0.16")
+# Respiração cansada depois de correr, separada em respirações avulsas: o
+# jogo toca uma de cada vez, com o intervalo pelo esforço (o arquivo tem 3
+# respirações em 3,2 s; em laço seria ofegante demais, ~57 por minuto).
+for i, (start, end) in enumerate([(0.0, 1.05), (1.05, 2.2), (2.2, 3.17)]):
+    add(f"voice/respiracao_{i}.ogg", "L:breathing tired.wav", -24,
+        extra=f"atrim=start={start}:end={end},asetpts=PTS-STARTPTS,afade=t=in:d=0.06,afade=t=out:st={end - start - 0.12:.2f}:d=0.12")
 
 # Mundo
 add("world/fogueira.ogg", "L:fire-1.ogg", -20)
-add("ambience/floresta.ogg", "L:Forest_Ambience.mp3", -24, True)
-add("ambience/passaros.ogg", "L:birds-isaiah658.ogg", -27, True)
+# Sem trilha nem passarinhos: o único ambiente é o vento (gerado abaixo),
+# com a intensidade controlada pelo sistema de vento do jogo.
 
 
 def wind(dst, seconds=64):
-    """Vento na copa, gerado: ruído marrom filtrado na faixa do farfalhar
-    das agulhas, com rajadas lentas (período que divide o laço: emenda
-    sem salto de volume)."""
-    gust = f"0.55+0.3*sin(2*PI*t/{seconds / 4})+0.15*sin(2*PI*t/{seconds / 7})"
-    graph = (f"anoisesrc=color=brown:duration={seconds}:sample_rate=44100:amplitude=0.6,"
-             f"highpass=f=120,lowpass=f=1400,volume='{gust}':eval=frame,"
-             f"aecho=0.6:0.5:60|110:0.25|0.15,loudnorm=I=-26:TP=-3")
+    """Vento na copa, gerado: ruído (marrom + rosa) largo e constante. A
+    intensidade, as rajadas e o "abafado" do vento fraco vêm do jogo (volume,
+    tom e filtro passa-baixa do barramento Vento), não do arquivo."""
+    graph = (f"anoisesrc=color=brown:duration={seconds}:sample_rate=44100:amplitude=0.55[a];"
+             f"anoisesrc=color=pink:duration={seconds}:sample_rate=44100:amplitude=0.18:seed=7[b];"
+             f"[a][b]amix=inputs=2,highpass=f=70,lowpass=f=5000,"
+             f"aecho=0.6:0.5:60|110:0.25|0.15,loudnorm=I=-22:TP=-3")
     cmd = ["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", graph, "-ac", "2",
            "-c:a", "libvorbis", "-q:a", "3", dst]
     subprocess.run(cmd, check=True)

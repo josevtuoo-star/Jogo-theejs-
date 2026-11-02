@@ -1,0 +1,5 @@
+Nome: 3D Vehicles Pack (modelos de argila, sem materiais nem UV)
+Autor: mehrasaur (Inborn Ninja)
+Licença: CC0 1.0 (campo "License(s)" da página no OpenGameArt)
+Origem: https://opengameart.org/content/3d-vehicles-pack
+Uso: carcaças enferrujadas da estrada (ferrugem aplicada por projeção no jogo)

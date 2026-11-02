@@ -15,14 +15,16 @@ uniform vec3 translucency : source_color = vec3(0.16, 0.20, 0.10);
 // Altura do plano em unidades do modelo (antes da escala da instância).
 uniform float card_height = 9.0;
 uniform float wind_strength : hint_range(0.0, 0.2) = 0.035;
+// Intensidade do vento do mundo (autoload Wind): 0 = calmaria, 1 = vendaval.
+global uniform float wind_intensity;
 uniform float wind_speed = 0.8;
 
 void vertex() {
 	float h = clamp(VERTEX.y / card_height, 0.0, 1.0);
 	NORMAL = normalize(vec3(VERTEX.x, card_height * 0.18 + VERTEX.y * 0.12, VERTEX.z));
 	vec3 root = (MODEL_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
-	float phase = TIME * wind_speed + root.x * 0.13 + root.z * 0.17;
-	float sway = h * h * card_height * wind_strength;
+	float phase = TIME * wind_speed * (0.7 + 0.8 * wind_intensity) + root.x * 0.13 + root.z * 0.17;
+	float sway = h * h * card_height * wind_strength * (0.25 + 2.2 * wind_intensity);
 	VERTEX.x += sin(phase) * sway;
 	VERTEX.z += cos(phase * 0.83 + 1.3) * sway * 0.6;
 }

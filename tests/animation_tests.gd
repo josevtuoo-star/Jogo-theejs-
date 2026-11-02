@@ -7,7 +7,7 @@ extends Node
 
 const GYM_SCENE := "res://scenes/test/movement_test_gym.tscn"
 const ACTIONS := [&"move_forward", &"move_back", &"move_left", &"move_right", &"sprint", &"jump",
-		&"crouch_toggle", &"crouch_hold", &"walk_toggle", &"attack", &"interact", &"toggle_camera", &"block"]
+		&"crouch_toggle", &"crouch_hold", &"walk_toggle", &"attack", &"interact", &"toggle_camera", &"block", &"drop_weapon"]
 const YAW_TOWARD_POSITIVE_Z := PI
 const DT := 1.0 / 60.0
 ## Área aberta do ginásio para corridas longas.
@@ -89,6 +89,14 @@ func _ready() -> void:
 		_test_demo_map,
 		_test_first_person_running_camera,
 		_test_sound_mix,
+		_test_wind,
+		_test_weapon_pickup_and_drop,
+		_test_weapon_strikes,
+		_test_world_generator,
+		_test_world_caves_and_roads,
+		_test_world_streaming,
+		_test_world_walk_and_headlamp,
+		_test_world_main_scene,
 		_test_ragdoll_death_and_respawn,
 		_test_touch_attack_button,
 		_test_animator_performance,
@@ -1327,8 +1335,10 @@ func _test_sounds() -> void:
 	_check(sounds.count(&"morte") >= 1 and sounds.count(&"queda_corpo") == falls + 1, "morte e o corpo caindo")
 	await _reset(OPEN_LANE, YAW_TOWARD_POSITIVE_Z)
 	_check(ImpactSound.material_of(dummy) == &"corpo", "boneco de treino soa como corpo")
-	_check(not SoundSet.load_set("ambience/floresta").streams.is_empty() and not SoundSet.load_set("world/fogueira").streams.is_empty(),
-			"ambiente da floresta e fogueira carregados")
+	_check(not SoundSet.load_set("ambience/vento").streams.is_empty() and not SoundSet.load_set("world/fogueira").streams.is_empty(),
+			"vento e fogueira carregados")
+	_check(not ResourceLoader.exists("res://assets/audio/ambience/floresta.ogg") and not ResourceLoader.exists("res://assets/audio/ambience/passaros.ogg"),
+			"sem trilha sonora nem passarinhos")
 
 
 func _test_joystick_dead_zone() -> void:
@@ -1363,7 +1373,7 @@ func _test_demo_map() -> void:
 	_check(trees >= 6000 and chunks > 50 and all_ranged, "%d árvores em %d blocos, todos com distância de desenho" % [trees, chunks])
 	var campfires := map.find_children("Campfire", "", true, false).size()
 	_check(campfires == 2, "duas fogueiras (clareira e acampamento de caçadores): %d" % campfires)
-	for poi in ["Checkpoint", "HunterCamp", "NorthRoadblock", "Lookout", "Ambience"]:
+	for poi in ["Checkpoint", "HunterCamp", "NorthRoadblock", "Lookout"]:
 		_check(map.has_node(poi), "%s presente" % poi)
 	var rigid_with_sound := 0
 	var rigid := 0
@@ -1422,13 +1432,416 @@ func _test_sound_mix() -> void:
 	await _frames(60 * 5)
 	_check(sounds.effort > 0.5, "correr 5 s cansa (esforço %.2f)" % sounds.effort)
 	_release_all()
-	await _frames(60)
-	var after_stop := sounds.effort
-	await _frames(120)
-	_check(sounds.effort < after_stop and sounds.effort > 0.0, "parado, o fôlego volta aos poucos (%.2f → %.2f)" % [after_stop, sounds.effort])
+	# Respirações avulsas num ritmo humano (não ofegante): conta por 10 s.
+	var start_breaths := sounds.breaths_played
+	await _frames(60 * 10)
+	var per_minute := (sounds.breaths_played - start_breaths) * 6.0
+	_check(per_minute >= 12.0 and per_minute <= 42.0, "respiração depois da corrida: %.0f por minuto" % per_minute)
+	_check(sounds.effort < 0.5, "parado, o fôlego volta aos poucos (esforço %.2f)" % sounds.effort)
+
+
+func _test_wind() -> void:
+	_begin("Vento: um só ambiente, com a intensidade movendo som e árvores")
+	var wind: Node = get_node("/root/Wind")
+	wind.set("override", 0.05)
+	await _frames(240)
+	var calm_volume: float = (wind.get("_player") as AudioStreamPlayer).volume_db
+	var calm_cutoff: float = (wind.get("_filter") as AudioEffectLowPassFilter).cutoff_hz
+	var calm_shader: float = wind.get("intensity")
+	wind.set("override", 0.95)
+	await _frames(240)
+	var strong_volume: float = (wind.get("_player") as AudioStreamPlayer).volume_db
+	var strong_cutoff: float = (wind.get("_filter") as AudioEffectLowPassFilter).cutoff_hz
+	var strong_shader: float = wind.get("intensity")
+	_check(strong_volume > calm_volume + 15.0, "vento forte é mais alto (%.0f dB → %.0f dB)" % [calm_volume, strong_volume])
+	_check(strong_cutoff > calm_cutoff * 4.0, "vento fraco é abafado, forte chia (%.0f Hz → %.0f Hz)" % [calm_cutoff, strong_cutoff])
+	_check(strong_shader > 0.8 and calm_shader < 0.2, "a copa das árvores segue a mesma intensidade (%.2f → %.2f)" % [calm_shader, strong_shader])
+	wind.set("override", -1.0)
 
 
 # --- Morte e ragdoll ---------------------------------------------------------
+
+# --- Etapa 7: armas brancas ---------------------------------------------------
+
+const WEAPONS := ["res://resources/weapons/taco.tres", "res://resources/weapons/machado.tres", "res://resources/weapons/picareta.tres"]
+
+
+## Solta a arma no chão diante do jogador, mira nela e aperta USAR.
+func _pick_up_from_ground(data: WeaponData, spot: Vector3) -> RigidBody3D:
+	var body := WeaponPickup.spawn(data, Transform3D(Basis(Vector3.FORWARD, PI * 0.5), spot + Vector3.UP * 0.3), _gym)
+	await _frames(90)
+	# Mira na arma. Ao olhar para baixo a cabeça (e a câmera em 1ª pessoa)
+	# avança um pouco, então a mira é corrigida até assentar, como o jogador faz.
+	for attempt in 3:
+		var eye := _camera.global_position
+		var target := body.global_position
+		_player.set_view_rotation(_player.get_view_yaw(), atan2(target.y - eye.y, Vector2(target.x - eye.x, target.z - eye.z).length()))
+		_rig.snap()
+		await _frames(20)
+	_check(_interaction.focused is WeaponPickup and (_interaction.focused as WeaponPickup).prompt == "Pegar " + data.display_name.to_lower(),
+			"mira na arma mostra \"Pegar %s\"" % data.display_name.to_lower())
+	await _hold(&"interact", 2)
+	await _frames(90)
+	return body
+
+
+func _test_weapon_pickup_and_drop() -> void:
+	_begin("Armas: pegar do chão, empunhar, soltar e trocar")
+	var equipment: PlayerEquipment = _player.get_node("Equipment")
+	equipment.weapon = null
+	for path in WEAPONS:
+		var data: WeaponData = load(path)
+		var box := data.mesh.get_aabb()
+		_check(box.size.y > 0.75 and box.size.y < 1.0 and data.mesh.get_surface_count() >= 1,
+				"%s: malha de %.2f m, empunhadura na origem (de %.2f a %.2f m)" % [data.display_name, box.size.y, box.position.y, box.end.y])
+		_check(box.position.y < 0.0 and box.position.y > -0.2, "%s: cabo passa pela mão" % data.display_name)
+	var bat: WeaponData = load(WEAPONS[0])
+	var axe: WeaponData = load(WEAPONS[1])
+	await _reset(Vector3(30.0, 0.0, 10.0), YAW_TOWARD_POSITIVE_Z)
+	var ground := _player.global_position + _forward() * 0.9
+	var dropped := await _pick_up_from_ground(bat, ground)
+	_check(equipment.weapon == bat, "pegou o taco do chão com USAR (%s)" % (equipment.weapon.display_name if equipment.weapon else "nada"))
+	_check(not is_instance_valid(dropped), "o taco saiu do chão")
+	var model := _skeleton.get_node_or_null("RightHandWeapon/WeaponModel") as MeshInstance3D
+	_check(model != null and model.visible and model.mesh == bat.mesh, "taco preso ao osso da mão direita")
+	if model != null:
+		var hand := _bone("hand_r")
+		_check(model.global_position.distance_to(hand) < 0.15, "empunhadura junto da mão (%.2f m)" % model.global_position.distance_to(hand))
+	_check(_body.guard_clip == &"weapon_idle", "postura de arma empunhada")
+	var drop_buttons := get_tree().get_nodes_in_group(&"drop_weapon_button")
+	_check(drop_buttons.is_empty() or (drop_buttons[0] as Control).visible, "botão SOLTAR aparece com arma na mão")
+	# Trocar: pegar o machado derruba o taco no lugar dele.
+	await _pick_up_from_ground(axe, _player.global_position + _forward() * 0.9)
+	_check(equipment.weapon == axe, "trocou pelo machado")
+	var loose := 0
+	for child in _gym.get_children():
+		if child is RigidBody3D and child.has_node("WeaponPickup") and (child.get_node("WeaponPickup") as WeaponPickup).weapon == bat:
+			loose += 1
+	_check(loose == 1, "o taco ficou no chão no lugar do machado (%d)" % loose)
+	# Soltar.
+	await _hold(&"drop_weapon", 2)
+	await _frames(60)
+	_check(equipment.weapon == null and not model.visible, "soltou a arma (G / direcional baixo)")
+	_check(_body.guard_clip == BodyAnimator.GUARD_CLIP, "voltou à guarda de punhos")
+	_check(drop_buttons.is_empty() or not (drop_buttons[0] as Control).visible, "botão SOLTAR some sem arma")
+	for child in _gym.get_children():
+		if child is RigidBody3D and child.has_node("WeaponPickup"):
+			_check(child.global_position.y > -1.0 and child.global_position.y < 1.0, "%s parou no chão (y %.2f)" % [child.name, child.global_position.y])
+			child.queue_free()
+	await _frames(5)
+
+
+func _test_weapon_strikes() -> void:
+	_begin("Armas: golpes com dano, alcance e animação da arma")
+	var equipment: PlayerEquipment = _player.get_node("Equipment")
+	var dummy: TrainingDummy = _gym.get_node("TrainingDummyStation/TrainingDummy")
+	# A 0,45 m além da distância do soco, o punho não chega.
+	await _reset(Vector3(-5.0, 0.0, 10.4), 0.0)
+	var hits := dummy.hits
+	await _hold(&"attack", 2)
+	await _frames(60)
+	_check(dummy.hits == hits, "sem arma, o soco não alcança a 0,45 m a mais")
+	for path in WEAPONS:
+		var data: WeaponData = load(path)
+		equipment.equip(data)
+		await _reset(Vector3(-5.0, 0.0, 10.4), 0.0)
+		await _frames(120)
+		hits = dummy.hits
+		await _hold(&"attack", 2)
+		await _frames(3)
+		_check(_body.current_animation(BodyAnimator.SLOT_ACTION) == &"weapon_swing_a", "%s: golpe rápido de arma" % data.display_name)
+		await _frames(60)
+		_check(dummy.hits == hits + 1 and is_equal_approx(dummy.last_damage, data.light_damage),
+				"%s: acerta mais longe com dano %.0f (%.0f)" % [data.display_name, data.light_damage, dummy.last_damage])
+		await _frames(120)
+	# Golpe carregado com o machado.
+	var axe: WeaponData = load(WEAPONS[1])
+	equipment.equip(axe)
+	await _reset(Vector3(-5.0, 0.0, 10.4), 0.0)
+	await _frames(150)
+	hits = dummy.hits
+	Input.action_press(&"attack")
+	await _frames(70)
+	_check(_body.current_animation(BodyAnimator.SLOT_ACTION) == &"weapon_swing_b" and _body.is_holding(BodyAnimator.SLOT_ACTION),
+			"machado: segura a preparação do golpe amplo")
+	Input.action_release(&"attack")
+	await _frames(50)
+	_check(dummy.hits == hits + 1 and dummy.last_damage > axe.light_damage and dummy.last_damage <= axe.heavy_max_damage,
+			"machado carregado: dano %.1f (entre %.0f e %.0f)" % [dummy.last_damage, axe.light_damage, axe.heavy_max_damage])
+	await _frames(90)
+	equipment.drop()
+	for child in _gym.get_children():
+		if child is RigidBody3D and child.has_node("WeaponPickup"):
+			child.queue_free()
+	await _frames(5)
+
+
+# --- Etapa 7: mundo procedural por pedaços ------------------------------------
+
+const WORLD_SEED := 20261102
+## Longe do ginásio de testes (que fica em volta da origem).
+const FAR := Vector3(6000.0, 0.0, 6000.0)
+
+
+func _test_world_generator() -> void:
+	_begin("Mundo: geração determinística, sem emendas e rápida")
+	var a := WorldGenerator.new(WORLD_SEED)
+	var b := WorldGenerator.new(WORLD_SEED)
+	var other := WorldGenerator.new(WORLD_SEED + 1)
+	var coord := Vector2i(3, -7)
+	var first := a.build_chunk(coord)
+	var again := b.build_chunk(coord)
+	var different := other.build_chunk(coord)
+	var v1: PackedVector3Array = first["mesh"]["vertices"]
+	var v2: PackedVector3Array = again["mesh"]["vertices"]
+	var v3: PackedVector3Array = different["mesh"]["vertices"]
+	_check(v1 == v2 and first["wrecks"].size() == again["wrecks"].size() and str(first["trees"]) == str(again["trees"]),
+			"mesma semente, mesmo pedaço: idêntico (%d vértices)" % v1.size())
+	_check(v1 != v3, "outra semente gera outro mundo")
+	# Costura: os vértices da faixa de células compartilhada entre dois
+	# vizinhos saem iguais nos dois (sem frestas nem degraus na borda).
+	var left := a.build_chunk(Vector2i(0, 0))
+	var right := a.build_chunk(Vector2i(1, 0))
+	var edge := WorldGenerator.CHUNK_SIZE
+	var on_left := {}
+	for v: Vector3 in left["mesh"]["vertices"]:
+		if v.x > edge - WorldGenerator.CELL and v.x < edge:
+			on_left[v.snapped(Vector3.ONE * 0.001)] = true
+	var on_right := {}
+	for v: Vector3 in right["mesh"]["vertices"]:
+		if v.x > edge - WorldGenerator.CELL and v.x < edge:
+			on_right[v.snapped(Vector3.ONE * 0.001)] = true
+	var shared := 0
+	for key in on_left:
+		if on_right.has(key):
+			shared += 1
+	_check(on_left.size() > 10 and shared == on_left.size() and on_right.size() == on_left.size(),
+			"borda entre pedaços: %d de %d vértices idênticos nos dois lados" % [shared, on_left.size()])
+	# Faces da frente para o ar: o triângulo gira no sentido horário visto de
+	# fora (o produto vetorial aponta contra a normal da superfície).
+	var mesh: Dictionary = first["mesh"]
+	var vertices: PackedVector3Array = mesh["vertices"]
+	var normals: PackedVector3Array = mesh["normals"]
+	var indices: PackedInt32Array = mesh["indices"]
+	var outward := 0
+	for t in indices.size() / 3:
+		var p0 := vertices[indices[t * 3]]
+		var cross := (vertices[indices[t * 3 + 1]] - p0).cross(vertices[indices[t * 3 + 2]] - p0)
+		if cross.dot(normals[indices[t * 3]] + normals[indices[t * 3 + 1]] + normals[indices[t * 3 + 2]]) < 0.0:
+			outward += 1
+	_check(outward >= indices.size() / 3 * 0.95, "%d%% das faces viradas para o ar" % (outward * 100 / maxi(indices.size() / 3, 1)))
+	var started := Time.get_ticks_usec()
+	for i in 4:
+		a.build_chunk(Vector2i(20 + i, 11))
+	var ms := (Time.get_ticks_usec() - started) / 4000.0
+	_check(ms < 250.0, "um pedaço de 32 × 32 m gerado em %.0f ms (em segundo plano)" % ms)
+
+
+func _test_world_caves_and_roads() -> void:
+	_begin("Mundo: cavernas com bocas, estradas planas e engarrafamentos")
+	var g := WorldGenerator.new(WORLD_SEED)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 99
+	var air := 0
+	var samples := 6000
+	for i in samples:
+		var x := rng.randf_range(-400.0, 400.0)
+		var z := rng.randf_range(-400.0, 400.0)
+		var y := rng.randf_range(WorldGenerator.FLOOR_Y + 5.0, g.surface_height(x, z) - 4.0)
+		if g.density(x, y, z) < 0.0:
+			air += 1
+	_check(air > samples * 0.02, "%.1f%% do subsolo é caverna" % (air * 100.0 / samples))
+	var openings := 0
+	for i in 8000:
+		var x := rng.randf_range(-800.0, 800.0)
+		var z := rng.randf_range(-800.0, 800.0)
+		var s := g.surface_height(x, z)
+		if g.density(x, s - 1.5, z) < 0.0 and g.density(x, s - 6.0, z) < 0.0:
+			openings += 1
+	_check(openings > 0, "bocas de caverna abertas na superfície (%d em 8000 pontos)" % openings)
+	_check(g.density(0.0, WorldGenerator.FLOOR_Y + 1.0, 0.0) > 0.0, "leito de rocha no fundo")
+	# Estrada: plana de lado a lado e sem buracos de caverna sob o asfalto.
+	var worst := 0.0
+	var holes := 0
+	for i in 60:
+		var z := rng.randf_range(-1500.0, 1500.0)
+		var cx := g.highway_center_x(0.0, z)
+		worst = maxf(worst, absf(g.surface_height(cx - 3.0, z) - g.surface_height(cx + 3.0, z)))
+		var s := g.surface_height(cx, z)
+		for depth in [0.5, 3.0, 8.0]:
+			if g.density(cx, s - depth, z) < 0.0:
+				holes += 1
+	_check(worst < 0.6, "rodovia nivelada de lado a lado (desnível máximo %.2f m em 6 m)" % worst)
+	_check(holes == 0, "nenhuma caverna abre sob o asfalto (%d)" % holes)
+	# Engarrafamentos: carcaças na rodovia, todas sobre a pista ou no barranco.
+	var wrecks := 0
+	var off_road := 0
+	var weapons := 0
+	var z := -640.0
+	while z < 640.0:
+		var cx := g.highway_center_x(0.0, z)
+		var data := g.build_chunk(ProceduralWorld.chunk_of(Vector3(cx, 0.0, z)))
+		for entry in data["wrecks"]:
+			var t: Transform3D = entry[1]
+			var r := g.road_distances(t.origin.x, t.origin.z)
+			wrecks += 1
+			if minf(r.x, r.y) > WorldGenerator.HIGHWAY_HALF_WIDTH + 5.0:
+				off_road += 1
+		weapons += (data["weapons"] as Array).size()
+		z += WorldGenerator.CHUNK_SIZE
+	_check(wrecks >= 20 and off_road == 0, "%d carcaças ao longo de 1,3 km de rodovia, todas na estrada ou no acostamento" % wrecks)
+	_check(weapons >= 1, "armas largadas pelo caminho (%d)" % weapons)
+
+
+func _world_node(view: int) -> ProceduralWorld:
+	var world := ProceduralWorld.new()
+	world.world_seed = WORLD_SEED
+	world.view_distance = view
+	world.max_tasks = 4
+	world.applies_per_frame = 4
+	return world
+
+
+func _test_world_streaming() -> void:
+	_begin("Mundo: pedaços carregam em volta do jogador e descarregam atrás")
+	var marker := Node3D.new()
+	add_child(marker)
+	marker.global_position = FAR
+	var world := _world_node(2)
+	world.target = marker
+	add_child(world)
+	# Tempo real (com --fixed-fps os quadros não esperam o relógio, mas as
+	# tarefas em segundo plano levam o tempo delas).
+	var started := Time.get_ticks_msec()
+	while world.loaded_chunks().size() < 21 and Time.get_ticks_msec() - started < 30000:
+		await _frames(1)
+	var count := world.loaded_chunks().size()
+	_check(count == 21, "21 pedaços num raio de 2 (%d em %.2f s)" % [count, (Time.get_ticks_msec() - started) / 1000.0])
+	_check(world.is_ready_around(FAR, 1), "pedaços em volta prontos")
+	var first := ProceduralWorld.chunk_of(FAR)
+	var chunk := world.chunk_node(first)
+	_check(chunk != null and chunk.has_node("Terreno") and chunk.has_node("Chao"), "pedaço tem malha e colisão")
+	_check(world.average_generation_ms() > 0.0, "geração em segundo plano: %.0f ms por pedaço" % world.average_generation_ms())
+	# Anda 6 pedaços para leste.
+	marker.global_position = FAR + Vector3(6.0 * WorldGenerator.CHUNK_SIZE, 0.0, 0.0)
+	started = Time.get_ticks_msec()
+	while world.chunk_node(ProceduralWorld.chunk_of(marker.global_position) + Vector2i(2, 0)) == null and Time.get_ticks_msec() - started < 30000:
+		await _frames(1)
+	await _frames(5)
+	_check(world.is_ready_around(marker.global_position, 1), "novo lugar carregado em %.2f s" % ((Time.get_ticks_msec() - started) / 1000.0))
+	_check(not world.is_loaded(first), "pedaço que ficou para trás foi descarregado")
+	_check(world.loaded_chunks().size() <= 30, "memória limitada: %d pedaços carregados" % world.loaded_chunks().size())
+	world.queue_free()
+	marker.queue_free()
+	await _frames(5)
+
+
+func _test_world_walk_and_headlamp() -> void:
+	_begin("Mundo: andar no chão gerado, armas no mundo e lanterna na caverna")
+	var world := _world_node(1)
+	world.target = _player
+	add_child(world)
+	await _frames(1)
+	var g := world.generator
+	# Um ponto plano fora da estrada.
+	var spot := FAR
+	for i in 200:
+		var x := FAR.x + i * 7.0
+		if g.slope_at(x, FAR.z) < 0.15 and g.road_distances(x, FAR.z).x > 12.0:
+			spot = Vector3(x, g.surface_height(x, FAR.z), FAR.z)
+			break
+	world.generate_now(spot, 1)
+	await _reset(spot + Vector3.UP * 0.1, 0.0)
+	_check(_player.is_on_floor() and absf(_player.global_position.y - spot.y) < 0.5,
+			"jogador em pé no terreno gerado (y %.2f, chão %.2f)" % [_player.global_position.y, spot.y])
+	var start := _player.global_position
+	Input.action_press(&"move_forward")
+	await _frames(150)
+	Input.action_release(&"move_forward")
+	await _frames(30)
+	var moved := Vector2(_player.global_position.x - start.x, _player.global_position.z - start.z).length()
+	var ground := g.surface_height(_player.global_position.x, _player.global_position.z)
+	_check(moved > 3.0 and _player.global_position.y > ground - 0.6,
+			"andou %.1f m sobre a colisão do terreno (y %.2f, chão %.2f)" % [moved, _player.global_position.y, ground])
+	# Armas: o pedaço que tem uma arma a mostra como corpo físico pegável.
+	var loot := Vector2i.ZERO
+	var found := false
+	for i in 400:
+		var coord := Vector2i(190 + i % 20, 190 + i / 20)
+		var data := g.build_chunk(coord)
+		if not (data["weapons"] as Array).is_empty():
+			loot = coord
+			found = true
+			break
+	if found:
+		var center := Vector3((loot.x + 0.5) * WorldGenerator.CHUNK_SIZE, 0.0, (loot.y + 0.5) * WorldGenerator.CHUNK_SIZE)
+		world.generate_now(center, 0)
+		var pickups := world.chunk_node(loot).find_children("WeaponPickup", "WeaponPickup", true, false)
+		_check(pickups.size() >= 1, "arma do pedaço %s apareceu no chão (%d)" % [loot, pickups.size()])
+	else:
+		_check(false, "nenhum pedaço com arma encontrado")
+	# Lanterna: câmera numa caverna acende; na superfície, apaga.
+	var cave := Vector3.INF
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 3
+	for i in 100000:
+		var x := FAR.x + rng.randf_range(-150.0, 150.0)
+		var z := FAR.z + rng.randf_range(-150.0, 150.0)
+		var s := g.surface_height(x, z)
+		var y := rng.randf_range(WorldGenerator.FLOOR_Y + 6.0, s - 10.0)
+		if g.density(x, y, z) < 0.0 and g.density(x, y - 1.0, z) > 0.0 and g.density(x, y + 2.5, z) < 0.0:
+			cave = Vector3(x, y, z)
+			break
+	_check(cave != Vector3.INF, "caverna encontrada para o teste da lanterna")
+	if cave != Vector3.INF:
+		var environment := WorldEnvironment.new()
+		environment.environment = Environment.new()
+		environment.environment.ambient_light_energy = 1.0
+		add_child(environment)
+		var camera := Camera3D.new()
+		add_child(camera)
+		var atmosphere := CaveAtmosphere.new()
+		atmosphere.world = world
+		atmosphere.camera = camera
+		atmosphere.environment = environment
+		atmosphere.adapt_time = 0.3
+		add_child(atmosphere)
+		camera.global_position = cave + Vector3.UP * 1.6
+		await _frames(60)
+		_check(atmosphere.underground > 0.9 and atmosphere.headlamp.visible and atmosphere.headlamp.light_energy > 1.0,
+				"dentro da caverna: lanterna acesa (%.1f), luz do céu %.2f" % [atmosphere.headlamp.light_energy, environment.environment.ambient_light_energy])
+		var surface := Vector3(cave.x, g.surface_height(cave.x, cave.z) + 1.6, cave.z)
+		camera.global_position = surface
+		await _frames(60)
+		_check(atmosphere.underground < 0.05 and not atmosphere.headlamp.visible and environment.environment.ambient_light_energy > 0.95,
+				"de volta à superfície: lanterna apagada e céu de volta")
+		atmosphere.queue_free()
+		camera.queue_free()
+		environment.queue_free()
+	world.queue_free()
+	await _frames(5)
+
+
+func _test_world_main_scene() -> void:
+	_begin("Mundo: cena principal começa na rodovia, em chão firme")
+	_check(ProjectSettings.get_setting("application/run/main_scene") == "res://scenes/world/mundo.tscn", "mundo procedural é a cena principal")
+	var scene: Node3D = (load("res://scenes/world/mundo.tscn") as PackedScene).instantiate()
+	add_child(scene)
+	var world: ProceduralWorld = scene.get_node("ProceduralWorld")
+	var player: PlayerController = scene.get_node("Player")
+	await _frames(40)
+	var spawn := world.generator.spawn_point()
+	var roads := world.generator.road_distances(player.global_position.x, player.global_position.z)
+	_check(player.is_on_floor() and absf(player.global_position.y - spawn.y) < 0.6,
+			"jogador em pé no ponto de partida (y %.2f, chão %.2f)" % [player.global_position.y, spawn.y])
+	_check(roads.x < WorldGenerator.HIGHWAY_HALF_WIDTH, "começa sobre a rodovia (%.1f m do eixo)" % roads.x)
+	_check(world.loaded_chunks().size() >= 9, "%d pedaços prontos logo na partida" % world.loaded_chunks().size())
+	var caves: CaveAtmosphere = scene.get_node("CaveAtmosphere")
+	_check(caves.underground < 0.01 and not caves.headlamp.visible, "na superfície a lanterna fica apagada")
+	scene.queue_free()
+	await _frames(5)
+	_camera.make_current()
+
 
 func _test_ragdoll_death_and_respawn() -> void:
 	_begin("Morte: ragdoll físico, câmera segue o corpo, renascer")

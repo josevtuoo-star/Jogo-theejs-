@@ -9,8 +9,8 @@ Todos os assets de terceiros em uso são **CC0 1.0** (domínio público): uso co
 | Recurso | Autor | Origem | Licença verificada | Uso no jogo |
 |---|---|---|---|---|
 | Sobrevivente (`assets/characters/survivor/Sobrevivente.fbx`): malha com gorro, jaqueta, calça cargo, botas e luvas, esqueleto de 65 ossos (convenção Mixamo) | Dono do projeto | enviado pelo dono do projeto em 02/11/2026 para substituir o personagem | uso autorizado pelo dono do projeto | personagem jogável; ossos renomeados para os nomes do jogo e animações retargetadas por `tools/retarget_animations.gd` e `tools/build_survivor.gd` |
-| Universal Animation Library (Standard, FBX Unreal) | Quaternius | https://opengameart.org/content/universal-animation-library (também em quaternius.itch.io) | CC0 1.0 (página do OpenGameArt e `License.txt` no pacote) | 17 animações retargetadas: parado, andar, trotar, correr, agachado, salto, queda, aterrissagem, socos, ferimentos, interagir, pegar, empurrar, morte |
-| Universal Animation Library 2 (Standard, GLB) | Quaternius | https://opengameart.org/content/universal-animation-library-2 | CC0 1.0 (página do OpenGameArt) | 8 animações: gancho e sua recuperação (o quadro final é a guarda de defesa), impacto na guarda (Sword_Block), recuo, levantar, consumir, abrir baú, andar carregando |
+| Universal Animation Library (Standard, FBX Unreal) | Quaternius | https://opengameart.org/content/universal-animation-library (também em quaternius.itch.io) | CC0 1.0 (página do OpenGameArt e `License.txt` no pacote) | 18 animações retargetadas: parado, andar, trotar, correr, agachado, salto, queda, aterrissagem, socos, ferimentos, interagir, pegar, empurrar, morte, postura com arma (Sword_Idle) |
+| Universal Animation Library 2 (Standard, GLB) | Quaternius | https://opengameart.org/content/universal-animation-library-2 | CC0 1.0 (página do OpenGameArt) | 10 animações: gancho e sua recuperação (o quadro final é a guarda de defesa), impacto na guarda (Sword_Block), recuo, levantar, consumir, abrir baú, andar carregando, golpes de arma rápido e amplo (Sword_Regular_A/B) |
 
 Os pacotes de animação originais ficam em `assets/_source/` (fora do Git e do APK). `tools/retarget_animations.gd` gera `resources/animations/survivor_body.res` (retarget por delta no espaço do mundo com alinhamento de poses, pois o personagem está em T, + medição de passada e quadros de contato). `tools/build_survivor.gd` monta o personagem (materiais PBR por superfície, cabeça separada para a primeira pessoa) e o ragdoll.
 
@@ -30,10 +30,8 @@ Licença conferida no campo "License(s)" da página de cada pacote e nos arquivo
 | 15 vocal male strain/hurt/pain/jump sounds | qubodup | https://opengameart.org/content/15-vocal-male-strainhurtpainjump-sounds | esforço, dor, morte |
 | Jump Landing | Macro | https://opengameart.org/content/jump-landing | aterrissagem |
 | Fire Crackling | AntumDeluge | https://opengameart.org/content/fire-crackling | fogueira |
-| Forest Ambience | TinyWorlds | https://opengameart.org/content/forest-ambience | ambiente da floresta |
-| Ambient Bird Sounds | isaiah658 | https://opengameart.org/content/ambient-bird-sounds | passarinhos |
 | 20 rustles (dry leaves) | qubodup | https://opengameart.org/content/20-rustles-dry-leaves | folhas secas sob o pé (camada do passo no chão de floresta) |
-| Breathing tired | mikeask | https://opengameart.org/content/breathing-tired | respiração cansada depois de correr |
+| Breathing tired | mikeask | https://opengameart.org/content/breathing-tired | respiração cansada depois de correr (separada em três respirações avulsas) |
 
 ## Cenário (Poly Haven, CC0 1.0 — https://polyhaven.com/license)
 
@@ -62,8 +60,30 @@ Licença conferida no campo "License(s)" da página de cada pacote e nos arquivo
 | Fern 02 | Rob Tuytel, Rico Cilliers | samambaias |
 | Crowbar 01 | Alexander Otterbeck | pé de cabra |
 | Machete / Wooden Axe | Ulan Cabanilla | facão e machado |
+| Baseball Bat | Enrique Martín | taco com pregos (etapa 7) |
+| Wooden Axe 02 | Ulan Cabanilla | machado de bombeiro (cabeça repintada de vermelho) |
+| Covered Car | MP | carro coberto por lona nas estradas |
+| Rusted Wheel Rim 01 | John Hutcheson | rodas soltas na estrada |
+| Vintage Suitcase | Maximilian Schuster | malas abandonadas |
+| Trashbag | Benny Weimer | sacos de lixo |
+| Plastic Jerrycan | Ulan Cabanilla | galões |
+| Rock Face 01 | Dario Barresi | paredões e bocas de caverna |
+| Dry Branches Medium 01 | Rico Cilliers | galhos secos no chão da mata |
+| Rusty Painted Metal (textura) | Amal Kumar | escorridos da pintura das carcaças |
+| Rust Coarse 01 (textura) | Dimitrios Savva, Rico Cilliers | ferrugem das carcaças e dos pregos |
+| Road Damaged (textura) | Dimitrios Savva | asfalto velho das rodovias |
+| Mossy Rock (textura) | Rob Tuytel | rocha dos barrancos e das cavernas |
 
-Baixados pela API oficial com `tools/download_polyhaven.py` (1k, glTF). Cada pasta tem `SOURCE.txt` com nome, autores, licença e link.
+Baixados pela API oficial com `tools/download_polyhaven.py` (1k, glTF). Cada pasta tem `SOURCE.txt` com nome, autores, licença e link. Os modelos do mundo procedural são reduzidos (malha simplificada pelo próprio motor) por `tools/build_world_assets.gd`; os arquivos originais que só servem de fonte ficam fora do APK (`exclude_filter` em `export_presets.cfg`).
+
+## Armas e veículos (OpenGameArt, CC0 1.0)
+
+Licença conferida no campo "License(s)" da página de cada pacote.
+
+| Recurso | Autor | Página | Uso |
+|---|---|---|---|
+| Survival Tools (picareta, versão "General", texturas PBR) | Gar5546x | https://opengameart.org/content/survival-tools | picareta (texturas reduzidas a 1K, AO/rugosidade/metal juntos numa textura ORM) |
+| 3D Vehicles Pack (13 veículos de argila, sem UV) | mehrasaur (Inborn Ninja) | https://opengameart.org/content/3d-vehicles-pack | carcaças das estradas: levadas ao tamanho real, amassadas e pintadas/enferrujadas pelo shader `wreck.gdshader` (`tools/build_world_assets.gd`) |
 
 ## Autoria do projeto
 
@@ -71,6 +91,8 @@ Baixados pela API oficial com `tools/download_polyhaven.py` (1k, glTF). Cada pas
 |---|---|
 | Shaders do terreno (3 camadas PBR com mistura por altura) e das árvores (impostor com vento e translucidez) | `resources/materials/terrain.gdshader`, `tree_card.gdshader` |
 | Céu encoberto, neblina, iluminação, terreno gerado, posicionamento da floresta e do posto | `tools/build_demo_map.gd` |
+| Mundo procedural (relevo, cavernas, estradas e pintura das faixas, distribuição de floresta, carcaças, destroços e armas) e os shaders do terreno e das carcaças | `scripts/world/procedural/`, `resources/materials/world_terrain.gdshader`, `wreck.gdshader` |
+| Pregos do taco (geometria), pintura do machado, empunhadura das armas | `tools/build_weapons.gd`, `scripts/weapons/` |
 | Roupas do personagem (geometria derivada da malha CC0) e ragdoll | `tools/build_survivor.gd` |
 | Ícone `icon.svg`, shader `dev_grid`, cenário de calibração | raiz, `resources/materials/`, `tools/build_test_gym.gd` |
 
@@ -83,6 +105,7 @@ Baixados pela API oficial com `tools/download_polyhaven.py` (1k, glTF). Cada pas
 | Roupas geradas a partir da malha do corpo (etapa 4) e os tecidos Denim Fabric, Cotton Jersey, Brown Leather e Fabric Leather 02 (Poly Haven, CC0) | substituídas pela roupa modelada do pacote de roupas (etapa 5): as cascas geradas deixavam o relevo dos músculos e dos dedos dos pés aparecer e tinham barras serrilhadas |
 | Corpo "Superhero" do Universal Base Characters (exceto cabeça) | proporções de super-herói; trocado pelo esqueleto "Regular" do pacote de roupas (etapa 5) |
 | Braços em primeira pessoa procedurais (19 ossos) | substituídos pelo corpo humano completo (o mesmo nas duas câmeras) |
+| Forest Ambience (TinyWorlds) e Ambient Bird Sounds (isaiah658), OpenGameArt, CC0 | etapa 7: o ambiente passou a ser só o vento, com intensidade variável |
 | HDRI "Misty Pines" (Poly Haven, CC0) | o céu mostrava troncos pintados "pendurados" acima das árvores reais; trocado por céu procedural (mais leve no Android) |
 
 ## Avaliados e rejeitados
@@ -98,7 +121,8 @@ Baixados pela API oficial com `tools/download_polyhaven.py` (1k, glTF). Cada pas
 | Animação Idle_Shield (UAL2) como guarda | postura de escudo, com um braço cruzado no peito; a guarda usa o quadro final de Melee_Hook_Rec (punhos diante do rosto) |
 | Quaternius Universal Animation Library "Pro" (strafe, giro no lugar, paradas) | paga; giro no lugar, parada e inclinação foram feitos com a física sobre as capturas gratuitas (ver docs/ETAPA_05_JOGABILIDADE.md) |
 | "fps arms (rigged only)", OpenGameArt (autor: para), CC0 | só rig, sem animações. |
-| "LowPoly Animated Sword (W/12 Animations)", OpenGameArt (autor: zisongbr), CC0 | animações de espada só em `.blend`; reavaliar na etapa de armas brancas. |
+| "LowPoly Animated Sword (W/12 Animations)", OpenGameArt (autor: zisongbr), CC0 | animações de espada só em `.blend`; as armas usam os golpes de espada da UAL2 (Sword_Regular_A/B) e a postura Sword_Idle da UAL1. |
+| TreeChopping (UAL2) como golpe de machado | é um laço de cortar lenha: o impacto fica na emenda do ciclo, não serve como golpe único |
 | Low World first-person arms (itch.io) | não é CC0 e estava indisponível. |
 
 ## Como adicionar um asset

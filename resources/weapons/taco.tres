@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="WeaponData" load_steps=3 format=3]
+
+[ext_resource type="ArrayMesh" path="res://resources/models/weapons/taco.res" id="1_dm66v"]
+[ext_resource type="Script" path="res://scripts/weapons/weapon_data.gd" id="2_4yekw"]
+
+[resource]
+script = ExtResource("2_4yekw")
+id = &"taco"
+display_name = "Taco com pregos"
+mesh = ExtResource("1_dm66v")
+mass = 1.2
+reach = 0.72
+hit_radius = 0.15
+light_speed = 1.05
+light_recovery = 0.16
+heavy_max_damage = 54.0
+heavy_max_impulse = 42.0
+heavy_recovery = 0.32
+impact_material = &"madeira"

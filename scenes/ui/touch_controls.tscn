@@ -17,7 +17,7 @@ grow_vertical = 2
 mouse_filter = 2
 script = ExtResource("1_controls")
 joystick = NodePath("Joystick")
-buttons = [NodePath("AttackButton"), NodePath("JumpButton"), NodePath("CrouchButton"), NodePath("SprintButton"), NodePath("BlockButton"), NodePath("InteractButton"), NodePath("CameraButton")]
+buttons = [NodePath("AttackButton"), NodePath("JumpButton"), NodePath("CrouchButton"), NodePath("SprintButton"), NodePath("BlockButton"), NodePath("InteractButton"), NodePath("CameraButton"), NodePath("DropWeaponButton")]
 sprint_button = NodePath("SprintButton")
 
 [node name="Joystick" type="Control" parent="TouchControls"]
@@ -184,3 +184,23 @@ label = "1ª P"
 radius = 40.0
 font_size = 17
 active_label = "3ª P"
+
+[node name="DropWeaponButton" type="Control" parent="TouchControls" groups=["drop_weapon_button"]]
+visible = false
+custom_minimum_size = Vector2(72, 72)
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -212.0
+offset_top = 32.0
+offset_right = -140.0
+offset_bottom = 104.0
+grow_horizontal = 0
+mouse_filter = 2
+script = ExtResource("3_button")
+action = &"drop_weapon"
+mode = 0
+label = "SOLTAR"
+radius = 36.0
+font_size = 13

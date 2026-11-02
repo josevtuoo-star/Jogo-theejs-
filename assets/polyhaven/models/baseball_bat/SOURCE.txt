@@ -1,0 +1,6 @@
+Nome: Baseball Bat
+Autores: Enrique Martín
+Licença: CC0 1.0 (Poly Haven)
+Origem: https://polyhaven.com/a/baseball_bat
+Resolução: 1k
+Polígonos: 2672

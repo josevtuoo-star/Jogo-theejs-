@@ -40,6 +40,7 @@ const TARGET_SKELETON_PATH := "Armature/Skeleton3D"
 const GAIT_CLIPS := ["walk", "jog", "sprint", "crouch_walk", "walk_carry"]
 ## Golpes e gestos: o quadro de maior extensão do braço vira evento.
 const REACH_EVENTS := {"punch_jab": "hit", "punch_cross": "hit", "punch_hook": "hit",
+		"weapon_swing_a": "hit", "weapon_swing_b": "hit",
 		"interact": "contact", "pickup": "contact", "open_container": "contact"}
 
 ## [arquivo fonte, nome na fonte, nome no jogo, em loop]
@@ -72,7 +73,37 @@ const CLIPS := [
 	["res://assets/_source/UAL2_Standard.glb", "Melee_Hook_Rec", "punch_hook_recover", false],
 	# Impacto recebido na defesa (tronco recua; usado só da cintura para cima).
 	["res://assets/_source/UAL2_Standard.glb", "Sword_Block", "block_impact", false],
+	# Armas brancas (etapa 7): golpe rápido (A) e golpe amplo carregado (B,
+	# segura na preparação), e a postura de arma empunhada. TreeChopping foi
+	# avaliado e descartado: é um laço de cortar lenha, o impacto fica na
+	# emenda do ciclo e não serve como golpe único. O 5º campo congela a pose
+	# a partir desse tempo: os golpes de espada terminam erguendo a lâmina de
+	# novo (pronto para o próximo); com machado ou taco o corpo fica no fim do
+	# golpe e volta à postura pela transição.
+	["res://assets/_source/UAL2_Standard.glb", "Sword_Regular_A", "weapon_swing_a", false, 0.255],
+	["res://assets/_source/UAL2_Standard.glb", "Sword_Regular_B", "weapon_swing_b", false, 0.28],
+	["res://assets/_source/AL_Standard.fbx", "Rig|Sword_Idle", "weapon_idle", true],
 ]
+
+
+## Mantém a pose de `time` até o fim da animação (sem mudar a duração).
+static func _freeze_after(animation: Animation, time: float) -> void:
+	for track in animation.get_track_count():
+		var type := animation.track_get_type(track)
+		var value: Variant = null
+		match type:
+			Animation.TYPE_POSITION_3D:
+				value = animation.position_track_interpolate(track, time)
+			Animation.TYPE_ROTATION_3D:
+				value = animation.rotation_track_interpolate(track, time)
+			Animation.TYPE_SCALE_3D:
+				value = animation.scale_track_interpolate(track, time)
+			_:
+				continue
+		for key in range(animation.track_get_key_count(track) - 1, -1, -1):
+			if animation.track_get_key_time(track, key) >= time:
+				animation.track_remove_key(track, key)
+		animation.track_insert_key(track, time, value)
 
 
 class Rig:
@@ -128,6 +159,8 @@ func _initialize() -> void:
 			quit(1)
 			return
 		var animation := _retarget(source, source.player.get_animation(clip[1]), clip[3])
+		if clip.size() > 4:
+			_freeze_after(animation, clip[4])
 		var report := _analyze(clip[2], animation)
 		library.add_animation(clip[2], animation)
 		print("  %-16s <- %-20s %.2f s %s" % [clip[2], clip[1], animation.length, report])
@@ -356,16 +389,21 @@ func _analyze(anim_name: String, animation: Animation) -> String:
 		var best := 0.0
 		var best_t := 0.0
 		var hand := "hand_r"
-		for side in ["hand_l", "hand_r"]:
+		# Socos: o quadro de maior extensão do braço. Armas: o braço passa
+		# pela maior extensão também na preparação (atrás do corpo), então o
+		# golpe é o quadro em que a mão está mais à frente do peito (+Z).
+		var weapon := anim_name.begins_with("weapon_")
+		for side in (["hand_r"] if weapon else ["hand_l", "hand_r"]):
 			for sample in _samples:
-				var reach := ((sample[side] as Vector3) - (sample["spine_03"] as Vector3)).length()
+				var offset := (sample[side] as Vector3) - (sample["spine_03"] as Vector3)
+				var reach := offset.z if weapon else offset.length()
 				if reach > best:
 					best = reach
 					best_t = sample["t"]
 					hand = side
 		animation.set_meta(&"events", {REACH_EVENTS[anim_name]: best_t})
 		animation.set_meta(&"hand", hand)
-		# Golpe carregado: segura no meio da preparação.
-		animation.set_meta(&"hold_time", best_t * 0.55 if anim_name == "punch_hook" else -1.0)
+		# Golpes carregados: seguram no meio da preparação.
+		animation.set_meta(&"hold_time", best_t * 0.55 if anim_name in ["punch_hook", "weapon_swing_b"] else -1.0)
 		return "evento %s em %.2f s (%s, alcance %.2f m)" % [REACH_EVENTS[anim_name], best_t, hand, best]
 	return ""

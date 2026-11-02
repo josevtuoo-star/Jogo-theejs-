@@ -1,0 +1,6 @@
+Nome: Covered Car
+Autores: MP
+Licença: CC0 1.0 (Poly Haven)
+Origem: https://polyhaven.com/a/covered_car
+Resolução: 1k
+Polígonos: 12592
