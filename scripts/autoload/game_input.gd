@@ -8,8 +8,12 @@ extends Node
 
 ## Radianos por pixel de movimento do mouse.
 var mouse_sensitivity: float = 0.0022
-## Radianos por pixel de arrasto na tela (coordenadas da viewport base 1280x720).
-var touch_sensitivity: float = 0.0052
+## Radianos por pixel de arrasto na tela (coordenadas da viewport base 1280x720):
+## arrastar a largura inteira da tela gira ~230° devagar e até ~370° num
+## movimento rápido (aceleração), precisão para mirar e rapidez para virar.
+var touch_sensitivity: float = 0.0032
+## Ganho extra em arrastos rápidos (pixels por evento → até 1 + este valor).
+var touch_acceleration: float = 0.6
 ## Velocidade máxima de giro com o analógico direito (rad/s).
 var gamepad_look_speed: float = 3.2
 var invert_y: bool = false
@@ -51,7 +55,9 @@ func _process(delta: float) -> void:
 
 ## Adiciona arrasto de toque (em pixels da viewport) ao acumulador de visão.
 func add_touch_look(relative_pixels: Vector2) -> void:
-	_look_delta += relative_pixels * touch_sensitivity
+	var speed := relative_pixels.length()
+	var gain := 1.0 + touch_acceleration * smoothstep(6.0, 30.0, speed)
+	_look_delta += relative_pixels * touch_sensitivity * gain
 
 
 ## Adiciona rotação diretamente em radianos (x = guinada, y = arfagem).

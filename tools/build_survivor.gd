@@ -1,69 +1,49 @@
 extends SceneTree
 ## Ferramenta de produção: monta o personagem sobrevivente.
 ##
-## Uso (duas etapas, por causa da importação das texturas reduzidas):
-##   godot --headless --path . --script res://tools/build_survivor.gd
-##   godot --headless --path . --import
-##   godot --headless --path . --script res://tools/build_survivor.gd
-## Na primeira execução as texturas 4K da roupa são reduzidas e gravadas em
-## assets/characters/survivor/outfit/; na segunda, o personagem é montado.
+## Uso: godot --headless --path . --script res://tools/build_survivor.gd
 ##
-## Entrada (CC0, ver ASSET_LICENSES.md):
-##   - roupa modelada e esqueleto em proporções naturais ("Regular"):
-##     Quaternius Modular Character Outfits – Fantasy (versão gratuita), em
-##     assets/_source/outfits_fantasy/ (fora do Git): camisa, braços com mãos,
-##     calça (Peasant) e botas de couro de cano alto (Ranger)
-##   - cabeça, olhos, sobrancelhas, cabelo raspado e barba: Quaternius
-##     Universal Base Characters (assets/characters/survivor/)
-## Os dois pacotes usam o mesmo esqueleto de 65 ossos (mesma hierarquia e
-## alturas; o "Regular" tem ombros e quadris 2 cm mais estreitos que o
-## "Superhero"). As peles (Skin) guardam as matrizes de ligação de cada osso
-## pelo nome, então a cabeça do pacote de personagens acompanha o osso Head
-## do esqueleto novo sem editar vértices.
+## Entrada: assets/characters/survivor/Sobrevivente.fbx, o modelo do
+## sobrevivente enviado pelo dono do projeto (malha única com 23 materiais de
+## cor, esqueleto de 65 ossos na convenção Mixamo, em T).
 ## Saída:
 ##   - resources/models/survivor/*.res  malhas
 ##   - scenes/characters/survivor.tscn   esqueleto, malhas, ragdoll,
 ##                                       AnimationPlayer com a biblioteca
+##
+## - Os ossos são renomeados para os nomes do jogo (tools/rig_names.gd), e a
+##   pele (Skin) também: animador, combate, ragdoll e testes não mudam.
+## - A malha é dividida em duas: cabeça (rosto, gorro, cabelo, barba, olhos;
+##   triângulos presos à cabeça e ao pescoço) e corpo. Em primeira pessoa a
+##   cabeça vira só sombra: a câmera ocupa o lugar dela.
+## - Os materiais de cor do modelo viram materiais PBR com rugosidade e metal
+##   de cada tipo de superfície (tecido, couro, metal, pele).
 
-const OUTFIT_DIR := "res://assets/_source/outfits_fantasy/"
-const OUTFIT_SKELETON_SCENE := OUTFIT_DIR + "Male_Peasant.gltf"
-const HEAD_SCENE := "res://assets/characters/survivor/Superhero_Male_FullBody.gltf"
-const HAIR_SCENES := ["res://assets/characters/survivor/hair/Hair_Buzzed.gltf",
-		"res://assets/characters/survivor/hair/Hair_Beard.gltf"]
-const TEXTURE_DIR := "res://assets/characters/survivor/outfit/"
+const SOURCE := "res://assets/characters/survivor/Sobrevivente.fbx"
 const LIBRARY := "res://resources/animations/survivor_body.res"
 const OUT_DIR := "res://resources/models/survivor/"
 const OUT_SCENE := "res://scenes/characters/survivor.tscn"
 const BODY_ANIMATOR_SCRIPT := "res://scripts/animation/body_animator.gd"
+const RigNames := preload("res://tools/rig_names.gd")
 
-## Peças da roupa: [nó, cena de origem, malha na cena, material, tinta]
-## A camisa clara é tingida de oliva gasto (sobrevivência, não festa medieval).
-const OUTFIT := [
-	["Shirt", "Male_Peasant.gltf", "Male_Peasant_Body", "peasant", Color(0.62, 0.62, 0.50)],
-	["Arms", "Male_Peasant.gltf", "Male_Peasant_Arms", "peasant", Color(0.62, 0.62, 0.50)],
-	["Pants", "Male_Peasant.gltf", "Male_Peasant_Legs", "peasant", Color(0.80, 0.80, 0.80)],
-	["Boots", "Male_Ranger.gltf", "Male_Ranger_Feet_Boots", "ranger", Color(0.85, 0.80, 0.75)],
-]
-## Texturas reduzidas: [arquivo de origem, nome de saída, lado (px)]
-const TEXTURES := [
-	["T_Peasant_BaseColor.png", "peasant_albedo.png", 2048],
-	["T_Peasant_Normal.png", "peasant_normal.png", 2048],
-	["T_Peasant_ORM.png", "peasant_orm.png", 2048],
-	["T_Ranger_BaseColor.png", "ranger_albedo.png", 1024],
-	["T_Ranger_Normal.png", "ranger_normal.png", 1024],
-	["T_Ranger_ORM.png", "ranger_orm.png", 1024],
-	["T_Regular_Male_Dark_BaseColor.png", "skin_albedo.png", 1024],
-	["T_Regular_Male_Normal.png", "skin_normal.png", 1024],
-	["T_Regular_Male_Roughness.png", "skin_roughness.png", 1024],
-]
-## Cor do cabelo, barba e sobrancelhas (a textura do pacote é neutra para tingir).
-const HAIR_COLOR := Color(0.30, 0.22, 0.15)
-## Influência mínima de Head + neck_01 para um triângulo do corpo-base fazer
-## parte da cabeça (o resto do corpo-base é descartado: a roupa o substitui).
-const HEAD_WEIGHT := 0.2
+## Influência mínima de Head + neck_01 para um triângulo ser da cabeça.
+const HEAD_WEIGHT := 0.5
+## Superfície do material → [rugosidade, metal]. Os nomes vêm do modelo.
+const SURFACES := {
+	"Pele": [0.62, 0.0], "PeleSombra": [0.66, 0.0], "Labio": [0.5, 0.0],
+	"Barba": [0.95, 0.0], "Cabelo": [0.95, 0.0],
+	"Esclera": [0.25, 0.0], "Iris": [0.2, 0.0], "Pupila": [0.15, 0.0],
+	"Gorro": [0.97, 0.0], "GorroDobra": [0.97, 0.0],
+	"Jaqueta": [0.88, 0.0], "JaquetaEscura": [0.9, 0.0], "Cordao": [0.9, 0.0],
+	"Ziper": [0.4, 0.75], "Metal": [0.35, 0.85],
+	"Calca": [0.92, 0.0], "CalcaEscura": [0.92, 0.0],
+	"Bota": [0.6, 0.0], "BotaEscura": [0.62, 0.0], "Sola": [0.85, 0.0], "Cadarco": [0.9, 0.0],
+	"Luva": [0.75, 0.0], "Sujeira": [1.0, 0.0],
+}
+## As cores do modelo são de pintura plana; para a luz física do jogo (sol e
+## céu) elas são escurecidas um pouco, como um albedo real de tecido.
+const ALBEDO_SCALE := 0.82
 
-## Ragdoll: [osso, osso-filho que define o comprimento ("" = vertical), raio,
-## massa (kg), abertura do cone (graus), torção (graus)]. Soma ≈ 80 kg.
 const RAGDOLL := [
 	["pelvis", "spine_01", 0.13, 12.0, 0.0, 0.0],
 	["spine_01", "spine_03", 0.13, 10.0, 25.0, 20.0],
@@ -88,20 +68,18 @@ const RAGDOLL_MASK := 1 | 4
 
 
 func _initialize() -> void:
-	if not _prepare_textures():
-		print("Texturas reduzidas gravadas em %s. Rode --import e esta ferramenta de novo." % TEXTURE_DIR)
-		quit(0)
-		return
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(OUT_DIR))
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path("res://scenes/characters"))
-	var outfit_root: Node = (load(OUTFIT_SKELETON_SCENE) as PackedScene).instantiate()
-	var source_skeleton: Skeleton3D = outfit_root.find_children("*", "Skeleton3D", true, false)[0]
+	var source_root: Node = (load(SOURCE) as PackedScene).instantiate()
+	var source_skeleton: Skeleton3D = source_root.find_children("*", "Skeleton3D", true, false)[0]
+	RigNames.rename_skeleton(source_skeleton)
+	var source_mesh: MeshInstance3D = source_root.find_children("*", "MeshInstance3D", true, false)[0]
 
 	var root := Node3D.new()
 	root.name = "Survivor"
 	var armature := Node3D.new()
 	armature.name = "Armature"
-	# O modelo olha para +Z (glTF); o jogo usa -Z como frente.
+	# O modelo olha para +Z; o jogo usa -Z como frente.
 	armature.rotation.y = PI
 	root.add_child(armature)
 	armature.owner = root
@@ -116,29 +94,11 @@ func _initialize() -> void:
 	armature.add_child(skeleton)
 	skeleton.owner = root
 
-	# Roupa modelada (corpo inteiro coberto, mãos e antebraços com pele).
-	var materials := _materials()
-	for piece in OUTFIT:
-		var scene_root: Node = (load(OUTFIT_DIR + piece[1]) as PackedScene).instantiate()
-		var part := scene_root.find_child(piece[2], true, false) as MeshInstance3D
-		assert(part != null, "Peça %s não encontrada em %s" % [piece[2], piece[1]])
-		var mesh := _with_materials(part.mesh, materials, piece[3], piece[4])
-		_add_mesh(root, skeleton, piece[0], mesh, part.skin, "both")
-
-	# Cabeça e pescoço do corpo-base (o resto do corpo-base fica de fora).
-	var head_root: Node = (load(HEAD_SCENE) as PackedScene).instantiate()
-	var head_skeleton: Skeleton3D = head_root.find_children("*", "Skeleton3D", true, false)[0]
-	var base: MeshInstance3D = head_skeleton.get_node("SuperHero_Male")
-	var head := _only_bones(base.mesh, base.skin, head_skeleton, ["Head", "neck_01"], HEAD_WEIGHT)
-	_add_mesh(root, skeleton, "Head", head, base.skin, "full")
-	for name in ["Eyes", "Eyebrows"]:
-		var part: MeshInstance3D = head_skeleton.get_node(name)
-		var mesh := part.mesh if name == "Eyes" else _tinted(part.mesh, HAIR_COLOR)
-		_add_mesh(root, skeleton, name, mesh, part.skin, "full")
-	for path in HAIR_SCENES:
-		var hair_root: Node = (load(path) as PackedScene).instantiate()
-		for part: MeshInstance3D in hair_root.find_children("*", "MeshInstance3D", true, false):
-			_add_mesh(root, skeleton, path.get_file().get_basename(), _tinted(part.mesh, HAIR_COLOR), part.skin, "full")
+	var skin := RigNames.rename_skin(source_mesh.skin)
+	var mesh := _with_materials(source_mesh.mesh)
+	var parts := _split_by_bones(mesh, skin, skeleton, ["Head", "neck_01"], HEAD_WEIGHT)
+	_add_mesh(root, skeleton, "Body", parts[1], skin, "both")
+	_add_mesh(root, skeleton, "Head", parts[0], skin, "full")
 
 	_build_ragdoll(skeleton, root)
 
@@ -156,64 +116,33 @@ func _initialize() -> void:
 	var error := packed.pack(root)
 	if error == OK:
 		error = ResourceSaver.save(packed, OUT_SCENE)
-	print("Sobrevivente gerado: %s" % error_string(error))
+	print("Sobrevivente gerado: %s (corpo %d, cabeça %d superfícies)" % [error_string(error), parts[1].get_surface_count(), parts[0].get_surface_count()])
 	quit(0 if error == OK else 1)
 
 
-## Reduz as texturas 4K do pacote (memória de vídeo no celular). Retorna
-## verdadeiro se todas já existem importadas.
-func _prepare_textures() -> bool:
-	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(TEXTURE_DIR))
-	var ready := true
-	for entry in TEXTURES:
-		var target: String = TEXTURE_DIR + entry[1]
-		if ResourceLoader.exists(target):
-			continue
-		ready = false
-		var image := Image.load_from_file(ProjectSettings.globalize_path(OUTFIT_DIR + entry[0]))
-		var side: int = entry[2]
-		image.resize(side, side, Image.INTERPOLATE_LANCZOS)
-		image.save_png(ProjectSettings.globalize_path(target))
-	return ready
-
-
-func _materials() -> Dictionary:
-	var result := {}
-	for set_name in ["peasant", "ranger"]:
-		var material := ORMMaterial3D.new()
-		material.albedo_texture = load(TEXTURE_DIR + set_name + "_albedo.png")
-		material.normal_enabled = true
-		material.normal_texture = load(TEXTURE_DIR + set_name + "_normal.png")
-		material.orm_texture = load(TEXTURE_DIR + set_name + "_orm.png")
-		result[set_name] = material
-	var skin := StandardMaterial3D.new()
-	skin.albedo_texture = load(TEXTURE_DIR + "skin_albedo.png")
-	skin.normal_enabled = true
-	skin.normal_texture = load(TEXTURE_DIR + "skin_normal.png")
-	skin.roughness_texture = load(TEXTURE_DIR + "skin_roughness.png")
-	skin.roughness_texture_channel = BaseMaterial3D.TEXTURE_CHANNEL_RED
-	result["skin"] = skin
-	return result
-
-
-## Copia a malha trocando os materiais do pacote pelos das texturas reduzidas.
-## Superfícies de pele (MI_Regular_Male) recebem o material de pele.
-func _with_materials(mesh: Mesh, materials: Dictionary, set_name: String, tint: Color) -> Mesh:
+## Copia a malha com materiais PBR por tipo de superfície.
+func _with_materials(mesh: Mesh) -> ArrayMesh:
 	var copy := mesh.duplicate() as ArrayMesh
 	for surface in copy.get_surface_count():
-		var original := copy.surface_get_material(surface)
-		var is_skin := original != null and String(original.resource_name).contains("Regular")
-		if is_skin:
-			copy.surface_set_material(surface, materials["skin"])
-		else:
-			var material := (materials[set_name] as BaseMaterial3D).duplicate() as BaseMaterial3D
-			material.albedo_color = tint
-			copy.surface_set_material(surface, material)
+		var original := copy.surface_get_material(surface) as BaseMaterial3D
+		var material := StandardMaterial3D.new()
+		var surface_name := String(original.resource_name) if original != null else ""
+		material.resource_name = surface_name
+		var color := original.albedo_color if original != null else Color(0.5, 0.5, 0.5)
+		material.albedo_color = Color(color.r * ALBEDO_SCALE, color.g * ALBEDO_SCALE, color.b * ALBEDO_SCALE)
+		var params: Array = SURFACES.get(surface_name, [0.85, 0.0])
+		material.roughness = params[0]
+		material.metallic = params[1]
+		if surface_name.begins_with("Pele") or surface_name == "Labio":
+			# Pele: luz atravessando de leve (orelhas, contra o sol).
+			material.rim_enabled = true
+			material.rim = 0.15
+			material.rim_tint = 0.6
+		copy.surface_set_material(surface, material)
 	return copy
 
 
-func _add_mesh(root: Node, skeleton: Skeleton3D, node_name: String, mesh: Mesh, skin: Skin,
-		view: String) -> void:
+func _add_mesh(root: Node, skeleton: Skeleton3D, node_name: String, mesh: Mesh, skin: Skin, view: String) -> void:
 	var instance := MeshInstance3D.new()
 	instance.name = node_name
 	var path := OUT_DIR + node_name.to_snake_case() + ".res"
@@ -230,8 +159,50 @@ func _add_mesh(root: Node, skeleton: Skeleton3D, node_name: String, mesh: Mesh, 
 	instance.set_meta(&"view", view)
 
 
-## Cria o PhysicalBoneSimulator3D com cápsulas no comprimento de cada osso e
-## juntas cônicas com limites anatômicos.
+## Divide a malha (todas as superfícies) em [triângulos presos aos ossos
+## dados, resto], mantendo os materiais.
+func _split_by_bones(mesh: ArrayMesh, skin: Skin, skeleton: Skeleton3D, bone_names: Array, threshold: float) -> Array[ArrayMesh]:
+	var selected_binds := {}
+	for bind in skin.get_bind_count():
+		var bone_name := String(skin.get_bind_name(bind))
+		if bone_name.is_empty():
+			bone_name = skeleton.get_bone_name(skin.get_bind_bone(bind))
+		if bone_name in bone_names:
+			selected_binds[bind] = true
+	var inside := ArrayMesh.new()
+	var outside := ArrayMesh.new()
+	for surface in mesh.get_surface_count():
+		var arrays := mesh.surface_get_arrays(surface)
+		var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		var bones: PackedInt32Array = arrays[Mesh.ARRAY_BONES]
+		var weights: PackedFloat32Array = arrays[Mesh.ARRAY_WEIGHTS]
+		var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
+		var influences := bones.size() / vertices.size()
+		var amount := PackedFloat32Array()
+		amount.resize(vertices.size())
+		for v in vertices.size():
+			for k in influences:
+				if selected_binds.has(bones[v * influences + k]):
+					amount[v] += weights[v * influences + k]
+		var kept_in := PackedInt32Array()
+		var kept_out := PackedInt32Array()
+		for t in indices.size() / 3:
+			var a := amount[indices[t * 3]] + amount[indices[t * 3 + 1]] + amount[indices[t * 3 + 2]]
+			if a / 3.0 > threshold:
+				kept_in.append(t)
+			else:
+				kept_out.append(t)
+		for pair in [[inside, kept_in], [outside, kept_out]]:
+			if (pair[1] as PackedInt32Array).is_empty():
+				continue
+			var part := _extract(arrays, pair[1])
+			var target: ArrayMesh = pair[0]
+			target.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, part.surface_get_arrays(0), [], {},
+					Mesh.ARRAY_FLAG_USE_8_BONE_WEIGHTS if influences == 8 else 0)
+			target.surface_set_material(target.get_surface_count() - 1, mesh.surface_get_material(surface))
+	return [inside, outside]
+
+
 func _build_ragdoll(skeleton: Skeleton3D, root: Node) -> void:
 	var simulator := PhysicalBoneSimulator3D.new()
 	simulator.name = "PhysicalBoneSimulator3D"
@@ -293,37 +264,6 @@ func _basis_with_x(direction: Vector3) -> Basis:
 	return Basis(x, z.cross(x).normalized(), z)
 
 
-## Só os triângulos em que todos os vértices têm influência dos ossos dados
-## acima do limiar (ex.: cabeça e pescoço do corpo-base).
-func _only_bones(mesh: ArrayMesh, skin: Skin, skeleton: Skeleton3D, bone_names: Array, threshold: float) -> ArrayMesh:
-	var arrays := mesh.surface_get_arrays(0)
-	var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
-	var bones: PackedInt32Array = arrays[Mesh.ARRAY_BONES]
-	var weights: PackedFloat32Array = arrays[Mesh.ARRAY_WEIGHTS]
-	var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
-	var influences := bones.size() / vertices.size()
-	var selected_binds := {}
-	for bind in skin.get_bind_count():
-		var bone_name := String(skin.get_bind_name(bind))
-		if bone_name.is_empty():
-			bone_name = skeleton.get_bone_name(skin.get_bind_bone(bind))
-		if bone_name in bone_names:
-			selected_binds[bind] = true
-	var amount := PackedFloat32Array()
-	amount.resize(vertices.size())
-	for v in vertices.size():
-		for k in influences:
-			if selected_binds.has(bones[v * influences + k]):
-				amount[v] += weights[v * influences + k]
-	var kept := PackedInt32Array()
-	for t in indices.size() / 3:
-		if amount[indices[t * 3]] > threshold and amount[indices[t * 3 + 1]] > threshold and amount[indices[t * 3 + 2]] > threshold:
-			kept.append(t)
-	var result := _extract(arrays, kept)
-	result.surface_set_material(0, mesh.surface_get_material(0))
-	return result
-
-
 ## Nova malha com os triângulos dados (vértices não usados são descartados).
 func _extract(arrays: Array, triangles: PackedInt32Array) -> ArrayMesh:
 	var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
@@ -360,15 +300,3 @@ func _extract(arrays: Array, triangles: PackedInt32Array) -> ArrayMesh:
 		flags = Mesh.ARRAY_FLAG_USE_8_BONE_WEIGHTS
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, result_arrays, [], {}, flags)
 	return mesh
-
-
-## Copia a malha com os materiais tingidos (multiplicando a textura).
-func _tinted(mesh: Mesh, color: Color) -> Mesh:
-	var copy := mesh.duplicate() as Mesh
-	for surface in copy.get_surface_count():
-		var material := copy.surface_get_material(surface)
-		if material is BaseMaterial3D:
-			var tinted := material.duplicate() as BaseMaterial3D
-			tinted.albedo_color = color
-			copy.surface_set_material(surface, tinted)
-	return copy

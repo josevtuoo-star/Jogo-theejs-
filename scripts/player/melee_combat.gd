@@ -8,7 +8,7 @@ extends Node
 ##   WINDUP ── animação chega à janela de impacto ──> ACTIVE
 ##   ACTIVE ── colisão do braço com algo / fim da janela ──> RECOVERY
 ##   RECOVERY ── fim da animação de recuperação + intervalo ──> IDLE (ou BLOCKING)
-##   IDLE ── segura DEFESA ──> BLOCKING ── solta ──> IDLE
+##   IDLE ── toque em DEFESA ──> BLOCKING ── outro toque (ou correr) ──> IDLE
 ##
 ## Regras:
 ## - Só a ação "attack" inicia um golpe, e só na borda de descida (apertar).
@@ -21,8 +21,9 @@ extends Node
 ##   atingido antes; alvo fora do alcance do braço não é atingido.
 ## - Recuperação: soco rápido termina na própria animação; o gancho volta à
 ##   guarda com a animação de recuperação. Depois, um intervalo curto.
-## - Defesa: guarda erguida, anda mais devagar e não corre; golpes e mordidas
-##   pela frente perdem 75% do dano ao custo de resistência.
+## - Defesa: um toque em DEFESA ergue a guarda e outro abaixa (não precisa
+##   segurar). De guarda anda mais devagar; correr abaixa a guarda. Golpes e
+##   mordidas pela frente perdem 75% do dano.
 ## Alvos com receive_hit(hit) recebem dano; corpos rígidos recebem impulso;
 ## superfícies rígidas devolvem o golpe (recuo).
 
@@ -32,6 +33,8 @@ signal hit_obstacle(point: Vector3)
 signal attack_missed(kind: StringName)
 signal blocked(amount_prevented: float)
 signal state_changed(state: State)
+## Guarda ligada/desligada (um toque em DEFESA alterna).
+signal guard_toggled(enabled: bool)
 
 enum State { IDLE, PRESSED, CHARGING, WINDUP, ACTIVE, RECOVERY, BLOCKING }
 
@@ -90,6 +93,9 @@ var charge: float = 0.0
 var last_hit: Dictionary = {}
 var _held_time: float = 0.0
 var _pressed_previous: bool = false
+var _block_previous: bool = false
+## Guarda alternada: um toque em DEFESA ergue, outro abaixa.
+var guard_enabled: bool = false
 var _active_kind: StringName = &""
 var _recovery_clip: StringName = &""
 var _recovery_timer: float = 0.0
@@ -147,7 +153,14 @@ func _physics_process(delta: float) -> void:
 	_clock += delta
 	var alive := not player.is_dead() and player.input_enabled
 	var pressed := Input.is_action_pressed("attack") and alive
-	var block_held := Input.is_action_pressed("block") and alive
+	var block_pressed := Input.is_action_pressed("block") and alive
+	if block_pressed and not _block_previous:
+		set_guard(not guard_enabled)
+	_block_previous = block_pressed
+	# Correr baixa a guarda (não dá para correr de guarda erguida).
+	if guard_enabled and Input.is_action_pressed("sprint") and player.get_horizontal_speed() > 0.5:
+		set_guard(false)
+	var block_held := guard_enabled
 	var just_pressed := pressed and not _pressed_previous
 	_pressed_previous = pressed
 	if not alive:
@@ -359,7 +372,16 @@ func _filter_damage(amount: float, kind: StringName, direction: Vector3) -> floa
 	return reduced
 
 
+## Ergue ou abaixa a guarda (alternância). Morrer também abaixa.
+func set_guard(enabled: bool) -> void:
+	if enabled == guard_enabled:
+		return
+	guard_enabled = enabled
+	guard_toggled.emit(enabled)
+
+
 func _cancel() -> void:
+	set_guard(false)
 	if state != State.IDLE:
 		_set_state(State.IDLE)
 	animator.set_guard(false)

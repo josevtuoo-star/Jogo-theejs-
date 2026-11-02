@@ -15,6 +15,8 @@ extends Control
 
 ## Raio de deslocamento máximo do manche (pixels da viewport base).
 @export_range(20.0, 300.0, 1.0) var radius: float = 90.0
+## Fração do raio sem efeito (o dedo encostado não anda).
+@export_range(0.0, 0.5, 0.01) var dead_zone: float = 0.12
 ## Posição de repouso como fração do tamanho do controle.
 @export var rest_position_ratio: Vector2 = Vector2(0.16, 0.74)
 ## Distância, em múltiplos do raio, a partir da qual a corrida é ativada.
@@ -65,7 +67,10 @@ func _update_output(local_position: Vector2) -> void:
 	var offset := local_position - _center
 	var distance := offset.length()
 	var direction := offset / distance if distance > 0.0 else Vector2.ZERO
-	output = direction * minf(distance / radius, 1.0)
+	# Zona morta (dedo apoiado não anda sozinho) e resposta suave: os
+	# primeiros milímetros dão passos lentos e precisos.
+	var amount := clampf((distance / radius - dead_zone) / (1.0 - dead_zone), 0.0, 1.0)
+	output = direction * amount
 	is_sprint_zone = distance >= radius * sprint_distance_ratio and -direction.y >= sprint_min_forward
 	_knob = _center + direction * minf(distance, radius)
 	_press_actions()

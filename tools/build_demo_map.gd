@@ -20,12 +20,25 @@ extends SceneTree
 ## - céu encoberto procedural, sol de manhã com sombras, neblina volumétrica de distância
 
 const OUT := "res://scenes/demo/demo_forest.tscn"
-const SIZE := 160.0
+## Mapa total (m). A área central de INNER_SIZE é a clareira original, gerada
+## exatamente como antes (mesma função de relevo e mesma sequência aleatória);
+## a ampliação usa geradores próprios e não altera nada dela.
+const SIZE := 400.0
+const INNER_SIZE := 160.0
 const CELL := 2.0
 const SEED := 20261101
 const PH := "res://assets/polyhaven/"
 const TREE_HEIGHTS := [9.0, 7.95, 6.02]
 const TREE_COUNT := 900
+## Árvores da ampliação (mesma densidade da floresta original).
+const OUTER_TREE_COUNT := 5600
+## Lado dos blocos de árvores e vegetação (cada bloco some longe da câmera).
+const CHUNK := 40.0
+## Pontos de interesse da ampliação: [nome, centro, raio plano, raio de transição].
+const HUNTER_CAMP := Vector2(86.0, -114.0)
+const LOOKOUT := Vector2(-112.0, -58.0)
+const NORTH_ROADBLOCK_Z := -150.0
+const POI_CLEARINGS := [[HUNTER_CAMP, 9.0, 20.0]]
 
 var _root: Node3D
 var _noise := FastNoiseLite.new()
@@ -49,7 +62,12 @@ func _initialize() -> void:
 	_campfire(Vector3(-7.0, 0.0, -11.0))
 	_nature_props()
 	_forest()
+	_hunter_camp()
+	_north_roadblock()
+	_lookout()
+	_outer_details()
 	_boundaries()
+	_ambience()
 	_player_and_ui()
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path("res://scenes/demo"))
 	var packed := PackedScene.new()
@@ -77,6 +95,9 @@ func height_at(x: float, z: float) -> float:
 	var clearing := clampf((Vector2(x, z).length() - 20.0) / 20.0, 0.0, 1.0)
 	var road := clampf((absf(x - _road_x(z)) - 3.5) / 7.0, 0.0, 1.0)
 	var flat := minf(clearing, road)
+	for poi in POI_CLEARINGS:
+		var poi_center: Vector2 = poi[0]
+		flat = minf(flat, clampf((Vector2(x, z).distance_to(poi_center) - float(poi[1])) / (float(poi[2]) - float(poi[1])), 0.0, 1.0))
 	flat = flat * flat * (3.0 - 2.0 * flat)
 	return hills * flat + _detail.get_noise_2d(x, z) * 0.035
 
@@ -87,6 +108,7 @@ func _weights_at(x: float, z: float) -> Color:
 	var camp := 1.0 - clampf((Vector2(x, z).length() - 9.0) / 5.0, 0.0, 1.0)
 	var mud := clampf(maxf(road, camp * 0.6 * (0.5 + 0.5 * _detail.get_noise_2d(x * 2.0, z * 2.0))), 0.0, 1.0)
 	var open := 1.0 - clampf((Vector2(x, z).length() - 18.0) / 16.0, 0.0, 1.0)
+	open = maxf(open, 1.0 - clampf((Vector2(x, z).distance_to(HUNTER_CAMP) - 8.0) / 8.0, 0.0, 1.0))
 	var grass := clampf(open * (0.55 + 0.45 * _noise.get_noise_2d(x * 4.0, z * 4.0)) * (1.0 - mud), 0.0, 1.0)
 	return Color(grass, mud, 0.0)
 
@@ -175,7 +197,9 @@ func _environment() -> void:
 	environment.background_mode = Environment.BG_SKY
 	environment.sky = sky
 	environment.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	environment.ambient_light_energy = 0.7
+	# Sob a copa o sol não chega: a luz difusa do céu é o que ilumina a mata
+	# (no mapa ampliado o jogador passa a maior parte do tempo nela).
+	environment.ambient_light_energy = 1.15
 	environment.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
 	environment.tonemap_mode = Environment.TONE_MAPPER_ACES
 	environment.tonemap_exposure = 0.95
@@ -228,6 +252,12 @@ func _prop(asset: String, position: Vector3, yaw_degrees: float, mass: float = 0
 		material.friction = 0.8
 		material.bounce = 0.05
 		rigid.physics_material_override = material
+		# Som de batida pelo material do objeto.
+		var impact := Node.new()
+		impact.name = "ImpactSound"
+		impact.set_script(load("res://scripts/audio/impact_sound.gd"))
+		impact.set("material", _impact_material(asset))
+		rigid.add_child(impact)
 		body = rigid
 	else:
 		var static_body := StaticBody3D.new()
@@ -239,6 +269,9 @@ func _prop(asset: String, position: Vector3, yaw_degrees: float, mass: float = 0
 	body.position = Vector3(position.x, ground - bounds.position.y * scale + 0.01, position.z)
 	body.rotation_degrees.y = yaw_degrees
 	_own(body, parent)
+	for child in body.get_children():
+		if child.name == &"ImpactSound":
+			child.owner = _root
 	model.name = "Model"
 	model.scale = Vector3.ONE * scale
 	_own(model, body)
@@ -253,6 +286,14 @@ func _prop(asset: String, position: Vector3, yaw_degrees: float, mass: float = 0
 	_own(collision, body)
 	_occupied.append(Vector3(position.x, 0.0, position.z))
 	return body
+
+
+func _impact_material(asset: String) -> StringName:
+	if asset.contains("crate") or asset.contains("wooden") or asset.contains("stump") or asset.contains("trunk"):
+		return &"madeira"
+	if asset.contains("jerrycan") or asset.contains("can") or asset.contains("machete") or asset.contains("crowbar") or asset.contains("utility"):
+		return &"metal"
+	return &"generico"
 
 
 func _bounds(model: Node3D) -> AABB:
@@ -364,8 +405,8 @@ func _barbed_wire(center: Vector3, parent: Node) -> void:
 		_own(post, area)
 
 
-func _campfire(position: Vector3) -> void:
-	var pit := _prop("stone_fire_pit", position, 0.0)
+func _campfire(position: Vector3, parent: Node = null) -> void:
+	var pit := _prop("stone_fire_pit", position, 0.0, 0.0, 1.0, true, parent)
 	pit.collision_layer = 1 | 16
 	var top := 0.35
 	var light := OmniLight3D.new()
@@ -389,8 +430,8 @@ func _campfire(position: Vector3) -> void:
 	fire.set("flames", flames)
 	fire.set("smoke", smoke)
 	# Troncos caídos servem de bancos.
-	_prop("dead_tree_trunk", position + Vector3(2.4, 0.0, 0.6), 80.0, 0.0, 0.55)
-	_prop("tree_stump_01", position + Vector3(-1.8, 0.0, 1.6), 0.0, 0.0, 0.6)
+	_prop("dead_tree_trunk", position + Vector3(2.4, 0.0, 0.6), 80.0, 0.0, 0.55, true, parent)
+	_prop("tree_stump_01", position + Vector3(-1.8, 0.0, 1.6), 0.0, 0.0, 0.6, true, parent)
 
 
 func _fire_particles(node_name: String, color: Color, lifetime: float, size: float, amount: int, additive: bool) -> GPUParticles3D:
@@ -480,7 +521,7 @@ func _forest() -> void:
 	while placed.size() < TREE_COUNT and tries < 40000:
 		tries += 1
 		# Mata fechada em todo o mapa, a partir da borda da clareira.
-		var limit := SIZE * 0.5 - 3.5
+		var limit := INNER_SIZE * 0.5 - 3.5
 		var spot := Vector3(_rng.randf_range(-limit, limit), 0.0, _rng.randf_range(-limit, limit))
 		if Vector2(spot.x, spot.z).length() < 23.0:
 			continue
@@ -514,8 +555,8 @@ func _forest() -> void:
 		shape.shape = cylinder
 		shape.position = Vector3(spot.x, ground + 2.0, spot.z)
 		_own(shape, colliders)
-	for variant in 3:
-		_own(_scatter("Firs%d" % variant, _card_mesh(variant, atlas), transforms[variant]), group)
+	var inner_count := placed.size()
+	_outer_forest(transforms, trunk_transforms, colliders)
 	var trunk_mesh := CylinderMesh.new()
 	trunk_mesh.top_radius = 0.05
 	trunk_mesh.bottom_radius = 0.17
@@ -530,14 +571,104 @@ func _forest() -> void:
 	bark.orm_texture = load(folder + "arm_1k.jpg")
 	bark.uv1_scale = Vector3(2.0, 4.0, 1.0)
 	trunk_mesh.material = bark
-	_own(_scatter("Trunks", trunk_mesh, trunk_transforms), group)
-	print("Árvores: %d (variantes %d/%d/%d)" % [placed.size(), transforms[0].size(), transforms[1].size(), transforms[2].size()])
+	var cards: Array[Mesh] = []
+	for variant in 3:
+		cards.append(_card_mesh(variant, atlas))
+	# Em blocos: cada bloco é cortado fora da câmera e some com a distância
+	# (a neblina já esconde), então o celular só desenha o que está perto.
+	var chunks := {}
+	for variant in 3:
+		for t: Transform3D in transforms[variant]:
+			_chunk_list(chunks, t.origin, "card%d" % variant).append(t)
+	for t: Transform3D in trunk_transforms:
+		_chunk_list(chunks, t.origin, "trunk").append(t)
+	for key in chunks:
+		var lists: Dictionary = chunks[key]
+		for variant in 3:
+			var list: Array = lists.get("card%d" % variant, [])
+			if not list.is_empty():
+				_own(_scatter("Firs%d_%s" % [variant, key], cards[variant], list, 320.0), group)
+		if lists.has("trunk"):
+			_own(_scatter("Trunks_%s" % key, trunk_mesh, lists["trunk"], 75.0), group)
+	var total: int = (transforms[0] as Array).size() + (transforms[1] as Array).size() + (transforms[2] as Array).size()
+	print("Árvores: %d (clareira original %d, ampliação %d) em %d blocos" % [total, inner_count, total - inner_count, chunks.size()])
 
 
-func _scatter(node_name: String, mesh: Mesh, list: Array) -> ScatterInstances:
+func _chunk_list(chunks: Dictionary, position: Vector3, kind: String) -> Array:
+	var key := "%d_%d" % [floori(position.x / CHUNK), floori(position.z / CHUNK)]
+	if not chunks.has(key):
+		chunks[key] = {}
+	var lists: Dictionary = chunks[key]
+	if not lists.has(kind):
+		lists[kind] = []
+	return lists[kind]
+
+
+## Floresta da ampliação: fora do quadrado original, sem estrada nem pontos
+## de interesse, com espaçamento mínimo (grade espacial para ser rápido).
+func _outer_forest(transforms: Array, trunk_transforms: Array, colliders: StaticBody3D) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = SEED + 101
+	var inner_limit := INNER_SIZE * 0.5 - 3.5
+	var limit := SIZE * 0.5 - 4.0
+	var grid := {}
+	var placed := 0
+	var tries := 0
+	while placed < OUTER_TREE_COUNT and tries < 300000:
+		tries += 1
+		var spot := Vector3(rng.randf_range(-limit, limit), 0.0, rng.randf_range(-limit, limit))
+		if absf(spot.x) < inner_limit + 1.0 and absf(spot.z) < inner_limit + 1.0:
+			continue
+		if absf(spot.x - _road_x(spot.z)) < 6.0:
+			continue
+		if _near_poi(Vector2(spot.x, spot.z), 6.0):
+			continue
+		var cell := Vector2i(floori(spot.x / 3.0), floori(spot.z / 3.0))
+		var crowded := false
+		for dx in range(-1, 2):
+			for dz in range(-1, 2):
+				for other: Vector3 in grid.get(cell + Vector2i(dx, dz), []):
+					if other.distance_to(spot) < 2.7:
+						crowded = true
+		if crowded:
+			continue
+		if not grid.has(cell):
+			grid[cell] = []
+		(grid[cell] as Array).append(spot)
+		placed += 1
+		var variant := rng.randi_range(0, 2)
+		var scale := rng.randf_range(1.35, 2.1)
+		var ground := height_at(spot.x, spot.z) - 0.2
+		var basis := Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * scale)
+		transforms[variant].append(Transform3D(basis, Vector3(spot.x, ground, spot.z)))
+		var tree_height: float = TREE_HEIGHTS[variant] * scale
+		var trunk_scale := Vector3(scale * 0.9, tree_height * 0.42, scale * 0.9)
+		trunk_transforms.append(Transform3D(Basis.IDENTITY.scaled(trunk_scale), Vector3(spot.x, ground + trunk_scale.y * 0.5, spot.z)))
+		var cylinder := CylinderShape3D.new()
+		cylinder.radius = 0.16 * scale
+		cylinder.height = 4.0
+		var shape := CollisionShape3D.new()
+		shape.name = "OuterTrunk%d" % placed
+		shape.shape = cylinder
+		shape.position = Vector3(spot.x, ground + 2.0, spot.z)
+		_own(shape, colliders)
+
+
+func _near_poi(point: Vector2, margin: float) -> bool:
+	if point.distance_to(HUNTER_CAMP) < 20.0 + margin:
+		return true
+	if point.distance_to(LOOKOUT) < 9.0 + margin:
+		return true
+	if absf(point.y - NORTH_ROADBLOCK_Z) < 12.0 + margin and absf(point.x - _road_x(point.y)) < 14.0 + margin:
+		return true
+	return false
+
+
+func _scatter(node_name: String, mesh: Mesh, list: Array, max_distance: float = 0.0) -> ScatterInstances:
 	var scatter := ScatterInstances.new()
 	scatter.name = node_name
 	scatter.mesh = mesh
+	scatter.max_distance = max_distance
 	var typed: Array[Transform3D] = []
 	typed.assign(list)
 	scatter.transforms = typed
@@ -583,6 +714,129 @@ func _card_mesh(variant: int, atlas: Texture2D) -> ArrayMesh:
 	mesh.surface_set_material(0, material)
 	mesh.custom_aabb = AABB(Vector3(-width, bottom, -width), Vector3(width * 2.0, height, width * 2.0))
 	return mesh
+
+
+# --- Ampliação: pontos de interesse e detalhes -------------------------------
+
+## Acampamento de caçadores abandonado numa clareira a nordeste.
+func _hunter_camp() -> void:
+	var group := Node3D.new()
+	group.name = "HunterCamp"
+	_own(group)
+	var c := Vector3(HUNTER_CAMP.x, 0.0, HUNTER_CAMP.y)
+	_campfire(c, group)
+	_prop("old_military_crate", c + Vector3(4.2, 0.0, -2.0), 35.0, 18.0, 1.0, true, group)
+	_prop("wooden_military_crate", c + Vector3(5.4, 0.0, -0.6), -10.0, 30.0, 1.0, true, group)
+	_prop("wooden_barrels_01", c + Vector3(-5.0, 0.0, -3.5), 15.0, 0.0, 1.0, true, group)
+	_prop("Barrel_02", c + Vector3(-3.8, 0.0, 3.6), 0.0, 25.0, 1.0, true, group)
+	_prop("metal_jerrycan_green", c + Vector3(3.6, 0.0, 2.6), -30.0, 8.0, 1.0, true, group)
+	_prop("wooden_axe", c + Vector3(-2.4, 0.0, -1.2), 60.0, 1.4, 1.0, true, group)
+	_prop("russian_food_cans_01", c + Vector3(1.4, 0.0, -2.4), 0.0, 0.5, 1.0, true, group)
+	_prop("can_rusted", c + Vector3(1.8, 0.0, -2.0), 0.0, 0.4, 1.0, true, group)
+	_prop("dead_tree_trunk", c + Vector3(-1.0, 0.0, 6.5), -15.0, 0.0, 0.8, true, group)
+	for spot in [Vector3(9.0, 0, 5.0), Vector3(-8.0, 0, 7.0), Vector3(7.0, 0, -8.0)]:
+		_prop("tree_stump_01", c + spot, _rng.randf_range(0.0, 360.0), 0.0, 0.8, true, group)
+
+
+## Segundo bloqueio na estrada, ao norte (posto avançado abandonado).
+func _north_roadblock() -> void:
+	var group := Node3D.new()
+	group.name = "NorthRoadblock"
+	_own(group)
+	var z := NORTH_ROADBLOCK_Z
+	var center := _road_x(z)
+	for i in 2:
+		_prop("concrete_road_barrier_02", Vector3(center - 2.0 + i * 3.4, 0.0, z + (i % 2) * 0.8), 90.0 + _rng.randf_range(-12.0, 12.0), 0.0, 1.0, true, group)
+	_prop("utility_box_01", Vector3(center + 6.0, 0.0, z - 3.0), 200.0, 0.0, 1.0, true, group)
+	for i in 2:
+		_prop("Barrel_02", Vector3(center - 6.0 + i * 0.8, 0.0, z + 2.0), _rng.randf_range(0.0, 360.0), 25.0, 1.0, true, group)
+	_prop("old_tyre", Vector3(center + 4.0, 0.0, z + 3.0), 20.0, 10.0, 1.0, true, group)
+	_prop("old_tyre", Vector3(center + 4.4, 0.0, z + 3.8), 70.0, 10.0, 1.0, true, group)
+	_prop("metal_jerrycan_green", Vector3(center - 5.0, 0.0, z - 2.0), 10.0, 8.0, 1.0, true, group)
+	_prop("old_military_crate", Vector3(center + 7.0, 0.0, z + 1.0), -40.0, 18.0, 1.0, true, group)
+	_prop("crowbar_01", Vector3(center + 6.6, 0.0, z + 2.2), 15.0, 2.0, 1.0, true, group)
+	_barbed_wire(Vector3(center - 7.0, 0.0, z - 0.6), group)
+
+
+## Mirante de pedras no alto de um morro a oeste.
+func _lookout() -> void:
+	var group := Node3D.new()
+	group.name = "Lookout"
+	_own(group)
+	var c := Vector3(LOOKOUT.x, 0.0, LOOKOUT.y)
+	_prop("boulder_01", c, 0.0, 0.0, 1.4, true, group)
+	_prop("boulder_01", c + Vector3(4.5, 0.0, 2.0), 120.0, 0.0, 1.0, true, group)
+	_prop("rock_moss_set_01", c + Vector3(-3.5, 0.0, 3.0), 45.0, 0.0, 0.9, true, group)
+	_prop("rock_moss_set_01", c + Vector3(2.0, 0.0, -4.0), 200.0, 0.0, 0.7, true, group)
+	_prop("dead_tree_trunk", c + Vector3(-5.0, 0.0, -3.0), 65.0, 0.0, 1.0, true, group)
+
+
+## Detalhes espalhados pela floresta ampliada: samambaias e arbustos (em
+## blocos que somem a 45 m), tocos, troncos caídos e pedras.
+func _outer_details() -> void:
+	var group := Node3D.new()
+	group.name = "OuterDetails"
+	_own(group)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = SEED + 202
+	var limit := SIZE * 0.5 - 5.0
+	var inner_limit := INNER_SIZE * 0.5 - 3.0
+	var plants := {"fern_02": [1600, 0.7, 1.3], "shrub_03": [500, 0.7, 1.2]}
+	var chunks := {}
+	for asset in plants:
+		var spec: Array = plants[asset]
+		var source := _first_mesh(asset)
+		var mesh: Mesh = source[0]
+		var local: Transform3D = source[1]
+		var count := 0
+		while count < int(spec[0]):
+			var spot := Vector3(rng.randf_range(-limit, limit), 0.0, rng.randf_range(-limit, limit))
+			if absf(spot.x) < inner_limit and absf(spot.z) < inner_limit:
+				continue
+			if absf(spot.x - _road_x(spot.z)) < 4.0 or _near_poi(Vector2(spot.x, spot.z), 0.0):
+				continue
+			count += 1
+			var size := rng.randf_range(spec[1], spec[2])
+			var t := Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * size),
+					Vector3(spot.x, height_at(spot.x, spot.z) - 0.03, spot.z)) * local
+			var key := "%s_%d_%d" % [asset, floori(spot.x / CHUNK), floori(spot.z / CHUNK)]
+			if not chunks.has(key):
+				chunks[key] = [mesh, []]
+			(chunks[key][1] as Array).append(t)
+	for key in chunks:
+		var entry: Array = chunks[key]
+		var scatter := _scatter("Plants_" + key, entry[0], entry[1], 45.0)
+		scatter.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_own(scatter, group)
+	# Tocos e troncos caídos com colisão (obstáculos de verdade).
+	var placed := 0
+	while placed < 70:
+		var spot := Vector3(rng.randf_range(-limit, limit), 0.0, rng.randf_range(-limit, limit))
+		if absf(spot.x) < inner_limit and absf(spot.z) < inner_limit:
+			continue
+		if absf(spot.x - _road_x(spot.z)) < 6.0 or _near_poi(Vector2(spot.x, spot.z), 4.0):
+			continue
+		placed += 1
+		if placed % 3 == 0:
+			_prop("dead_tree_trunk", spot, rng.randf_range(0.0, 360.0), 0.0, rng.randf_range(0.7, 1.1), true, group)
+		else:
+			_prop("tree_stump_01", spot, rng.randf_range(0.0, 360.0), 0.0, rng.randf_range(0.6, 1.0), true, group)
+	print("Detalhes da ampliação: %d blocos de vegetação, %d tocos e troncos" % [chunks.size(), placed])
+
+
+## Primeira malha de um modelo da Poly Haven e sua transformação local.
+func _first_mesh(asset: String) -> Array:
+	var model: Node3D = (load(PH + "models/%s/%s_1k.gltf" % [asset, asset]) as PackedScene).instantiate()
+	for node: MeshInstance3D in model.find_children("*", "MeshInstance3D", true, false):
+		return [node.mesh, _relative_transform(model, node)]
+	return [null, Transform3D.IDENTITY]
+
+
+func _ambience() -> void:
+	var ambience := Node.new()
+	ambience.name = "Ambience"
+	ambience.set_script(load("res://scripts/audio/ambience.gd"))
+	_own(ambience)
 
 
 func _boundaries() -> void:

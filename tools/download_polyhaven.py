@@ -20,7 +20,6 @@ ASSETS = [
     ("forest_floor", "textures", "1k"),
     ("leafy_grass", "textures", "1k"),
     ("brown_mud_leaves_01", "textures", "1k"),
-    ("gravel_floor", "textures", "1k"),
     # Roupas do sobrevivente
     # Modelos (props e natureza com orçamento de polígonos para celular)
     ("wooden_military_crate", "models", "1k"),

@@ -26,8 +26,12 @@ signal transition_finished(third_person: bool)
 @export var camera: Camera3D
 
 @export_group("Primeira pessoa")
-## Quanto a câmera segue a cabeça animada (0 = só o ponto da física).
-@export_range(0.0, 1.0, 0.01) var head_bone_follow: float = 0.55
+## Quanto a câmera segue a cabeça animada (0 = só o ponto da física), na
+## vertical e na horizontal. A captura balança a cabeça bastante na corrida;
+## seguir pouco na horizontal deixa a mira estável (como em DayZ) e ainda
+## transmite o peso do corpo no sobe-e-desce.
+@export_range(0.0, 1.0, 0.01) var head_bone_follow: float = 0.35
+@export_range(0.0, 1.0, 0.01) var head_bone_follow_horizontal: float = 0.12
 @export_range(1.0, 60.0, 0.5) var head_smoothing: float = 22.0
 @export_range(0.01, 0.3, 0.01) var eye_wall_margin: float = 0.08
 ## Avanço da câmera ao olhar totalmente para baixo (m): mostra o peito e as
@@ -152,7 +156,8 @@ func _update_camera(delta: float) -> void:
 			_eye_smoothed = head_eye
 			_has_eye = true
 		_eye_smoothed = _eye_smoothed.lerp(head_eye, 1.0 - exp(-head_smoothing * delta))
-		eye = eye.lerp(_eye_smoothed, head_bone_follow)
+		var follow := _eye_smoothed - eye
+		eye += Vector3(follow.x * head_bone_follow_horizontal, follow.y * head_bone_follow, follow.z * head_bone_follow_horizontal)
 	var look_down := clampf(-player.get_pitch() / deg_to_rad(80.0), 0.0, 1.0)
 	eye += -player.get_view_basis().z * look_down_forward * look_down * look_down
 	eye = _clamp_eye(eye)

@@ -25,6 +25,10 @@ extends Node3D
 ##     (curvas, arrancadas e frenagens), como um corpo com peso
 ##   - guarda: com a defesa ativa, braços diante do rosto (quadro final da
 ##     recuperação do gancho, captura real), só da cintura para cima
+##   - pés no chão (IK): cada pé procura o terreno com um raio e a perna se
+##     ajusta (IK de dois ossos); a pélvis desce para o pé mais baixo e o pé
+##     apoiado acompanha a inclinação do chão. Sem isso, em morros os pés
+##     flutuariam ou entrariam no terreno.
 
 signal animation_event(event: StringName, animation: StringName)
 signal overlay_finished(slot: StringName, animation: StringName)
@@ -76,6 +80,14 @@ const FP_GUARD_RIGHT := Vector3(0.14, -0.15, -0.29)
 @export_range(0.0, 10.0, 0.1) var landing_min_impact: float = 3.0
 ## Deslocamento do olho em relação ao osso da cabeça (espaço do personagem).
 @export var eye_offset: Vector3 = Vector3(0.0, 0.075, -0.085)
+
+@export_group("Pés no chão (IK)")
+@export var foot_ik_enabled: bool = true
+## Maior desnível corrigido por pé (m).
+@export_range(0.0, 0.8, 0.01) var foot_ik_max_offset: float = 0.45
+## Altura do tornozelo acima do chão na pose de pé (m).
+@export_range(0.0, 0.3, 0.005) var ankle_height: float = 0.09
+@export_flags_3d_physics var foot_ik_mask: int = 1 | 4
 
 @export_group("Pés plantados e inclinação")
 ## Torção máxima entre pernas e tronco antes de um passo de ajuste (graus).
@@ -168,6 +180,12 @@ var _turn_settle_time: float = 0.0
 var _last_body_yaw: float = 0.0
 var _previous_velocity: Vector3 = Vector3.ZERO
 var _acceleration: Vector3 = Vector3.ZERO
+var _foot_ray := PhysicsRayQueryParameters3D.new()
+var _foot_offsets: Array[float] = [0.0, 0.0]
+var _foot_normals: Array[Vector3] = [Vector3.UP, Vector3.UP]
+var _pelvis_offset: float = 0.0
+var _foot_ik_weight: float = 0.0
+var _delta: float = 0.016
 ## Tempo da última atualização, em microssegundos (diagnóstico de desempenho).
 var last_update_usec: int = 0
 
@@ -314,7 +332,8 @@ func stop(slot: StringName) -> void:
 func get_layer_weights() -> Dictionary:
 	return {"move": _move_weight, "air": _air_weight, "limp": _limp_weight, "crouch": _crouch_weight(),
 			"backward": _backward_weight, "lower_body_yaw": _lower_body_yaw, "guard": _guard_weight,
-			"turn_offset": _turn_offset, "turn_step": _turn_step, "lean": get_lean_degrees()}
+			"turn_offset": _turn_offset, "turn_step": _turn_step, "lean": get_lean_degrees(),
+			"pelvis_offset": _pelvis_offset, "foot_ik": _foot_ik_weight}
 
 
 ## Defesa: braços na guarda (com transição) enquanto ativa.
@@ -337,6 +356,8 @@ func get_body_acceleration() -> Vector3:
 
 
 func reset_state() -> void:
+	_foot_offsets = [0.0, 0.0]
+	_pelvis_offset = 0.0
 	_overlays.clear()
 	_retiring.clear()
 	_guard_target = false
@@ -386,6 +407,7 @@ func _apply_view_mode() -> void:
 # --- Atualização -------------------------------------------------------------
 
 func _process(delta: float) -> void:
+	_delta = delta
 	var start := Time.get_ticks_usec()
 	_update_weights(delta)
 	_update_overlays(delta)
@@ -667,6 +689,8 @@ func _apply() -> void:
 			_rotate_global(_pelvis_bone, Vector3.UP, twist)
 			for bone_name in TWIST_BONES:
 				_rotate_global(skeleton.find_bone(bone_name), Vector3.UP, -twist * TWIST_BONES[bone_name])
+		if foot_ik_enabled:
+			_apply_foot_ik(_delta)
 		# Inclinação na direção da aceleração (no espaço do esqueleto).
 		var lean := deg_to_rad(get_lean_degrees())
 		if lean > 0.001:
@@ -692,6 +716,78 @@ func _apply() -> void:
 			for bone_name in PITCH_BONES:
 				_rotate_global(skeleton.find_bone(bone_name), Vector3.LEFT, pitch * PITCH_BONES[bone_name])
 	_apply_view_mode()
+
+
+## Pés no terreno: raio por pé, pélvis desce ao pé mais baixo, IK das pernas
+## e pé apoiado alinhado à inclinação.
+func _apply_foot_ik(delta: float) -> void:
+	var active := player.is_grounded() and _air_weight < 0.5 and not player.is_dead()
+	_foot_ik_weight = _approach(_foot_ik_weight, 1.0 if active else 0.0, 10.0, delta)
+	if _foot_ik_weight < 0.01:
+		return
+	var space := skeleton.get_world_3d().direct_space_state
+	var base_y := player.global_position.y
+	var to_world := skeleton.global_transform
+	_foot_ray.collision_mask = foot_ik_mask
+	_foot_ray.exclude = [player.get_rid()]
+	var feet := [skeleton.find_bone("foot_l"), skeleton.find_bone("foot_r")]
+	var planted: Array[float] = [0.0, 0.0]
+	for i in 2:
+		var foot_world: Vector3 = to_world * skeleton.get_bone_global_pose(feet[i]).origin
+		_foot_ray.from = Vector3(foot_world.x, base_y + 0.6, foot_world.z)
+		_foot_ray.to = Vector3(foot_world.x, base_y - foot_ik_max_offset - 0.2, foot_world.z)
+		var hit := space.intersect_ray(_foot_ray)
+		var offset := 0.0
+		var normal := Vector3.UP
+		if not hit.is_empty():
+			offset = clampf((hit["position"] as Vector3).y - base_y, -foot_ik_max_offset, foot_ik_max_offset)
+			normal = hit["normal"]
+		_foot_offsets[i] = lerpf(_foot_offsets[i], offset, 1.0 - exp(-18.0 * delta))
+		_foot_normals[i] = _foot_normals[i].slerp(normal, 1.0 - exp(-12.0 * delta)).normalized()
+		# Pé no chão na animação (apoio) recebe o alinhamento à inclinação.
+		planted[i] = clampf(1.0 - (foot_world.y - base_y - ankle_height) / 0.12, 0.0, 1.0)
+	# A pélvis só desce: o pé mais baixo alcança o chão sem esticar a perna.
+	var pelvis_target := minf(minf(_foot_offsets[0], _foot_offsets[1]), 0.0)
+	_pelvis_offset = lerpf(_pelvis_offset, pelvis_target, 1.0 - exp(-14.0 * delta))
+	var to_skeleton_basis := skeleton.global_basis.orthonormalized().inverse()
+	var up_skeleton := (to_skeleton_basis * Vector3.UP).normalized()
+	skeleton.set_bone_pose_position(_pelvis_bone, skeleton.get_bone_pose_position(_pelvis_bone)
+			+ _pelvis_space_up() * _pelvis_offset * _foot_ik_weight)
+	var sides := ["_l", "_r"]
+	for i in 2:
+		var foot: int = feet[i]
+		var thigh := skeleton.find_bone("thigh" + sides[i])
+		var calf := skeleton.find_bone("calf" + sides[i])
+		var saved := skeleton.get_bone_global_pose(foot).basis.get_rotation_quaternion()
+		var hip := skeleton.get_bone_global_pose(thigh).origin
+		var knee := skeleton.get_bone_global_pose(calf).origin
+		var ankle := skeleton.get_bone_global_pose(foot).origin
+		var lift := (_foot_offsets[i] - _pelvis_offset) * _foot_ik_weight
+		if absf(lift) > 0.002:
+			var bend := knee - (hip + ankle) * 0.5
+			if bend.length_squared() < 0.0004:
+				bend = Vector3(0.0, 0.0, 1.0)
+			var pole := knee + bend.normalized() * 0.5
+			_solve_two_bone_ik(thigh, calf, foot, ankle + up_skeleton * lift, pole, 1.0)
+		# O pé mantém a orientação da animação e inclina com o chão se apoiado.
+		var slope := _arc(up_skeleton, (to_skeleton_basis * _foot_normals[i]).normalized())
+		var tilt := Quaternion.IDENTITY.slerp(slope, planted[i] * _foot_ik_weight * 0.8)
+		_set_global_rotation(foot, tilt * saved)
+
+
+## Direção "para cima" no espaço do pai da pélvis (para deslocá-la).
+func _pelvis_space_up() -> Vector3:
+	var parent := skeleton.get_bone_parent(_pelvis_bone)
+	var up := (skeleton.global_basis.orthonormalized().inverse() * Vector3.UP).normalized()
+	if parent < 0:
+		return up
+	return (skeleton.get_bone_global_pose(parent).basis.orthonormalized().inverse() * up).normalized()
+
+
+func _set_global_rotation(bone: int, rotation: Quaternion) -> void:
+	var parent := skeleton.get_bone_parent(bone)
+	var parent_rotation := skeleton.get_bone_global_pose(parent).basis.get_rotation_quaternion() if parent >= 0 else Quaternion.IDENTITY
+	skeleton.set_bone_pose_rotation(bone, (parent_rotation.inverse() * rotation).normalized())
 
 
 func _apply_first_person_guard(weight: float) -> void:

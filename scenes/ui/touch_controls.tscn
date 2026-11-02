@@ -53,7 +53,7 @@ radius = 62.0
 idle_color = Color(0.85, 0.3, 0.25, 0.22)
 pressed_color = Color(0.95, 0.35, 0.3, 0.5)
 
-[node name="BlockButton" type="Control" parent="TouchControls"]
+[node name="BlockButton" type="Control" parent="TouchControls" groups=["block_toggle_button"]]
 custom_minimum_size = Vector2(88, 88)
 layout_mode = 1
 anchors_preset = 3
@@ -70,10 +70,11 @@ grow_vertical = 0
 mouse_filter = 2
 script = ExtResource("3_button")
 action = &"block"
-mode = 0
+mode = 2
 label = "DEFESA"
 radius = 44.0
 font_size = 15
+active_label = "GUARDA"
 
 [node name="JumpButton" type="Control" parent="TouchControls"]
 custom_minimum_size = Vector2(96, 96)

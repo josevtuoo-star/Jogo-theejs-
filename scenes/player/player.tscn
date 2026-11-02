@@ -3,7 +3,6 @@
 [ext_resource type="Script" path="res://scripts/player/player_controller.gd" id="1_controller"]
 [ext_resource type="Resource" path="res://resources/player/default_movement_settings.tres" id="2_settings"]
 [ext_resource type="Script" path="res://scripts/player/camera_effects.gd" id="3_camera"]
-[ext_resource type="Script" path="res://scripts/components/stamina_component.gd" id="4_stamina"]
 [ext_resource type="Resource" path="res://resources/surfaces/terra.tres" id="5_surface"]
 [ext_resource type="Script" path="res://scripts/components/health_component.gd" id="6_health"]
 [ext_resource type="PackedScene" path="res://scenes/characters/survivor.tscn" id="7_survivor"]
@@ -11,18 +10,18 @@
 [ext_resource type="Script" path="res://scripts/player/interaction_component.gd" id="9_interaction"]
 [ext_resource type="Script" path="res://scripts/player/melee_combat.gd" id="10_combat"]
 [ext_resource type="Script" path="res://scripts/player/player_death.gd" id="11_death"]
+[ext_resource type="Script" path="res://scripts/audio/player_sounds.gd" id="12_sounds"]
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_body"]
 radius = 0.3
 height = 1.8
 
-[node name="Player" type="CharacterBody3D" node_paths=PackedStringArray("stamina", "health", "head", "collision_shape") groups=["player"]]
+[node name="Player" type="CharacterBody3D" node_paths=PackedStringArray("health", "head", "collision_shape") groups=["player"]]
 collision_layer = 2
 collision_mask = 5
 script = ExtResource("1_controller")
 settings = ExtResource("2_settings")
 default_surface = ExtResource("5_surface")
-stamina = NodePath("Stamina")
 health = NodePath("Health")
 head = NodePath("Head")
 collision_shape = NodePath("CollisionShape3D")
@@ -42,7 +41,9 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.68, 0)
 script = ExtResource("3_camera")
 player = NodePath("../..")
 camera = NodePath("../../CameraRig/Camera3D")
-bob_enabled = false
+bob_enabled = true
+sprint_bob_vertical = 0.02
+sprint_bob_lateral = 0.012
 
 [node name="CameraRig" type="Node3D" parent="." node_paths=PackedStringArray("player", "body", "first_person_anchor", "camera")]
 script = ExtResource("8_rig")
@@ -53,12 +54,9 @@ camera = NodePath("Camera3D")
 
 [node name="Camera3D" type="Camera3D" parent="CameraRig"]
 current = true
-fov = 75.0
+fov = 70.0
 near = 0.05
 far = 400.0
-
-[node name="Stamina" type="Node" parent="."]
-script = ExtResource("4_stamina")
 
 [node name="Health" type="Node" parent="."]
 script = ExtResource("6_health")
@@ -70,12 +68,11 @@ camera = NodePath("../CameraRig/Camera3D")
 view_origin = NodePath("../Head/CameraEffects")
 animator = NodePath("../Survivor")
 
-[node name="Combat" type="Node" parent="." node_paths=PackedStringArray("player", "view_origin", "animator", "stamina")]
+[node name="Combat" type="Node" parent="." node_paths=PackedStringArray("player", "view_origin", "animator")]
 script = ExtResource("10_combat")
 player = NodePath("..")
 view_origin = NodePath("../Head/CameraEffects")
 animator = NodePath("../Survivor")
-stamina = NodePath("../Stamina")
 
 [node name="Death" type="Node" parent="." node_paths=PackedStringArray("player", "health", "camera_rig", "body")]
 script = ExtResource("11_death")
@@ -83,3 +80,11 @@ player = NodePath("..")
 health = NodePath("../Health")
 camera_rig = NodePath("../CameraRig")
 body = NodePath("../Survivor")
+
+[node name="Sounds" type="Node3D" parent="." node_paths=PackedStringArray("player", "health", "combat", "interaction")]
+script = ExtResource("12_sounds")
+voices = 8
+player = NodePath("..")
+health = NodePath("../Health")
+combat = NodePath("../Combat")
+interaction = NodePath("../Interaction")

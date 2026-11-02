@@ -83,6 +83,10 @@ func _ready() -> void:
 		_test_defense,
 		_test_attack_no_queue,
 		_test_arm_reach,
+		_test_feet_on_slope,
+		_test_sounds,
+		_test_joystick_dead_zone,
+		_test_demo_map,
 		_test_ragdoll_death_and_respawn,
 		_test_touch_attack_button,
 		_test_animator_performance,
@@ -143,8 +147,7 @@ func _reset(position: Vector3, yaw: float, pitch: float = 0.0, third_person: boo
 	_health.revive()
 	_player.teleport(position + Vector3.UP * 0.02)
 	_player.set_view_rotation(yaw, pitch)
-	_player.stamina.current = _player.stamina.max_stamina
-	_player.stamina.is_exhausted = false
+	_combat.set_guard(false)
 	_player.external_speed_multiplier = 1.0
 	_player.carried_mass = 0.0
 	_rig.set_third_person(third_person)
@@ -237,14 +240,17 @@ func _test_character_and_library() -> void:
 	for child in _skeleton.get_children():
 		if child is MeshInstance3D:
 			meshes[String(child.name)] = child
-	for mesh_name in ["Shirt", "Arms", "Pants", "Boots", "Head", "Hair_Beard", "Hair_Buzzed", "Eyes"]:
-		_check(meshes.has(mesh_name) and (meshes[mesh_name] as MeshInstance3D).skin != null, "malha %s com skin" % mesh_name)
+	for mesh_name in ["Body", "Head"]:
+		_check(meshes.has(mesh_name) and (meshes[mesh_name] as MeshInstance3D).skin != null, "malha %s do Sobrevivente.fbx com skin" % mesh_name)
+	_check(meshes.has("Head") and String(meshes["Head"].get_meta(&"view")) == "full" and String(meshes["Body"].get_meta(&"view")) == "both",
+			"cabeça (gorro, barba) separada do corpo para a 1ª pessoa")
+	_check(_player.stamina == null, "resistência desligada")
 	# Proporções naturais ("Regular"): ombros e quadris do esqueleto do pacote de roupas.
 	var shoulders := _skeleton.get_bone_global_rest(_skeleton.find_bone("upperarm_l")).origin.distance_to(
 			_skeleton.get_bone_global_rest(_skeleton.find_bone("upperarm_r")).origin)
 	var hips := _skeleton.get_bone_global_rest(_skeleton.find_bone("thigh_l")).origin.distance_to(
 			_skeleton.get_bone_global_rest(_skeleton.find_bone("thigh_r")).origin)
-	_check(shoulders < 0.40 and hips < 0.20, "proporções naturais: ombros %.3f m, quadris %.3f m" % [shoulders, hips])
+	_check(shoulders > 0.25 and shoulders < 0.45 and hips < 0.25, "proporções naturais: ombros %.3f m, quadris %.3f m" % [shoulders, hips])
 	var simulator := _skeleton.get_node_or_null("PhysicalBoneSimulator3D") as PhysicalBoneSimulator3D
 	_check(simulator != null and simulator.get_child_count() == 16, "ragdoll com 16 ossos físicos")
 	var mass := 0.0
@@ -461,7 +467,6 @@ func _test_light_attack_hit_frame() -> void:
 	_begin("Soco rápido: dano no quadro de impacto da animação")
 	var dummy := await _face_dummy()
 	var hits_before := dummy.hits
-	var stamina_before := _player.stamina.current
 	var hit_frame := -1
 	var expected := _body.get_event_time(&"punch_jab", &"hit") / 1.15
 	Input.action_press(&"attack")
@@ -481,7 +486,6 @@ func _test_light_attack_hit_frame() -> void:
 	_check(hit_frame >= floori(window_start / DT) - 1 and hit_frame <= ceili(window_end / DT) + 1,
 			"acerto no quadro %d, dentro da janela ativa (%.2f–%.2f s; extensão máxima em %.2f s)" % [hit_frame, window_start, window_end, expected])
 	_check(is_equal_approx(dummy.last_damage, _combat.light_damage), "dano %.0f" % dummy.last_damage)
-	_check(stamina_before - _player.stamina.current >= _combat.light_stamina_cost - 0.01, "consome resistência")
 	_check(dummy.get_sway_angle() > 0.0, "boneco balança com o golpe")
 	await _frames(60)
 	# Um-dois: o segundo soco rápido sai com a outra mão.
@@ -1020,11 +1024,16 @@ func _test_touch_layout_and_sprint() -> void:
 	_check(not sprint_button.is_active and not Input.is_action_pressed(&"sprint"), "soltar o direcional desliga a corrida")
 	var block_button: TouchActionButton = controls.get_node("BlockButton")
 	_android_touch(3, block_button.get_center_global(), true)
-	await _frames(20)
-	_check(_combat.is_blocking() and _body.get_layer_weights()["guard"] > 0.8, "DEFESA segurado: guarda erguida")
+	await _frames(3)
 	_android_touch(3, block_button.get_center_global(), false)
 	await _frames(20)
-	_check(not _combat.is_blocking(), "soltar DEFESA baixa a guarda")
+	_check(_combat.is_blocking() and _body.get_layer_weights()["guard"] > 0.8 and block_button.is_active,
+			"um toque em DEFESA ergue a guarda e fica (botão mostra GUARDA)")
+	_android_touch(3, block_button.get_center_global(), true)
+	await _frames(3)
+	_android_touch(3, block_button.get_center_global(), false)
+	await _frames(20)
+	_check(not _combat.is_blocking() and not block_button.is_active, "outro toque abaixa a guarda")
 	await _touch_teardown(controls)
 
 
@@ -1185,31 +1194,35 @@ func _test_planted_feet() -> void:
 func _test_defense() -> void:
 	_begin("Defesa: guarda, dano reduzido pela frente, não pelas costas")
 	await _reset(OPEN_LANE, YAW_TOWARD_POSITIVE_Z)
-	Input.action_press(&"block")
+	await _hold(&"block", 2)
 	await _frames(30)
-	_check(_combat.is_blocking() and _body.get_layer_weights()["guard"] > 0.9, "guarda erguida (%.2f)" % _body.get_layer_weights()["guard"])
+	_check(_combat.is_blocking() and _body.get_layer_weights()["guard"] > 0.9, "um toque ergue a guarda, sem segurar (%.2f)" % _body.get_layer_weights()["guard"])
 	_check(_camera.is_position_in_frustum(_bone("hand_l")) and _camera.is_position_in_frustum(_bone("hand_r")),
 			"em 1ª pessoa os dois punhos da guarda aparecem diante dos olhos")
 	var forward := -_player.get_view_basis().z
-	var stamina := _player.stamina.current
 	_health.apply_damage(20.0, &"golpe", -forward)
 	await _frames(2)
 	_check(is_equal_approx(_health.current, 95.0), "golpe pela frente: 20 → %.0f de dano" % (100.0 - _health.current))
 	_check(_body.current_animation(BodyAnimator.SLOT_HURT) == &"block_impact", "reação de impacto na guarda")
-	_check(_player.stamina.current < stamina - 5.0, "aparar custa fôlego")
 	await _frames(40)
 	_health.apply_damage(20.0, &"golpe", forward)
 	await _frames(2)
 	_check(is_equal_approx(_health.current, 75.0), "golpe pelas costas: dano inteiro")
 	Input.action_press(&"move_forward")
-	Input.action_press(&"sprint")
 	await _frames(60)
-	_check(not _player.is_sprinting and _player.get_horizontal_speed() < _player.settings.jog_speed * _combat.block_speed_multiplier + 0.1,
-			"de guarda anda devagar e não corre (%.2f m/s)" % _player.get_horizontal_speed())
+	_check(_combat.is_blocking() and _player.get_horizontal_speed() < _player.settings.jog_speed * _combat.block_speed_multiplier + 0.1,
+			"de guarda anda devagar (%.2f m/s)" % _player.get_horizontal_speed())
+	Input.action_press(&"sprint")
+	await _frames(40)
+	_check(not _combat.is_blocking() and _player.is_sprinting, "correr abaixa a guarda e corre")
 	_release_all()
 	await _frames(30)
+	await _hold(&"block", 2)
+	await _frames(20)
+	await _hold(&"block", 2)
+	await _frames(30)
 	_check(not _combat.is_blocking() and _body.get_layer_weights()["guard"] < 0.1 and is_equal_approx(_player.action_speed_multiplier, 1.0),
-			"soltar a defesa devolve braços e velocidade")
+			"segundo toque abaixa a guarda: braços e velocidade de volta")
 
 
 func _test_attack_no_queue() -> void:
@@ -1245,7 +1258,121 @@ func _test_arm_reach() -> void:
 	_check(dummy.hits == hits and missed[0], "a 0,9 m a mais o soco não alcança")
 	await _frames(40)
 
-# --- Morte e ragdoll ---------------------------------------------------------
+# --- Etapa 6: pés no terreno, sons, controles e mapa ------------------------
+
+func _ground_below(point: Vector3) -> float:
+	var ray := PhysicsRayQueryParameters3D.create(point + Vector3.UP * 1.0, point + Vector3.DOWN * 2.0, 1)
+	ray.exclude = [_player.get_rid()]
+	var hit := _player.get_world_3d().direct_space_state.intersect_ray(ray)
+	return (hit["position"] as Vector3).y if not hit.is_empty() else point.y
+
+
+func _test_feet_on_slope() -> void:
+	_begin("Pés no terreno: de lado numa rampa de 30°, cada pé apoia no chão (IK)")
+	# De lado na rampa: um pé fica morro acima, o outro morro abaixo.
+	await _reset(Vector3(12.0, 1.47, -3.5), PI * 0.5)
+	await _frames(40)
+	var gaps: Array[float] = []
+	var heights: Array[float] = []
+	for side in ["foot_l", "foot_r"]:
+		var foot := _bone(side)
+		gaps.append(foot.y - _ground_below(foot))
+		heights.append(foot.y)
+	_check(absf(gaps[0] - _body.ankle_height) < 0.05 and absf(gaps[1] - _body.ankle_height) < 0.05,
+			"tornozelos a %.3f e %.3f m do chão sob cada pé (repouso %.2f m)" % [gaps[0], gaps[1], _body.ankle_height])
+	_check(absf(heights[0] - heights[1]) > 0.05, "os pés ficam em alturas diferentes (%.2f m)" % absf(heights[0] - heights[1]))
+	_check(_body.get_layer_weights()["pelvis_offset"] < -0.02, "a pélvis desce para o pé mais baixo (%.3f m)" % _body.get_layer_weights()["pelvis_offset"])
+	await _reset(OPEN_LANE, YAW_TOWARD_POSITIVE_Z)
+	await _frames(20)
+	_check(absf(_body.get_layer_weights()["pelvis_offset"]) < 0.01, "no plano não muda nada (%.3f m)" % _body.get_layer_weights()["pelvis_offset"])
+
+
+func _test_sounds() -> void:
+	_begin("Sons: cada ação do jogo toca o som certo, no momento do evento")
+	var sounds: PlayerSounds = _player.get_node("Sounds")
+	await _reset(OPEN_LANE, YAW_TOWARD_POSITIVE_Z)
+	var steps := [0]
+	var on_step := func(_i: float, _l: bool, _s: SurfaceProfile) -> void: steps[0] += 1
+	_player.footstep.connect(on_step)
+	var before := sounds.count(&"passo")
+	Input.action_press(&"move_forward")
+	await _frames(120)
+	_release_all()
+	_player.footstep.disconnect(on_step)
+	_check(steps[0] >= 3 and sounds.count(&"passo") - before == steps[0], "um som de passo por contato do pé (%d passos, %d sons)" % [steps[0], sounds.count(&"passo") - before])
+	_check(PlayerSounds.step_set_for(load("res://resources/surfaces/grama.tres")) == "grama"
+			and PlayerSounds.step_set_for(load("res://resources/surfaces/gelo.tres")) == "gelo"
+			and PlayerSounds.step_set_for(load("res://resources/surfaces/terra.tres")) == "terra", "passo diferente por superfície (terra, grama, gelo)")
+	await _reset(Vector3(30.0, 0.0, 10.0), YAW_TOWARD_POSITIVE_Z)
+	_player.teleport(Vector3(30.0, 3.0, 10.0))
+	var landings := sounds.count(&"aterrissagem")
+	await _frames(90)
+	_check(sounds.count(&"aterrissagem") == landings + 1, "aterrissagem soa uma vez ao cair de 3 m")
+	var dummy := await _face_dummy()
+	var swings := sounds.count(&"golpe_ar")
+	var punches := sounds.count(&"soco_corpo")
+	await _hold(&"attack", 2)
+	await _frames(40)
+	_check(sounds.count(&"golpe_ar") == swings + 1 and sounds.count(&"soco_corpo") == punches + 1,
+			"soco: braço cortando o ar e acerto no corpo")
+	var pains := sounds.count(&"dor")
+	_health.apply_damage(15.0, &"golpe", Vector3.BACK)
+	await _frames(2)
+	_check(sounds.count(&"dor") == pains + 1, "dor ao levar um golpe")
+	var falls := sounds.count(&"queda_corpo")
+	_health.apply_damage(500.0, &"golpe", Vector3.BACK)
+	await _frames(60)
+	_check(sounds.count(&"morte") >= 1 and sounds.count(&"queda_corpo") == falls + 1, "morte e o corpo caindo")
+	await _reset(OPEN_LANE, YAW_TOWARD_POSITIVE_Z)
+	_check(ImpactSound.material_of(dummy) == &"corpo", "boneco de treino soa como corpo")
+	_check(not SoundSet.load_set("ambience/floresta").streams.is_empty() and not SoundSet.load_set("world/fogueira").streams.is_empty(),
+			"ambiente da floresta e fogueira carregados")
+
+
+func _test_joystick_dead_zone() -> void:
+	_begin("Direcional: zona morta (dedo apoiado não anda) e resposta suave")
+	var controls: TouchControls = _gym.get_node("TouchControlsLayer/TouchControls")
+	var stick: TouchMoveStick = controls.joystick
+	stick.begin(Vector2(200.0, 500.0))
+	stick.drag(Vector2(200.0, 500.0 - stick.radius * stick.dead_zone * 0.8))
+	_check(stick.output.length() < 0.001, "dedo quase parado: nenhum movimento")
+	stick.drag(Vector2(200.0, 500.0 - stick.radius * 0.5))
+	var half := stick.output.length()
+	stick.drag(Vector2(200.0, 500.0 - stick.radius))
+	_check(half > 0.3 and half < 0.6 and is_equal_approx(stick.output.length(), 1.0), "meio curso %.2f, curso total 1,00" % half)
+	stick.end()
+	await _frames(2)
+
+
+func _test_demo_map() -> void:
+	_begin("Mapa ampliado: 400 m, área original intacta, sons do mundo")
+	var map: Node3D = (load("res://scenes/demo/demo_forest.tscn") as PackedScene).instantiate()
+	var terrain: MeshInstance3D = map.get_node("Terrain/TerrainMesh")
+	var size := terrain.mesh.get_aabb().size
+	_check(size.x >= 399.0 and size.z >= 399.0, "terreno de %.0f × %.0f m" % [size.x, size.z])
+	var trees := 0
+	var chunks := 0
+	var all_ranged := true
+	for child in map.get_node("Forest").get_children():
+		if child is ScatterInstances and String(child.name).begins_with("Firs"):
+			trees += (child as ScatterInstances).transforms.size()
+			chunks += 1
+			all_ranged = all_ranged and (child as ScatterInstances).max_distance > 0.0
+	_check(trees >= 6000 and chunks > 50 and all_ranged, "%d árvores em %d blocos, todos com distância de desenho" % [trees, chunks])
+	var campfires := map.find_children("Campfire", "", true, false).size()
+	_check(campfires == 2, "duas fogueiras (clareira e acampamento de caçadores): %d" % campfires)
+	for poi in ["Checkpoint", "HunterCamp", "NorthRoadblock", "Lookout", "Ambience"]:
+		_check(map.has_node(poi), "%s presente" % poi)
+	var rigid_with_sound := 0
+	var rigid := 0
+	for body in map.find_children("*", "RigidBody3D", true, false):
+		rigid += 1
+		if body.has_node("ImpactSound"):
+			rigid_with_sound += 1
+	_check(rigid > 10 and rigid_with_sound == rigid, "todos os %d objetos soltos têm som de batida" % rigid)
+	map.free()
+
+
 
 func _test_ragdoll_death_and_respawn() -> void:
 	_begin("Morte: ragdoll físico, câmera segue o corpo, renascer")

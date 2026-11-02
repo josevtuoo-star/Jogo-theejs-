@@ -115,8 +115,9 @@ func _reset(position: Vector3, yaw: float) -> void:
 	_player.health.revive()
 	_player.teleport(position + Vector3.UP * 0.02)
 	_player.set_view_rotation(yaw, 0.0)
-	_player.stamina.current = _player.stamina.max_stamina
-	_player.stamina.is_exhausted = false
+	if _player.stamina != null:
+		_player.stamina.current = _player.stamina.max_stamina
+		_player.stamina.is_exhausted = false
 	_player.external_speed_multiplier = 1.0
 	_player.carried_mass = 0.0
 	await _frames(45)
@@ -283,23 +284,19 @@ func _test_sprint_turn_inertia() -> void:
 	_check(results[true].y > results[false].y + 0.3, "correndo, o momento leva o corpo mais longe na direção antiga (%.2f m vs %.2f m)" % [results[true].y, results[false].y])
 
 
+## Resistência desligada por enquanto (pedido do dono do projeto): corrida
+## sem limite. O StaminaComponent continua no projeto para voltar depois.
 func _test_sprint_and_exhaustion() -> void:
-	_begin("Corrida, consumo de resistência e exaustão")
+	_begin("Corrida sem resistência: velocidade máxima por tempo ilimitado")
 	await _reset(Vector3(30.0, 0.0, -35.0), YAW_TOWARD_POSITIVE_Z)
+	_check(_player.stamina == null, "jogador sem componente de resistência")
 	Input.action_press(&"move_forward")
 	Input.action_press(&"sprint")
-	await _frames(90)
-	_check(_player.stamina.current < _player.stamina.max_stamina - 10.0, "resistência consumida (%.1f)" % _player.stamina.current)
-	_player.stamina.current = 5.0
-	await _frames(40)
-	_check(_player.stamina.is_exhausted, "entra em exaustão ao zerar")
-	_check(not _player.is_sprinting, "corrida interrompida pela exaustão")
-	await _frames(60)
-	var tired_speed := _player.get_horizontal_speed()
-	_check(absf(tired_speed - _settings.jog_speed) < 0.1, "volta ao trote (%.2f m/s)" % tired_speed)
+	await _frames(60 * 6)
+	_check(_player.is_sprinting and absf(_player.get_horizontal_speed() - _settings.sprint_speed) < 0.1,
+			"6 s depois continua correndo a %.2f m/s" % _player.get_horizontal_speed())
 	_release_all()
-	await _frames(60 * 4)
-	_check(not _player.stamina.is_exhausted, "recupera da exaustão em repouso (%.1f)" % _player.stamina.current)
+	await _frames(60)
 
 
 # --- Salto e postura ---------------------------------------------------------
@@ -322,7 +319,6 @@ func _test_jump_height_and_cooldown() -> void:
 	var expected_impact := sqrt(2.0 * G * _settings.jump_height)
 	if landed_impacts.size() > 0:
 		_check(absf(landed_impacts[0] - expected_impact) < 0.25, "impacto %.2f m/s (esperado %.2f)" % [landed_impacts[0], expected_impact])
-	_check(_player.stamina.current < _player.stamina.max_stamina, "salto consome resistência")
 
 	landed_impacts.clear()
 	await _hold(&"jump", 3)
@@ -561,37 +557,22 @@ func _test_slope_steep_slide() -> void:
 
 
 func _test_uphill_sprint_stamina() -> void:
-	_begin("Correr em subida gasta mais resistência")
-	await _reset(Vector3(30.0, 0.0, -20.0), YAW_TOWARD_POSITIVE_Z)
-	Input.action_press(&"move_forward")
-	Input.action_press(&"sprint")
-	await _frames(60)
-	var flat_start := _player.stamina.current
-	await _frames(30)
-	var flat_rate := (flat_start - _player.stamina.current) / (30.0 * DT)
-	_release_all()
-
+	_begin("Correr em subida: mais lento pela inclinação (sem resistência)")
 	await _reset(Vector3(12.0, 0.0, 1.0), 0.0)
 	Input.action_press(&"move_forward")
 	Input.action_press(&"sprint")
 	var top := sin(deg_to_rad(30.0)) * 6.0
-	var samples := 0
-	var used := 0.0
-	var previous := _player.stamina.current
+	var slowest := 100.0
 	for i in 240:
 		await _frames(1)
 		var y := _player.global_position.y
-		if y > top * 0.2 and y < top * 0.8 and _player.is_on_floor():
-			used += previous - _player.stamina.current
-			samples += 1
-		previous = _player.stamina.current
+		if y > top * 0.3 and y < top * 0.8 and _player.is_on_floor():
+			slowest = minf(slowest, _player.get_horizontal_speed())
 		if y > top - 0.05:
 			break
 	_release_all()
-	var uphill_rate := used / (maxi(samples, 1) * DT)
-	var expected_ratio := 1.0 + _settings.uphill_stamina_factor * sin(deg_to_rad(30.0))
-	_check(absf(flat_rate - _settings.sprint_stamina_drain) < 0.5, "plano: %.1f/s" % flat_rate)
-	_check(absf(uphill_rate / flat_rate - expected_ratio) < 0.15, "subida de 30°: %.1f/s (%.2fx; esperado %.2fx)" % [uphill_rate, uphill_rate / flat_rate, expected_ratio])
+	_check(slowest < _settings.sprint_speed - 0.3, "subida de 30° reduz a corrida (%.2f m/s)" % slowest)
+	_check(_player.global_position.y > top * 0.8, "chega ao topo sem esgotar")
 
 
 # --- Superfícies e carga -----------------------------------------------------
@@ -623,13 +604,11 @@ func _test_surface_mud() -> void:
 	var expected := _settings.jog_speed * _player.current_surface.speed_multiplier
 	_check(absf(speed - expected) < 0.05, "trote na lama %.2f m/s (esperado %.2f)" % [speed, expected])
 	Input.action_press(&"sprint")
-	await _frames(40)
-	var start := _player.stamina.current
-	await _frames(30)
-	var rate := (start - _player.stamina.current) / (30.0 * DT)
+	await _frames(70)
+	var sprint := _player.get_horizontal_speed()
 	_release_all()
-	var expected_rate := _settings.sprint_stamina_drain * _player.current_surface.stamina_multiplier
-	_check(absf(rate - expected_rate) < 0.6, "corrida na lama gasta %.1f/s (esperado %.1f)" % [rate, expected_rate])
+	_check(absf(sprint - _settings.sprint_speed * _player.current_surface.speed_multiplier) < 0.1,
+			"corrida na lama %.2f m/s (mais lenta que no chão firme)" % sprint)
 
 
 func _test_carried_load() -> void:
@@ -816,7 +795,9 @@ func _test_touch_controls() -> void:
 	_send_drag(1, look_start + Vector2(100.0, 0.0), Vector2(100.0, 0.0))
 	await _frames(3)
 	var yaw_delta := wrapf(yaw_before - _player.rotation.y, -PI, PI)
-	_check(absf(yaw_delta - 100.0 * GameInput.touch_sensitivity) < 0.01, "arrasto à direita gira a visão (%.3f rad)" % yaw_delta)
+	# Arrasto rápido (100 px num evento) recebe a aceleração do toque.
+	var expected_yaw := 100.0 * GameInput.touch_sensitivity * (1.0 + GameInput.touch_acceleration * smoothstep(6.0, 30.0, 100.0))
+	_check(absf(yaw_delta - expected_yaw) < 0.01, "arrasto à direita gira a visão (%.3f rad, esperado %.3f)" % [yaw_delta, expected_yaw])
 	_send_touch(1, look_start + Vector2(100.0, 0.0), false)
 
 	var jump_button: TouchActionButton = controls.get_node("JumpButton")

@@ -17,10 +17,20 @@ extends SceneTree
 ## Isso independe da orientação de eixos de cada osso (a UAL 1 em FBX usa
 ## eixos diferentes do personagem) e preserva a pose física. O deslocamento
 ## da pélvis é escalado pela razão entre as alturas de pélvis.
+##
+## Poses de referência diferentes (o personagem está em T, as fontes não):
+## antes do retarget, cada osso do alvo é girado no espaço do mundo até ficar
+## com a mesma direção que o osso da fonte tem na pose de repouso dela
+## (alinhamento de poses). O delta da fonte é aplicado sobre essa pose
+## alinhada, e não sobre o T, senão os braços sairiam 45° mais altos.
 
-## Esqueleto do personagem (proporções "Regular" do pacote de roupas; mesma
-## hierarquia do corpo-base). Ver tools/build_survivor.gd.
-const TARGET_SCENE := "res://assets/_source/outfits_fantasy/Male_Peasant.gltf"
+## Esqueleto do personagem: o modelo do sobrevivente enviado pelo dono do
+## projeto (convenção Mixamo, em T). Os ossos são renomeados para os nomes do
+## jogo (tools/rig_names.gd). Ver tools/build_survivor.gd.
+const TARGET_SCENE := "res://assets/characters/survivor/Sobrevivente.fbx"
+const RigNames := preload("res://tools/rig_names.gd")
+## Filho que define a direção de cada osso no alinhamento de poses.
+const PREFERRED_CHILD := {"pelvis": "spine_01", "spine_03": "neck_01", "hand_l": "middle_01_l", "hand_r": "middle_01_r"}
 const OUTPUT := "res://resources/animations/survivor_body.res"
 const FPS := 30.0
 ## Caminho das trilhas no personagem (relativo ao nó raiz do modelo).
@@ -71,6 +81,8 @@ class Rig:
 	var prefix: String
 	var global_rest: Array[Transform3D] = []
 	var change_of_basis: Basis = Basis.IDENTITY
+	## Pose de referência do ALVO alinhada a esta fonte (bases globais).
+	var target_reference: Array[Basis] = []
 
 	func _init(root: Node) -> void:
 		skeleton = Rig.find(root, "Skeleton3D")
@@ -106,6 +118,7 @@ var _sources: Dictionary = {}
 
 func _initialize() -> void:
 	var target_root: Node = (load(TARGET_SCENE) as PackedScene).instantiate()
+	RigNames.rename_skeleton(Rig.find(target_root, "Skeleton3D"))
 	_target = Rig.new(target_root)
 	var library := AnimationLibrary.new()
 	for clip in CLIPS:
@@ -129,8 +142,56 @@ func _source(path: String) -> Rig:
 		var rig := Rig.new(root)
 		# Mudança de base: alinha os eixos anatômicos da fonte aos do alvo.
 		rig.change_of_basis = _target.anatomical_basis() * rig.anatomical_basis().inverse()
+		rig.target_reference = _align_target(rig)
 		_sources[path] = rig
 	return _sources[path]
+
+
+## Pose do alvo com cada osso na direção que o osso correspondente tem na
+## pose de repouso da fonte (rotação mínima, preservando a torção do alvo).
+func _align_target(source: Rig) -> Array[Basis]:
+	var skeleton := _target.skeleton
+	var src := source.skeleton
+	var count := skeleton.get_bone_count()
+	var alignment: Array[Basis] = []
+	alignment.resize(count)
+	var result: Array[Basis] = []
+	result.resize(count)
+	for bone in count:
+		var parent := skeleton.get_bone_parent(bone)
+		var inherited := alignment[parent] if parent >= 0 else Basis.IDENTITY
+		alignment[bone] = inherited
+		var bone_name := skeleton.get_bone_name(bone)
+		var src_bone := src.find_bone(bone_name)
+		var child := _direction_child(skeleton, bone, src)
+		if src_bone >= 0 and child >= 0:
+			var src_child := src.find_bone(skeleton.get_bone_name(child))
+			var target_direction := (_target.global_rest[child].origin - _target.global_rest[bone].origin).normalized()
+			var source_direction := (source.change_of_basis * (source.global_rest[src_child].origin - source.global_rest[src_bone].origin)).normalized()
+			alignment[bone] = Basis(_arc(target_direction, source_direction))
+		result[bone] = (alignment[bone] * _target.global_rest[bone].basis.orthonormalized()).orthonormalized()
+	return result
+
+
+func _direction_child(skeleton: Skeleton3D, bone: int, src: Skeleton3D) -> int:
+	var preferred: String = PREFERRED_CHILD.get(skeleton.get_bone_name(bone), "")
+	var fallback := -1
+	for child in skeleton.get_bone_children(bone):
+		var child_name := skeleton.get_bone_name(child)
+		if src.find_bone(child_name) < 0:
+			continue
+		if child_name == preferred:
+			return child
+		if fallback < 0:
+			fallback = child
+	return fallback
+
+
+static func _arc(from: Vector3, to: Vector3) -> Quaternion:
+	var axis := from.cross(to)
+	if axis.length_squared() < 0.0000001:
+		return Quaternion.IDENTITY
+	return Quaternion(axis.normalized(), acos(clampf(from.dot(to), -1.0, 1.0)))
 
 
 func _retarget(source: Rig, animation: Animation, loop: bool) -> Animation:
@@ -192,7 +253,7 @@ func _retarget(source: Rig, animation: Animation, loop: bool) -> Animation:
 		for bone in bone_count:
 			var bone_name := dst_skeleton.get_bone_name(bone)
 			var src_bone := src_skeleton.find_bone(bone_name)
-			var dst_rest := _target.global_rest[bone].basis.orthonormalized()
+			var dst_rest := source.target_reference[bone]
 			if src_bone < 0 or bone_name == "root":
 				var parent := dst_skeleton.get_bone_parent(bone)
 				var local_rest := dst_skeleton.get_bone_rest(bone).basis.orthonormalized()

@@ -28,6 +28,7 @@ scripts/
   player/                  Controlador, interação, combate, morte (ragdoll)
   camera/                  Câmera em 1ª/3ª pessoa com transição (PlayerCameraRig)
   animation/               Animador do corpo inteiro (BodyAnimator)
+  audio/                   Sons: SoundSet, SoundEmitter, PlayerSounds, ImpactSound, Ambience
   interaction/             Interactable e objetos interagíveis
   world/                   Perigos, alvos, fogueira, instâncias de vegetação (ScatterInstances)
   physics/                 SurfaceProfile e utilidades físicas
@@ -42,7 +43,8 @@ resources/
   textures/trees/          Atlas de impostores das árvores
 tests/                     Testes automatizados (cena + script)
 tools/                     Ferramentas de produção (InputMap, retarget, personagem, impostores, mapa)
-assets/                    Assets de terceiros (CC0), cada pasta com licença/SOURCE.txt
+assets/                    Assets: personagem do dono do projeto e de terceiros (CC0), cada pasta com licença/SOURCE.txt
+  audio/                   Sons OGG (CC0), origem de cada um em SOURCES.md
   _source/                 Pacotes originais grandes (fora do Git e do APK)
 ```
 
@@ -89,13 +91,14 @@ Cada etapa só começa depois que a anterior passa nos testes e é validada no a
 | 3 | **Animações em primeira pessoa** | rig e 19 animações autorais, animador em camadas sincronizado com a passada, vida e lesões, interação, combate corpo a corpo, morte e renascer, HUD | **concluída** (`ETAPA_03_ANIMACOES.md`) |
 | 4 | **Reconstrução visual e câmera** | corpo humano completo (CC0) com roupas, animações retargetadas, primeira pessoa verdadeira, câmera 1ª/3ª pessoa, ragdoll, cenário PBR, HUD | **concluída** (`ETAPA_04_RECONSTRUCAO.md`) |
 | 5 | **Correção profunda da jogabilidade** | origem do soco ao arrastar no toque, controles por índice de dedo e áreas exclusivas, personagem em proporções naturais com roupa modelada, pés plantados, inclinação pela aceleração, curvas centrípetas, combate em máquina de estados com impacto pelo braço, defesa | **concluída** (`ETAPA_05_JOGABILIDADE.md`) |
-| 6 | Interação e inventário | itens como `RigidBody3D` reais, pegar e soltar (animação `pickup` já existe), inventário por peso e volume (define `carried_mass`), portas, UI de toque | próxima |
-| 7 | Status vitais | fome, sede, sangramento, cura; a vida e as lesões já existem | — |
-| 8 | Armas | armas brancas e de fogo (recuo, dispersão, munição) sobre o combate da etapa 3 | — |
-| 9 | Zumbis | mesmo esqueleto do sobrevivente (Quaternius UAL 1/2, CC0), `NavigationAgent3D`, percepção por visão e ruído (passos com superfície), ataques com `receive_hit` | — |
-| 10 | Ragdoll parcial e reações | o ragdoll de morte já existe (etapa 4); falta mistura física parcial em golpes fortes e zumbis | — |
-| 11 | Otimização Android | perfis de qualidade, LOD, testes em aparelhos reais | — |
-| 12 | PC | configurações gráficas e de controle | — |
+| 6 | **Sobrevivente, sons e mapa ampliado** | personagem do `Sobrevivente.fbx` com animações retargetadas, resistência desligada, defesa por toque, pés no terreno (IK), câmera e toque ajustados, 95 sons CC0, mapa de 400 m preservando a clareira | **concluída** (`ETAPA_06_SOBREVIVENTE_SONS_MAPA.md`) |
+| 7 | Interação e inventário | itens como `RigidBody3D` reais, pegar e soltar (animação `pickup` já existe), inventário por peso e volume (define `carried_mass`), portas, UI de toque | próxima |
+| 8 | Status vitais | fome, sede, sangramento, cura; a vida e as lesões já existem | — |
+| 9 | Armas | armas brancas e de fogo (recuo, dispersão, munição) sobre o combate da etapa 3 | — |
+| 10 | Zumbis | mesmo esqueleto do sobrevivente (Quaternius UAL 1/2, CC0), `NavigationAgent3D`, percepção por visão e ruído (passos com superfície), ataques com `receive_hit` | — |
+| 11 | Ragdoll parcial e reações | o ragdoll de morte já existe (etapa 4); falta mistura física parcial em golpes fortes e zumbis | — |
+| 12 | Otimização Android | perfis de qualidade, LOD, testes em aparelhos reais | — |
+| 13 | PC | configurações gráficas e de controle | — |
 
 O mundo aberto não faz parte destas etapas.
 

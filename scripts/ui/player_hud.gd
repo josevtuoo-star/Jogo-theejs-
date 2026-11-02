@@ -40,6 +40,10 @@ func _ready() -> void:
 	death.respawned.connect(_on_respawned)
 	interaction.focus_changed.connect(_on_focus_changed)
 	_on_focus_changed(null)
+	var combat := player.get_node_or_null("Combat") as MeleeCombat
+	if combat != null:
+		combat.guard_toggled.connect(func(enabled: bool) -> void:
+			get_tree().call_group(&"block_toggle_button", &"set_active", enabled))
 	if camera_rig == null:
 		camera_rig = player.get_node_or_null("CameraRig") as PlayerCameraRig
 	if camera_rig != null:
@@ -71,6 +75,8 @@ func _build() -> void:
 	vitals.add_child(_row("VIDA", _health_bar))
 	_stamina_row = _row("FÔLEGO", _stamina_bar)
 	vitals.add_child(_stamina_row)
+	# Sem componente de resistência (desligada por enquanto): sem barra.
+	_stamina_row.visible = player.stamina != null
 	_injury_label = Label.new()
 	_injury_label.add_theme_color_override("font_color", Color(1.0, 0.55, 0.45))
 	_injury_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))

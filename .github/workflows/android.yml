@@ -20,7 +20,7 @@ concurrency:
 env:
   GODOT_VERSION: "4.5.1"
   # Prefixo da versão do jogo; o último número é o número da build.
-  VERSION_PREFIX: "0.5"
+  VERSION_PREFIX: "0.6"
   APK_NAME: UltimoAmanhecer.apk
   ZIP_NAME: UltimoAmanhecer.zip
   BUILD_TOOLS: "35.0.1"
@@ -136,6 +136,14 @@ jobs:
           base="https://github.com/${GITHUB_REPOSITORY}/releases/latest/download"
           printf 'Build automática do branch `%s` (commit %s).\n\nTodos os testes de física passaram antes da exportação.\n\nDownload direto (sempre a versão mais nova):\n- APK: %s/%s\n- ZIP (se o navegador travar no APK; extraia e toque no APK): %s/%s\n' \
             "${GITHUB_REF_NAME}" "${GITHUB_SHA::7}" "$base" "${APK_NAME}" "$base" "${ZIP_NAME}" > "$RUNNER_TEMP/notes.md"
+          # Conferência do download no celular: tamanho exato e SHA-256.
+          {
+            echo ""
+            echo "Conferir o download (se o Android disser \"pacote inválido\", o arquivo chegou corrompido):"
+            for f in "${APK_NAME}" "${ZIP_NAME}"; do
+              echo "- \`${f}\`: $(stat -c %s "builds/android/${f}") bytes, SHA-256 \`$(sha256sum "builds/android/${f}" | cut -d' ' -f1)\`"
+            done
+          } >> "$RUNNER_TEMP/notes.md"
           gh release create "$tag" "builds/android/${APK_NAME}" "builds/android/${ZIP_NAME}" \
             --target "$GITHUB_SHA" \
             --title "Último Amanhecer ${tag}" \
