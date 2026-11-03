@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="ItemData" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/inventory/item_data.gd" id="1_7fwo1"]
+[ext_resource type="Resource" path="res://resources/weapons/machado.tres" id="2_sk0bf"]
+[ext_resource type="ArrayMesh" path="res://resources/models/weapons/machado.res" id="3_qad4o"]
+
+[resource]
+script = ExtResource("1_7fwo1")
+id = &"machado"
+display_name = "Machado de bombeiro"
+kind = 0
+world_mesh = ExtResource("3_qad4o")
+mass = 2.8
+weapon = ExtResource("2_sk0bf")
+max_durability = 140.0
+impact_material = &"metal"

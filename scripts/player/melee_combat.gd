@@ -133,7 +133,7 @@ func can_attack() -> bool:
 ## Soco rápido já recolhido: o próximo pode começar (cancelando o fim da
 ## animação), sem fila de comandos.
 func _combo_ready() -> bool:
-	if _recovery_clip != &"punch_jab" and _recovery_clip != &"punch_cross" and _recovery_clip != &"weapon_swing_a":
+	if not _recovery_clip in [&"punch_jab", &"punch_cross", &"weapon_swing_a", &"chop", &"mine"]:
 		return false
 	if animator.current_animation(BodyAnimator.SLOT_ACTION) != _recovery_clip:
 		return false
@@ -221,10 +221,14 @@ func _start_light() -> void:
 	var weapon := _weapon()
 	if weapon != null:
 		_chaining = false
-		_active_kind = &"weapon_swing_a"
+		# Diante de uma árvore com o machado ou de rocha com a picareta, o
+		# golpe é o de trabalho (corte de lenhador, picareta de cima para
+		# baixo); senão, o golpe de arma.
+		_active_kind = _work_clip(weapon)
 		charge = 0.0
 		player.face_view_for(0.7)
-		animator.play(BodyAnimator.SLOT_ACTION, _active_kind, weapon.light_speed, 0.06, 0.18, 1.0, false, true)
+		var speed := weapon.light_speed if _active_kind == &"weapon_swing_a" else 1.05
+		animator.play(BodyAnimator.SLOT_ACTION, _active_kind, speed, 0.08, 0.2, 1.0, false, true)
 		_recovery_clip = _active_kind
 		_recovery_timer = weapon.light_recovery
 		_set_state(State.WINDUP)
@@ -249,6 +253,10 @@ func _start_light() -> void:
 
 func _start_heavy() -> void:
 	var weapon := _weapon()
+	if weapon != null and _work_clip(weapon) != &"weapon_swing_a":
+		# Trabalho (cortar, minerar) não carrega: segurar dá golpes seguidos.
+		_start_light()
+		return
 	if weapon != null:
 		# Golpe amplo de arma: segura na preparação enquanto carrega.
 		_active_kind = &"weapon_swing_b"
@@ -340,11 +348,11 @@ func _sweep_arm() -> bool:
 	var rest := space.get_rest_info(_query)
 	if rest.is_empty():
 		return false
-	_apply_hit(instance_from_id(rest["collider_id"]) as Node, rest["point"], aim)
+	_apply_hit(instance_from_id(rest["collider_id"]) as Node, rest["point"], aim, rest.get("shape", -1))
 	return true
 
 
-func _apply_hit(target: Node, point: Vector3, direction: Vector3) -> void:
+func _apply_hit(target: Node, point: Vector3, direction: Vector3, shape: int = -1) -> void:
 	var heavy := _active_kind == &"punch_hook" or _active_kind == &"weapon_swing_b"
 	var damage := lerpf(heavy_min_damage, heavy_max_damage, charge) if heavy else light_damage
 	var impulse := lerpf(heavy_min_impulse, heavy_max_impulse, charge) if heavy else light_impulse
@@ -362,13 +370,17 @@ func _apply_hit(target: Node, point: Vector3, direction: Vector3) -> void:
 		"damage": damage, "impulse": impulse, "direction": direction, "point": point,
 		"kind": _active_kind, "attacker": player,
 		"weapon": weapon.id if weapon != null else &"",
+		"shape": shape,
 	}
 	last_hit = hit.duplicate()
 	last_hit["target"] = target
 	var receiver := _find_receiver(target)
-	if receiver != null:
-		receiver.call(&"receive_hit", hit)
+	# O alvo pode recusar o golpe (ferramenta errada numa árvore ou rocha):
+	# aí é superfície rígida, o golpe rebate.
+	var accepted: Variant = receiver.call(&"receive_hit", hit) if receiver != null else false
+	if receiver != null and accepted != false:
 		hit_landed.emit(receiver, damage, _active_kind)
+		_wear()
 	elif target is RigidBody3D:
 		var body := target as RigidBody3D
 		body.apply_impulse(direction * impulse, point - body.global_position)
@@ -379,6 +391,28 @@ func _apply_hit(target: Node, point: Vector3, direction: Vector3) -> void:
 		animator.play(BodyAnimator.SLOT_ACTION, &"hit_head", 1.4, 0.03, 0.15, 1.0, false, true)
 		_recovery_clip = &"hit_head"
 		hit_obstacle.emit(point)
+
+
+## Um golpe útil gasta a ferramenta da mão (pode quebrar).
+func _wear() -> void:
+	if equipment != null and equipment.inventory != null and _weapon() != null:
+		equipment.inventory.wear_equipped(1.0)
+
+
+## Golpe de trabalho conforme o que está na mira, ao alcance da ferramenta.
+func _work_clip(weapon: WeaponData) -> StringName:
+	var space := view_origin.get_world_3d().direct_space_state
+	var eye := view_origin.global_position
+	_ray.from = eye
+	_ray.to = eye - view_origin.global_basis.z * 2.6
+	_ray.exclude = [player.get_rid()]
+	var hit := space.intersect_ray(_ray)
+	if hit.is_empty() or not (hit["collider"] is ChunkResources):
+		return &"weapon_swing_a"
+	var entry := (hit["collider"] as ChunkResources).entry_for_shape(hit.get("shape", -1))
+	if entry.is_empty() or entry["tool"] != weapon.id:
+		return &"weapon_swing_a"
+	return &"chop" if entry["kind"] == &"arvore" else &"mine"
 
 
 func _find_receiver(node: Node) -> Node:

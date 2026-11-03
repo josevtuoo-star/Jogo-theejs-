@@ -518,3 +518,10 @@ func _add_player_and_ui() -> void:
 	player_hud.set("player", player)
 	player_hud.set("interaction", player.get_node("Interaction"))
 	player_hud.set("death", player.get_node("Death"))
+	var inventory_hud := CanvasLayer.new()
+	inventory_hud.name = "InventoryHud"
+	inventory_hud.set_script(load("res://scripts/ui/inventory_hud.gd"))
+	_own(inventory_hud)
+	inventory_hud.set("player", player)
+	inventory_hud.set("inventory", player.get_node("Inventory"))
+	inventory_hud.set("interaction", player.get_node("Interaction"))

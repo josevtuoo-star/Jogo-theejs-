@@ -1,0 +1,12 @@
+[gd_resource type="Resource" script_class="ItemData" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/inventory/item_data.gd" id="1_3mvph"]
+[ext_resource type="ArrayMesh" path="res://resources/models/world/pedaco_pedra.res" id="2_j1sfh"]
+
+[resource]
+script = ExtResource("1_3mvph")
+id = &"pedra"
+display_name = "Pedra"
+world_mesh = ExtResource("2_j1sfh")
+mass = 1.5
+max_durability = 1.0

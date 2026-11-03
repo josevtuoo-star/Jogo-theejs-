@@ -32,6 +32,7 @@ func _initialize() -> void:
 	caves.set("world", world)
 	caves.set("camera", player.get_node("CameraRig/Camera3D"))
 	caves.set("eyes", player.get_node("Head/CameraEffects"))
+	caves.set("body", player.get_node("Survivor"))
 	caves.set("environment", environment)
 	caves.set("sun", sun)
 	_root.set("world", world)
@@ -126,4 +127,11 @@ func _player_and_ui() -> Node3D:
 	hud.set("interaction", player.get_node("Interaction"))
 	hud.set("death", player.get_node("Death"))
 	hud.set("camera_rig", player.get_node("CameraRig"))
+	var inventory_hud := CanvasLayer.new()
+	inventory_hud.name = "InventoryHud"
+	inventory_hud.set_script(load("res://scripts/ui/inventory_hud.gd"))
+	_own(inventory_hud)
+	inventory_hud.set("player", player)
+	inventory_hud.set("inventory", player.get_node("Inventory"))
+	inventory_hud.set("interaction", player.get_node("Interaction"))
 	return player

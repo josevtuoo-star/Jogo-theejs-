@@ -5,9 +5,10 @@ extends RefCounted
 ## estradas e objetos, em qualquer ordem e em qualquer linha de execução.
 ##
 ## O terreno é um campo de densidade 3D (positivo = rocha/terra, negativo =
-## ar): a superfície vem de ruídos de relevo e as cavernas são escavadas por
-## ruído 3D (túneis "espaguete" + salões em profundidade). A malha sai do
-## campo por surface nets (células de 2 m), sem emendas entre pedaços.
+## ar): a superfície vem de ruídos de relevo e as cavernas são galerias
+## escavadas num nível subterrâneo (ver "Cavernas" abaixo), ligadas à
+## superfície por rampas naturais. A malha sai do campo por surface nets
+## (células de 2 m), sem emendas entre pedaços.
 ##
 ## Só usa funções puras e ruídos próprios: cada tarefa em segundo plano cria
 ## a sua instância (FastNoiseLite não é compartilhado entre threads).
@@ -15,8 +16,9 @@ extends RefCounted
 const CHUNK_SIZE := 32.0
 const CELL := 2.0
 const CELLS := 16
-## Leito de rocha: nada é escavado abaixo disto.
-const FLOOR_Y := -40.0
+## Fundo do campo de densidade (abaixo é rocha maciça; as galerias mais
+## fundas ficam acima de CAVE_BAND_LOW).
+const FLOOR_Y := -32.0
 ## Rodovias norte-sul a cada ROAD_SPACING m e estradas leste-oeste entre elas.
 const ROAD_SPACING := 640.0
 const HIGHWAY_HALF_WIDTH := 4.6
@@ -37,10 +39,14 @@ var _mountains := FastNoiseLite.new()
 var _detail := FastNoiseLite.new()
 var _forest := FastNoiseLite.new()
 var _grass := FastNoiseLite.new()
-var _tunnel_a := FastNoiseLite.new()
-var _tunnel_b := FastNoiseLite.new()
-var _caverns := FastNoiseLite.new()
-var _entrances := FastNoiseLite.new()
+var _gallery_a := FastNoiseLite.new()
+var _gallery_b := FastNoiseLite.new()
+var _cave_floor := FastNoiseLite.new()
+var _chambers := FastNoiseLite.new()
+var _rough := FastNoiseLite.new()
+## Entradas de caverna já calculadas (região -> dados).
+var _entrance_cache: Dictionary = {}
+var _spawn_region := Vector2i(1 << 30, 0)
 var _road_warp := FastNoiseLite.new()
 var _jams := FastNoiseLite.new()
 
@@ -54,12 +60,14 @@ func _init(seed_value: int = 1) -> void:
 	_setup(_detail, 5, 0.06, 2, FastNoiseLite.TYPE_SIMPLEX)
 	_setup(_forest, 6, 0.0065, 2, FastNoiseLite.TYPE_SIMPLEX)
 	_setup(_grass, 7, 0.03, 2, FastNoiseLite.TYPE_SIMPLEX)
-	_setup(_tunnel_a, 8, 0.012, 1, FastNoiseLite.TYPE_SIMPLEX)
-	_setup(_tunnel_b, 9, 0.012, 1, FastNoiseLite.TYPE_SIMPLEX)
-	_setup(_caverns, 10, 0.014, 2, FastNoiseLite.TYPE_SIMPLEX)
-	_setup(_entrances, 11, 0.008, 1, FastNoiseLite.TYPE_SIMPLEX)
+	_setup(_gallery_a, 14, 0.007, 1, FastNoiseLite.TYPE_SIMPLEX_SMOOTH)
+	_setup(_gallery_b, 15, 0.0085, 1, FastNoiseLite.TYPE_SIMPLEX_SMOOTH)
+	_setup(_cave_floor, 16, 0.006, 2, FastNoiseLite.TYPE_SIMPLEX_SMOOTH)
+	_setup(_chambers, 17, 0.011, 1, FastNoiseLite.TYPE_SIMPLEX_SMOOTH)
+	_setup(_rough, 18, 0.16, 2, FastNoiseLite.TYPE_SIMPLEX)
 	_setup(_road_warp, 12, 0.0011, 2, FastNoiseLite.TYPE_SIMPLEX_SMOOTH)
 	_setup(_jams, 13, 0.006, 1, FastNoiseLite.TYPE_SIMPLEX)
+	_spawn_region = region_of(spawn_point())
 
 
 func _setup(noise: FastNoiseLite, salt: int, frequency: float, octaves: int, type: FastNoiseLite.NoiseType) -> void:
@@ -151,36 +159,285 @@ func density(x: float, y: float, z: float) -> float:
 	return density_at(x, y, z, surface_height(x, z), road_distances(x, z))
 
 
+# --- Cavernas ------------------------------------------------------------------
+#
+# Galerias exploráveis (etapa 8). As cavernas antigas eram tubos de ruído 3D:
+# 26% do chão com mais de 40° (o personagem não sobe), 9% com menos de 2 m de
+# altura e um quarto das bocas eram poços verticais (quem caía não saía).
+# Agora:
+# - as galerias ficam num nível subterrâneo (~14 m abaixo do nível de
+#   referência, variando ±4 m devagar: o chão quase não inclina) e seguem as
+#   linhas de zero de dois ruídos 2D. Linhas de zero não terminam: não há
+#   beco sem saída por erro de construção; onde as duas famílias se cruzam
+#   há bifurcações;
+# - corte transversal natural: chão quase plano que sobe nas paredes e teto
+#   em arco; largura e altura variam (corredores de ~4,5 m, câmaras de até
+#   15 m de largura e 6,5 m de altura); rugosidade 3D nas paredes e no teto;
+# - o chão das galerias fica ao menos 12 m abaixo da superfície (sem buracos
+#   no chão: a única ligação com o exterior são as rampas);
+# - entradas: rampas inclinadas (10–24°) da superfície até uma galeria, uma
+#   a cada região de 160 m com chance, desviando das estradas; a do ponto de
+#   partida é garantida.
+
+const CAVE_LEVEL := -14.0
+const CAVE_BAND_LOW := -28.0
+const CAVE_BAND_HIGH := 2.0
+const REGION := 160.0
+
+
+## Distância horizontal (m) até a linha de zero de um ruído 2D (eixo de
+## uma galeria): |n| / |gradiente|.
+func _line_distance(noise: FastNoiseLite, x: float, z: float) -> float:
+	var n := noise.get_noise_2d(x, z)
+	var gx := noise.get_noise_2d(x + 1.0, z) - n
+	var gz := noise.get_noise_2d(x, z + 1.0) - n
+	return absf(n) / (sqrt(gx * gx + gz * gz) + 0.00001)
+
+
+## Altura do chão das galerias na coluna (fica sempre ao menos 12 m abaixo
+## da superfície, mesmo nos vales).
+func gallery_floor(x: float, z: float, surface: float) -> float:
+	return minf(CAVE_LEVEL + _cave_floor.get_noise_2d(x, z) * 4.0, surface - 12.0)
+
+
+## Dados da galeria na coluna: [distância ao eixo, meia largura, altura, chão].
+func gallery_at(x: float, z: float, surface: float) -> Vector4:
+	var chamber := smoothstep(0.2, 0.65, _chambers.get_noise_2d(x, z))
+	var half := 3.0 + chamber * 5.0 + _cave_floor.get_noise_2d(z * 1.9, x * 1.9) * 0.4
+	var height := 3.3 + chamber * 3.4 + _chambers.get_noise_2d(z * 1.3, x * 1.3) * 0.4
+	var lateral := minf(_line_distance(_gallery_a, x, z), _line_distance(_gallery_b, x, z))
+	return Vector4(lateral, half, height, gallery_floor(x, z, surface))
+
+
+## Perfil de galeria (m, negativo dentro): chão quase plano que sobe junto
+## às paredes e teto em arco.
+static func _profile(lateral: float, half: float, height: float, floor_y: float, y: float, flat: float = 0.8) -> float:
+	var across := clampf(lateral / half, 0.0, 1.0)
+	# Chão plano até `flat` da meia largura (largo o bastante para a malha de
+	# células de 2 m não virar um "V" de faces íngremes), depois sobe.
+	var floor_here := floor_y + maxf(0.0, across - flat) * half * 1.4
+	var roof := floor_y + height * pow(1.0 - across * across, 0.35)
+	return maxf(lateral - half, maxf(floor_here - y, y - roof))
+
+
 ## Densidade das cavernas (negativo = vazio escavado).
 func cave_density(x: float, y: float, z: float, depth: float, roads: Vector2) -> float:
-	# Túneis: onde dois ruídos 3D passam juntos por zero (interseção de duas
-	# superfícies) fica um tubo sinuoso e contínuo, de ~3-4 m de raio. O eixo
-	# vertical é comprimido para que os túneis andem mais na horizontal.
-	var a := _tunnel_a.get_noise_3d(x, y * 1.7, z)
-	var b := _tunnel_b.get_noise_3d(x, y * 1.7, z)
-	var cave := (sqrt(a * a + b * b) - 0.1) * 40.0
-	# Salões: bolsões grandes só em profundidade.
-	if depth > 12.0:
-		var hall := (0.52 - _caverns.get_noise_3d(x, y * 1.8, z)) * 26.0 + maxf(0.0, 20.0 - depth) * 1.2
-		cave = minf(cave, hall)
-	# Perto da superfície os túneis se fecham, exceto nas bocas de caverna
-	# (manchas raras do ruído de entradas); sob as estradas, nunca.
-	var opening := smoothstep(0.12, 0.32, _entrances.get_noise_2d(x, z))
-	var seal := lerpf(8.0, -4.0, opening)
-	var road := minf(roads.x - HIGHWAY_HALF_WIDTH, roads.y - BYROAD_HALF_WIDTH)
-	if road < 10.0:
-		seal = maxf(seal, lerpf(14.0, seal, clampf(road / 10.0, 0.0, 1.0)))
-	if depth < seal:
-		cave += (seal - depth) * 1.6
-	# Leito de rocha.
-	if y < FLOOR_Y + 5.0:
-		cave += (FLOOR_Y + 5.0 - y) * 3.0
+	var surface := y + depth
+	var cave := 4.0
+	var floor_y := gallery_floor(x, z, surface)
+	# Galerias só na faixa de profundidade delas; as rampas sobem até a
+	# superfície (em qualquer altura do relevo).
+	if y > CAVE_BAND_LOW and y < CAVE_BAND_HIGH and y > floor_y - 3.0 and y < floor_y + 10.0:
+		var g := gallery_at(x, z, surface)
+		if g.x < g.y + 3.0:
+			cave = _profile(g.x, g.y, g.z, g.w, y)
+	var ramp := _ramps(x, y, z)
+	if ramp.x < cave:
+		cave = ramp.x
+		# Quem escava aqui é a rampa: a rugosidade conta a partir do chão dela.
+		floor_y = ramp.y
+	if cave < 3.0:
+		# Rocha irregular: só escava (alarga paredes e sobe o teto), nunca
+		# estreita a passagem abaixo do perfil, que garante altura e largura
+		# para andar. Quase nada no chão (calombos virariam rampas íngremes).
+		var amplitude := lerpf(0.06, 1.1, smoothstep(floor_y + 0.4, floor_y + 2.0, y))
+		cave -= absf(_rough.get_noise_3d(x, y * 1.3, z)) * amplitude
 	return cave
 
 
-## Fator de "céu aberto" (1 na superfície, 0 no fundo das cavernas).
-func sky_factor(depth: float) -> float:
-	return clampf(1.0 - (depth - 1.5) / 6.0, 0.0, 1.0)
+# --- Entradas (rampas) ---------------------------------------------------------
+
+static func region_of(point: Vector3) -> Vector2i:
+	return Vector2i(floori(point.x / REGION), floori(point.z / REGION))
+
+
+## Entrada de caverna da região (vazio se não houver): topo e fundo da rampa
+## e meia largura. Determinística; calculada uma vez por gerador.
+func entrance(region: Vector2i) -> Dictionary:
+	if _entrance_cache.has(region):
+		return _entrance_cache[region]
+	var data := _find_entrance(region)
+	_entrance_cache[region] = data
+	return data
+
+
+func _find_entrance(region: Vector2i) -> Dictionary:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash(Vector3i(region.x, region.y, world_seed * 31 + 77))
+	var forced := region == _spawn_region
+	if not forced and rng.randf() > 0.55:
+		return {}
+	var center := Vector2((region.x + 0.5) * REGION + rng.randf_range(-35.0, 35.0),
+			(region.y + 0.5) * REGION + rng.randf_range(-35.0, 35.0))
+	var spawn := Vector2.ZERO
+	if forced:
+		var sp := spawn_point()
+		spawn = Vector2(sp.x, sp.z)
+		center = spawn + Vector2(55.0, 20.0)
+	# Fundo: o ponto mais perto do eixo de uma galeria em volta do centro.
+	var best := Vector2.INF
+	var best_lateral := INF
+	var reach := 5 if not forced else 9
+	for i in reach:
+		for j in reach:
+			var p := center + Vector2(i - reach / 2, j - reach / 2) * 9.0
+			var s := surface_height(p.x, p.y)
+			var g := gallery_at(p.x, p.y, s)
+			if g.x < best_lateral:
+				best_lateral = g.x
+				best = p
+	if best_lateral > 3.0:
+		return {}
+	var bottom_floor := gallery_floor(best.x, best.y, surface_height(best.x, best.y))
+	# Topo: direção e comprimento com inclinação caminhável, longe das estradas.
+	var candidates := []
+	var offset := rng.randf() * TAU
+	for k in 12:
+		var angle := offset + TAU * k / 12.0
+		var direction := Vector2(cos(angle), sin(angle))
+		for length: float in [34.0, 44.0, 54.0, 66.0]:
+			var top := best + direction * length
+			var roads := road_distances(top.x, top.y)
+			if roads.x < HIGHWAY_HALF_WIDTH + 14.0 or roads.y < BYROAD_HALF_WIDTH + 14.0:
+				continue
+			var drop := surface_height(top.x, top.y) - 0.3 - bottom_floor
+			var slope := drop / length
+			# A rampa desce em 80% do comprimento (o resto é plano até dentro
+			# da galeria): inclinação real = slope / 0,8, entre ~11° e ~21°.
+			if slope < 0.16 or slope > 0.31 or drop < 8.0:
+				continue
+			var score := absf(slope - 0.24) + (top.distance_to(spawn) * 0.004 if forced else 0.0)
+			candidates.append([score, top, length])
+	candidates.sort_custom(func(a: Array, b: Array) -> bool: return a[0] < b[0])
+	for candidate in candidates.slice(0, 8):
+		var top: Vector2 = candidate[1]
+		var top_y := surface_height(top.x, top.y) - 0.3
+		if _ramp_clear(top, top_y, best, bottom_floor):
+			return {"top": Vector3(top.x, top_y, top.y), "bottom": Vector3(best.x, bottom_floor, best.y),
+					"half": rng.randf_range(3.2, 3.8)}
+	return {}
+
+
+## A rampa não passa sob estradas com pouca rocha por cima (abriria buraco)
+## nem atravessa outra galeria no caminho (o chão afundaria nela).
+func _ramp_clear(top: Vector2, top_y: float, bottom: Vector2, bottom_y: float) -> bool:
+	for i in range(1, 21):
+		var t := i / 20.0
+		var p := top.lerp(bottom, t)
+		var ramp_floor := lerpf(top_y, bottom_y, minf(t / 0.8, 1.0))
+		var surface := surface_height(p.x, p.y)
+		var roads := road_distances(p.x, p.y)
+		var near_road := roads.x < HIGHWAY_HALF_WIDTH + 8.0 or roads.y < BYROAD_HALF_WIDTH + 8.0
+		if near_road and surface - (ramp_floor + 4.0) < 4.0:
+			return false
+		if t < 0.8:
+			var g := gallery_at(p.x, p.y, surface)
+			if g.x < g.y + 3.5 and g.w + g.z + 2.5 > ramp_floor - 1.0:
+				return false
+	return true
+
+
+## Rampas que tocam o pedaço sendo gerado (null = procurar nas regiões).
+var _local_ramps: Variant = null
+
+
+## Densidade das rampas de entrada das regiões em volta do ponto.
+## [densidade, altura do chão] da rampa mais escavada no ponto.
+func _ramps(x: float, y: float, z: float) -> Vector2:
+	var result := Vector2(4.0, -INF)
+	if _local_ramps != null:
+		for e in _local_ramps:
+			var r := _ramp_density(e, x, y, z)
+			if r.x < result.x:
+				result = r
+		return result
+	var region := Vector2i(floori(x / REGION), floori(z / REGION))
+	for dz in range(-1, 2):
+		for dx in range(-1, 2):
+			var e := entrance(region + Vector2i(dx, dz))
+			if e.is_empty():
+				continue
+			var r := _ramp_density(e, x, y, z)
+			if r.x < result.x:
+				result = r
+	return result
+
+
+func _ramp_density(e: Dictionary, x: float, y: float, z: float) -> Vector2:
+	var top: Vector3 = e["top"]
+	var bottom: Vector3 = e["bottom"]
+	var half: float = e["half"]
+	var a := Vector2(top.x, top.z)
+	var b := Vector2(bottom.x, bottom.z)
+	var ab := b - a
+	# Passa um pouco do fundo para se abrir dentro da galeria.
+	var length := ab.length()
+	var extended := b + ab / length * 4.0
+	var p := Vector2(x, z)
+	var t := clampf((p - a).dot(extended - a) / (extended - a).length_squared(), 0.0, 1.0)
+	var lateral := p.distance_to(a.lerp(extended, t))
+	if lateral > half + 4.0:
+		return Vector2(lateral - half, -INF)
+	var along := t * (length + 4.0) / length
+	# Chega ao nível da galeria aos 80% e segue plana: entra na galeria sem
+	# degrau (dá para voltar subindo).
+	var floor_y := lerpf(top.y, bottom.y, minf(along / 0.8, 1.0))
+	# A boca é mais larga e mais alta (rocha desmoronada em volta).
+	var mouth := 1.0 - smoothstep(0.0, 0.25, along)
+	return Vector2(_profile(lateral, half * (1.0 + mouth * 0.35), 3.8 + mouth * 1.2, floor_y, y, 0.85), floor_y)
+
+
+## Entradas (topo das rampas) a até `radius` m de um ponto: para testes e
+## para o jogador achar as cavernas.
+func entrances_near(point: Vector3, radius: float) -> Array:
+	var list := []
+	var region := region_of(point)
+	var span := int(ceil(radius / REGION)) + 1
+	for dz in range(-span, span + 1):
+		for dx in range(-span, span + 1):
+			var e := entrance(region + Vector2i(dx, dz))
+			if not e.is_empty() and Vector2((e["top"] as Vector3).x - point.x, (e["top"] as Vector3).z - point.z).length() <= radius:
+				list.append(e)
+	return list
+
+
+# --- Luz que entra nas cavernas -------------------------------------------------
+
+## Direções dos raios de "céu visível": para cima, 6 inclinadas (55°) e 6
+## rasantes (25°). As rasantes deixam a luz da boca entrar alguns metros pelo
+## túnel, como acontece de verdade (a claridade vem da abertura, de lado).
+const SKY_RAYS: Array[Vector3] = [
+	Vector3(0.0, 1.0, 0.0),
+	Vector3(0.574, 0.819, 0.0), Vector3(-0.574, 0.819, 0.0),
+	Vector3(0.287, 0.819, 0.497), Vector3(-0.287, 0.819, 0.497),
+	Vector3(0.287, 0.819, -0.497), Vector3(-0.287, 0.819, -0.497),
+	Vector3(0.906, 0.423, 0.0), Vector3(-0.906, 0.423, 0.0),
+	Vector3(0.453, 0.423, 0.785), Vector3(-0.453, 0.423, 0.785),
+	Vector3(0.453, 0.423, -0.785), Vector3(-0.453, 0.423, -0.785),
+]
+const SKY_STEP := 2.0
+const SKY_STEPS := 9
+
+
+## Quanto céu se enxerga de um ponto (0 a 1): fração dos raios que saem da
+## terra sem bater em rocha. Na boca da caverna entra luz; para dentro ela
+## some aos poucos, e o fundo das galerias fica no escuro.
+func sky_visibility(point: Vector3) -> float:
+	var surface := surface_height(point.x, point.z)
+	if point.y > surface - 0.5:
+		return 1.0
+	var open := 0
+	for direction in SKY_RAYS:
+		var q := point
+		for step in SKY_STEPS:
+			q += direction * SKY_STEP
+			var s := surface_height(q.x, q.z)
+			if q.y > s + 0.3:
+				open += 1
+				break
+			if density_at(q.x, q.y, q.z, s, road_distances(q.x, q.z)) > 0.0:
+				break
+	return float(open) / SKY_RAYS.size()
 
 
 # --- Pedaço: campo de densidade e malha --------------------------------------
@@ -207,6 +464,16 @@ func build_chunk(coord: Vector2i) -> Dictionary:
 			top = maxf(top, s)
 	var y0 := FLOOR_Y
 	var layers := int(ceil((top + 4.0 - y0) / CELL)) + 1
+	# Só as rampas cujo traçado passa perto deste pedaço entram nas contas.
+	var nearby := []
+	var box := Rect2(origin - Vector2.ONE * 12.0, Vector2.ONE * (CHUNK_SIZE + 24.0))
+	for e in entrances_near(Vector3(origin.x + CHUNK_SIZE * 0.5, 0.0, origin.y + CHUNK_SIZE * 0.5), REGION * 1.6):
+		var a := Vector2((e["top"] as Vector3).x, (e["top"] as Vector3).z)
+		var b := Vector2((e["bottom"] as Vector3).x, (e["bottom"] as Vector3).z)
+		var ramp_box := Rect2(a, Vector2.ZERO).expand(b).grow(8.0)
+		if ramp_box.intersects(box):
+			nearby.append(e)
+	_local_ramps = nearby
 	var field := PackedFloat32Array()
 	field.resize(points * points * layers)
 	for pz in points:
@@ -220,6 +487,8 @@ func build_chunk(coord: Vector2i) -> Dictionary:
 			for py in layers:
 				field[base + py] = density_at(x, y0 + py * CELL, z, s, r)
 	var mesh := _surface_nets(origin, field, points, layers, y0, surfaces, roads)
+	_local_ramps = null
+	_light_caves(mesh, origin, field, points, layers, y0, surfaces)
 	var result := {
 		"coord": coord,
 		"mesh": mesh,
@@ -332,6 +601,76 @@ func _surface_nets(origin: Vector2, field: PackedFloat32Array, points: int, laye
 	return {"vertices": vertices, "normals": normals, "colors": colors, "uvs": uvs, "uv2s": uv2s, "indices": indices}
 
 
+## Luz das cavernas por vértice: para cada vértice abaixo da superfície,
+## a fração de raios que chega ao céu (mesma regra de sky_visibility), lendo
+## o campo de densidade do próprio pedaço (rápido) e o gerador fora dele.
+func _light_caves(mesh: Dictionary, origin: Vector2, field: PackedFloat32Array, points: int, layers: int,
+		y0: float, surfaces: PackedFloat32Array) -> void:
+	var vertices: PackedVector3Array = mesh["vertices"]
+	var colors: PackedColorArray = mesh["colors"]
+	for i in vertices.size():
+		var c := colors[i]
+		if c.a > 0.5:
+			continue
+		var p := vertices[i] + (mesh["normals"] as PackedVector3Array)[i] * 0.6
+		var open := 0
+		for direction in SKY_RAYS:
+			var q := p
+			for step in SKY_STEPS:
+				q += direction * SKY_STEP
+				var s := _field_surface(q, origin, points, surfaces)
+				if is_nan(s):
+					s = surface_height(q.x, q.z)
+				if q.y > s + 0.3:
+					open += 1
+					break
+				var d := _field_density(q, origin, field, points, layers, y0)
+				if is_nan(d):
+					d = density_at(q.x, q.y, q.z, s, road_distances(q.x, q.z))
+				if d > 0.0:
+					break
+		c.a = float(open) / SKY_RAYS.size()
+		colors[i] = c
+	mesh["colors"] = colors
+
+
+## Altura do chão lida das colunas do pedaço (NAN fora dele).
+func _field_surface(q: Vector3, origin: Vector2, points: int, surfaces: PackedFloat32Array) -> float:
+	var fx := (q.x - origin.x) / CELL + 1.0
+	var fz := (q.z - origin.y) / CELL + 1.0
+	if fx < 0.0 or fz < 0.0 or fx >= points - 1 or fz >= points - 1:
+		return NAN
+	var ix := int(fx)
+	var iz := int(fz)
+	var tx := fx - ix
+	var tz := fz - iz
+	var i00 := iz * points + ix
+	return lerpf(lerpf(surfaces[i00], surfaces[i00 + 1], tx), lerpf(surfaces[i00 + points], surfaces[i00 + points + 1], tx), tz)
+
+
+## Densidade lida do campo do pedaço por interpolação trilinear (NAN fora).
+func _field_density(q: Vector3, origin: Vector2, field: PackedFloat32Array, points: int, layers: int, y0: float) -> float:
+	var fx := (q.x - origin.x) / CELL + 1.0
+	var fz := (q.z - origin.y) / CELL + 1.0
+	var fy := (q.y - y0) / CELL
+	if fx < 0.0 or fz < 0.0 or fy < 0.0 or fx >= points - 1 or fz >= points - 1 or fy >= layers - 1:
+		return NAN
+	var ix := int(fx)
+	var iy := int(fy)
+	var iz := int(fz)
+	var tx := fx - ix
+	var ty := fy - iy
+	var tz := fz - iz
+	var b := (iz * points + ix) * layers + iy
+	var sx := layers
+	var sz := points * layers
+	var c00 := lerpf(field[b], field[b + sx], tx)
+	var c01 := lerpf(field[b + 1], field[b + sx + 1], tx)
+	var c10 := lerpf(field[b + sz], field[b + sz + sx], tx)
+	var c11 := lerpf(field[b + sz + 1], field[b + sz + sx + 1], tx)
+	return lerpf(lerpf(c00, c01, ty), lerpf(c10, c11, ty), tz)
+
+
 ## Coordenadas da pintura da pista para o shader: (deslocamento lateral com
 ## sinal a partir do eixo da estrada mais próxima, distância ao longo dela,
 ## 1 se pode ter faixa pintada (não em cruzamentos), meia largura da pista).
@@ -384,7 +723,9 @@ func _vertex_weights(position: Vector3, normal: Vector3, cx: int, cz: int, local
 			lerpf(surfaces[i00 + points], surfaces[i00 + points + 1], local.x), local.z)
 	var r := (roads[i00].lerp(roads[i00 + 1], local.x)).lerp(roads[i00 + points].lerp(roads[i00 + points + 1], local.x), local.z)
 	var depth := s - position.y
-	var sky := sky_factor(depth)
+	# Céu aberto provisório (as cavernas recebem a medida por raios depois,
+	# em _light_caves).
+	var sky := 1.0 if depth < 0.5 else 0.0
 	var on_top := smoothstep(0.55, 0.8, normal.y) * smoothstep(1.2, 0.0, absf(depth))
 	var asphalt := maxf(1.0 - smoothstep(HIGHWAY_HALF_WIDTH - 0.6, HIGHWAY_HALF_WIDTH + 0.3, r.x),
 			1.0 - smoothstep(BYROAD_HALF_WIDTH - 0.6, BYROAD_HALF_WIDTH + 0.3, r.y)) * on_top
@@ -408,18 +749,6 @@ func _solid_ground(x: float, z: float, surface: float) -> bool:
 	return density(x, surface - 1.2, z) > 0.0 and density(x, surface - 3.0, z) > 0.0
 
 
-## Há uma boca de caverna (ar logo abaixo do chão) a até `radius` m?
-func _near_opening(x: float, z: float, radius: float) -> bool:
-	for i in 8:
-		var angle := TAU * i / 8.0
-		var px := x + cos(angle) * radius * 0.6
-		var pz := z + sin(angle) * radius * 0.6
-		var s := surface_height(px, pz)
-		if density(px, s - 2.0, pz) < 0.0:
-			return true
-	return false
-
-
 ## Distribui árvores, vegetação, pedras, carcaças, destroços e armas.
 ## Determinístico por pedaço (semente própria), independente da ordem.
 func _scatter(coord: Vector2i, origin: Vector2, result: Dictionary) -> void:
@@ -428,10 +757,18 @@ func _scatter(coord: Vector2i, origin: Vector2, result: Dictionary) -> void:
 	var trees: Array = [[], [], []]
 	var trunks: Array[Transform3D] = []
 	var trunk_colliders: Array = [] # [posição, raio]
+	# Cada árvore com o que é preciso para cortá-la:
+	# [variante, escala, transformação da copa, do tronco, altura].
+	var tree_list: Array = []
+	result["tree_list"] = tree_list
 	var props := {} # nome -> Array[Transform3D] (visual)
 	var colliders: Array = [] # [Transform3D, tamanho da caixa]
 	var weapons: Array = [] # [id, Transform3D]
 	var wrecks: Array = [] # [nome, Transform3D, Color]
+	var deposits: Array = [] # [tipo, Transform3D, malha]
+	result["deposits"] = deposits
+	var zombies: Array = [] # posições
+	result["zombies"] = zombies
 	# Árvores: grade de 4 m com posição sorteada dentro da célula.
 	for gz in 8:
 		for gx in 8:
@@ -456,6 +793,7 @@ func _scatter(coord: Vector2i, origin: Vector2, result: Dictionary) -> void:
 			var trunk_scale := Vector3(scale * 0.9, height * 0.42, scale * 0.9)
 			trunks.append(Transform3D(Basis.IDENTITY.scaled(trunk_scale), Vector3(x, ground + trunk_scale.y * 0.5, z)))
 			trunk_colliders.append([Vector3(x, ground + 2.0, z), 0.16 * scale])
+			tree_list.append([variant, scale, trees[variant].back(), trunks.back(), height])
 	# Vegetação baixa e chão da mata (sem colisão).
 	for i in 26:
 		var x := origin.x + rng.randf() * CHUNK_SIZE
@@ -499,28 +837,28 @@ func _scatter(coord: Vector2i, origin: Vector2, result: Dictionary) -> void:
 			kind = "rock_moss_set_01"
 			size *= 0.6
 		var t := Transform3D(Basis(Vector3.UP, yaw).scaled(Vector3.ONE * size), Vector3(x, s - 0.15 * size, z))
+		if kind == "boulder_01":
+			# Rocha solta: depósito de pedra (minerável com a picareta).
+			deposits.append(["pedra", t, "boulder_01"])
+			continue
 		_add(props, kind, t)
 		colliders.append([kind, t])
-	# Bocas de caverna: rochas em volta de onde o chão se abre.
-	var mid := origin + Vector2.ONE * CHUNK_SIZE * 0.5
-	if _entrances.get_noise_2d(mid.x, mid.y) > 0.2:
-		for i in 2:
-			var x := mid.x + rng.randf_range(-10.0, 10.0)
-			var z := mid.y + rng.randf_range(-10.0, 10.0)
-			var s := surface_height(x, z)
-			var size := rng.randf_range(0.9, 1.4)
-			var yaw := rng.randf() * TAU
-			var r := road_distances(x, z)
-			if r.x < HIGHWAY_HALF_WIDTH + 6.0 or r.y < BYROAD_HALF_WIDTH + 6.0:
-				continue
-			# Só junto de uma abertura de verdade (ar logo abaixo, perto) e
-			# apoiada em chão firme.
-			if density(x, s - 1.0, z) <= 0.0 or not _near_opening(x, z, 8.0):
-				continue
-			var t := Transform3D(Basis(Vector3.UP, yaw).scaled(Vector3.ONE * size), Vector3(x, s - 0.6, z))
-			_add(props, "rock_face_01", t)
-			colliders.append(["rock_face_01", t])
+	_entrance_rocks(origin, rng, props, colliders)
+	_cave_contents(origin, rng, props, colliders, deposits)
 	_road_debris(coord, origin, rng, props, colliders, wrecks, weapons)
+	# Zumbis: andando entre as carcaças dos engarrafamentos e, raros, na mata.
+	var spawn := spawn_point()
+	var crowd := 0
+	for w in wrecks:
+		if rng.randf() < 0.14 and crowd < 2:
+			var t: Transform3D = w[1]
+			var spot := t.origin + t.basis.x.normalized() * rng.randf_range(2.5, 4.0) * (1.0 if rng.randf() < 0.5 else -1.0)
+			crowd += 1
+			_add_zombie(zombies, spot, spawn)
+	if rng.randf() < 0.03:
+		var x := origin.x + rng.randf() * CHUNK_SIZE
+		var z := origin.y + rng.randf() * CHUNK_SIZE
+		_add_zombie(zombies, Vector3(x, 0.0, z), spawn)
 	# Arma perdida na mata, rara.
 	if rng.randf() < 0.035:
 		var x := origin.x + rng.randf() * CHUNK_SIZE
@@ -620,6 +958,114 @@ func _road_debris(coord: Vector2i, origin: Vector2, rng: RandomNumberGenerator, 
 			else:
 				wrecks.append([kind, t, paint])
 		x += rng.randf_range(14.0, 30.0)
+
+
+## Rochas em volta da boca das rampas de entrada que começam neste pedaço.
+func _entrance_rocks(origin: Vector2, _rng: RandomNumberGenerator, props: Dictionary, colliders: Array) -> void:
+	var center := Vector3(origin.x + CHUNK_SIZE * 0.5, 0.0, origin.y + CHUNK_SIZE * 0.5)
+	for e in entrances_near(center, REGION * 1.5):
+		var top: Vector3 = e["top"]
+		if top.x < origin.x or top.x >= origin.x + CHUNK_SIZE or top.z < origin.y or top.z >= origin.y + CHUNK_SIZE:
+			continue
+		var bottom: Vector3 = e["bottom"]
+		var half: float = e["half"]
+		var rng := RandomNumberGenerator.new()
+		rng.seed = hash(Vector3i(int(top.x), int(top.z), world_seed + 5))
+		var down := Vector2(bottom.x - top.x, bottom.z - top.z).normalized()
+		var side := Vector2(-down.y, down.x)
+		var heading := atan2(down.x, down.y)
+		for k: float in [-1.0, 1.0]:
+			for j in 2:
+				var at := Vector2(top.x, top.z) + side * k * (half * 1.35 + 2.2 + j * 1.5) + down * (2.0 + j * 5.0)
+				var y := surface_height(at.x, at.y)
+				var size := rng.randf_range(0.9, 1.35)
+				var t := Transform3D(Basis(Vector3.UP, heading + k * PI * 0.5 + rng.randf_range(-0.4, 0.4)).scaled(Vector3.ONE * size),
+						Vector3(at.x, y - 0.9 * size, at.y))
+				_add(props, "rock_face_01", t)
+				colliders.append(["rock_face_01", t])
+		for j in 3:
+			var at := Vector2(top.x, top.z) + side * rng.randf_range(-half * 2.0, half * 2.0) - down * rng.randf_range(1.0, 5.0)
+			var t := Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * rng.randf_range(0.4, 0.8)),
+					Vector3(at.x, surface_height(at.x, at.y) - 0.2, at.y))
+			_add(props, "rock_moss_set_01" if j == 0 else "boulder_01", t)
+
+
+## Dentro das galerias deste pedaço: estalagmites, estalactites, entulho e
+## depósitos de minério junto às paredes. Só em pontos de chão real da
+## galeria (procura o chão e o teto no campo de densidade).
+func _cave_contents(origin: Vector2, rng: RandomNumberGenerator, props: Dictionary, colliders: Array, deposits: Array) -> void:
+	for i in 22:
+		var x := origin.x + rng.randf() * CHUNK_SIZE
+		var z := origin.y + rng.randf() * CHUNK_SIZE
+		var roll := rng.randf()
+		var size := rng.randf_range(0.7, 1.4)
+		var yaw := rng.randf() * TAU
+		var pick := rng.randf()
+		var s := surface_height(x, z)
+		var g := gallery_at(x, z, s)
+		if g.x > g.y * 0.92:
+			continue
+		var across := g.x / g.y
+		var roads := road_distances(x, z)
+		# Chão: desce a partir de um pouco acima do chão previsto.
+		var y := g.w + 1.6
+		var floor_found := false
+		for step in 16:
+			if density_at(x, y - 0.25, z, s, roads) > 0.0:
+				floor_found = true
+				break
+			y -= 0.25
+		if not floor_found or density_at(x, y + 0.5, z, s, roads) > 0.0:
+			continue
+		var floor_point := Vector3(x, y, z)
+		# O meio da galeria fica livre para passar (formações e entulho só
+		# para os lados) e nada perto do pé das rampas.
+		if across < 0.45 or _near_ramp_bottom(x, z, 9.0):
+			continue
+		if roll < 0.3:
+			var t := Transform3D(Basis(Vector3.UP, yaw).scaled(Vector3(size, size * rng.randf_range(0.8, 1.6), size)), floor_point - Vector3.UP * 0.15)
+			_add(props, "estalagmite", t)
+			# Colisão: cilindro fino no tronco da formação (a ponta é fina).
+			colliders.append(["estalagmite", t])
+		elif roll < 0.55:
+			# Teto: sobe até a rocha.
+			var top := y + 0.5
+			while top < y + 9.0 and density_at(x, top, z, s, roads) < 0.0:
+				top += 0.25
+			if top - y > 3.2 and top < y + 9.0:
+				var t := Transform3D(Basis(Vector3.UP, yaw).scaled(Vector3(size, size * rng.randf_range(0.7, 1.3), size)), Vector3(x, top + 0.2, z))
+				_add(props, "estalactite", t)
+		elif roll < 0.72:
+			# Entulho miúdo: sem colisão (pedras de meio metro não barram
+			# ninguém; caixas de colisão nelas viravam paredes invisíveis).
+			var t := Transform3D(Basis(Vector3.UP, yaw).scaled(Vector3.ONE * size * 0.35), floor_point - Vector3.UP * 0.1)
+			_add(props, "boulder_01", t)
+		else:
+			# Minério na base da parede, virado para dentro da galeria.
+			var kind := "carvao" if pick < 0.5 else ("ferro" if pick < 0.85 else "pedra")
+			var mesh := "boulder_01" if kind == "pedra" else "minerio_" + kind
+			var t := Transform3D(Basis(Vector3.UP, yaw).scaled(Vector3.ONE * rng.randf_range(0.8, 1.25)), floor_point - Vector3.UP * 0.2)
+			deposits.append([kind, t, mesh])
+
+
+func _near_ramp_bottom(x: float, z: float, radius: float) -> bool:
+	for e in entrances_near(Vector3(x, 0.0, z), REGION):
+		var b: Vector3 = e["bottom"]
+		if Vector2(b.x - x, b.z - z).length() < radius + 4.0:
+			return true
+	return false
+
+
+const ZOMBIE_CLEARANCE := 45.0
+
+
+func _add_zombie(zombies: Array, spot: Vector3, spawn: Vector3) -> void:
+	if Vector2(spot.x - spawn.x, spot.z - spawn.z).length() < ZOMBIE_CLEARANCE:
+		return
+	var s := surface_height(spot.x, spot.z)
+	if not _solid_ground(spot.x, spot.z, s):
+		return
+	zombies.append(Vector3(spot.x, s + 0.05, spot.z))
 
 
 func _add(props: Dictionary, kind: String, t: Transform3D) -> void:

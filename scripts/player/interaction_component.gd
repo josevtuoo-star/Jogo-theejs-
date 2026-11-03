@@ -18,7 +18,7 @@ signal interaction_completed(interactable: Interactable)
 @export var view_origin: Node3D
 @export var animator: BodyAnimator
 ## Alcance do braço (m) a partir dos olhos.
-@export_range(0.5, 5.0, 0.05) var reach: float = 2.0
+@export_range(0.5, 5.0, 0.05) var reach: float = 2.3
 ## Camadas consultadas: mundo (1) e interagíveis (5).
 @export_flags_3d_physics var collision_mask: int = 1 | 4 | 16
 
@@ -59,14 +59,47 @@ func _update_focus() -> void:
 		_ray.from = origin
 		_ray.to = origin - camera.global_basis.z * (reach + origin.distance_to(eye))
 		_ray.exclude = [player.get_rid()]
-		var hit := camera.get_world_3d().direct_space_state.intersect_ray(_ray)
+		var space := camera.get_world_3d().direct_space_state
+		var hit := space.intersect_ray(_ray)
 		if not hit.is_empty() and (hit["position"] as Vector3).distance_to(eye) <= reach:
 			found = Interactable.find_on(hit["collider"])
 			if found != null and not found.enabled:
 				found = null
+			if found == null:
+				# Mira passou raspando num objeto pequeno (pedra, tora, ferramenta
+				# no chão): procura itens soltos numa esfera em volta do ponto.
+				found = _nearby_pickup(space, hit["position"], eye)
+	# Objeto já liberado (pego, quebrado) conta como nada em foco.
+	if focused != null and not is_instance_valid(focused):
+		focused = null
+		focus_changed.emit(null)
 	if found != focused:
 		focused = found
 		focus_changed.emit(focused)
+
+
+var _sphere_query := PhysicsShapeQueryParameters3D.new()
+var _sphere := SphereShape3D.new()
+
+
+func _nearby_pickup(space: PhysicsDirectSpaceState3D, point: Vector3, eye: Vector3) -> Interactable:
+	_sphere.radius = 0.35
+	_sphere_query.shape = _sphere
+	_sphere_query.transform = Transform3D(Basis.IDENTITY, point)
+	_sphere_query.collision_mask = 4 | 16
+	_sphere_query.exclude = [player.get_rid()]
+	var best: Interactable = null
+	var best_distance := INF
+	for result in space.intersect_shape(_sphere_query, 8):
+		var candidate := Interactable.find_on(result["collider"])
+		if candidate == null or not candidate.enabled or not (candidate is ItemPickup or candidate is WeaponPickup):
+			continue
+		var body := result["collider"] as Node3D
+		var distance := body.global_position.distance_to(point)
+		if distance < best_distance and body.global_position.distance_to(eye) <= reach + 0.3:
+			best = candidate
+			best_distance = distance
+	return best
 
 
 ## Começa a interação com o objeto em foco. Retorna false se não houver

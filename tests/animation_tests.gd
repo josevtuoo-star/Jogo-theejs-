@@ -7,7 +7,8 @@ extends Node
 
 const GYM_SCENE := "res://scenes/test/movement_test_gym.tscn"
 const ACTIONS := [&"move_forward", &"move_back", &"move_left", &"move_right", &"sprint", &"jump",
-		&"crouch_toggle", &"crouch_hold", &"walk_toggle", &"attack", &"interact", &"toggle_camera", &"block", &"drop_weapon"]
+		&"crouch_toggle", &"crouch_hold", &"walk_toggle", &"attack", &"interact", &"toggle_camera", &"block", &"drop_weapon",
+		&"hotbar_1", &"hotbar_2", &"hotbar_3", &"hotbar_4", &"inventory_toggle"]
 const YAW_TOWARD_POSITIVE_Z := PI
 const DT := 1.0 / 60.0
 ## Área aberta do ginásio para corridas longas.
@@ -97,6 +98,15 @@ func _ready() -> void:
 		_test_world_streaming,
 		_test_world_walk_and_headlamp,
 		_test_world_main_scene,
+		_test_inventory_pickup,
+		_test_inventory_ui_and_touch,
+		_test_chop_tree,
+		_test_mine_rock,
+		_test_zombie_combat,
+		_test_bat_breaks,
+		_test_cave_exploration,
+		_test_cave_geometry,
+		_test_headlamp,
 		_test_ragdoll_death_and_respawn,
 		_test_touch_attack_button,
 		_test_animator_performance,
@@ -1466,6 +1476,16 @@ func _test_wind() -> void:
 const WEAPONS := ["res://resources/weapons/taco.tres", "res://resources/weapons/machado.tres", "res://resources/weapons/picareta.tres"]
 
 
+## Esvazia a mochila e as mãos.
+func _clear_inventory() -> void:
+	var inventory: Inventory = _player.get_node("Inventory")
+	inventory.unequip()
+	for i in Inventory.TOOL_SLOTS:
+		inventory.tools[i] = {}
+	inventory.resources.clear()
+	inventory.changed.emit()
+
+
 ## Solta a arma no chão diante do jogador, mira nela e aperta USAR.
 func _pick_up_from_ground(data: WeaponData, spot: Vector3) -> RigidBody3D:
 	var body := WeaponPickup.spawn(data, Transform3D(Basis(Vector3.FORWARD, PI * 0.5), spot + Vector3.UP * 0.3), _gym)
@@ -1488,7 +1508,7 @@ func _pick_up_from_ground(data: WeaponData, spot: Vector3) -> RigidBody3D:
 func _test_weapon_pickup_and_drop() -> void:
 	_begin("Armas: pegar do chão, empunhar, soltar e trocar")
 	var equipment: PlayerEquipment = _player.get_node("Equipment")
-	equipment.weapon = null
+	_clear_inventory()
 	for path in WEAPONS:
 		var data: WeaponData = load(path)
 		var box := data.mesh.get_aabb()
@@ -1510,18 +1530,24 @@ func _test_weapon_pickup_and_drop() -> void:
 	_check(_body.guard_clip == &"weapon_idle", "postura de arma empunhada")
 	var drop_buttons := get_tree().get_nodes_in_group(&"drop_weapon_button")
 	_check(drop_buttons.is_empty() or (drop_buttons[0] as Control).visible, "botão SOLTAR aparece com arma na mão")
-	# Trocar: pegar o machado derruba o taco no lugar dele.
+	# Pegar outra: vai para a mochila (a da mão continua na mão) e troca-se
+	# pela barra rápida.
+	var inventory: Inventory = _player.get_node("Inventory")
 	await _pick_up_from_ground(axe, _player.global_position + _forward() * 0.9)
-	_check(equipment.weapon == axe, "trocou pelo machado")
-	var loose := 0
-	for child in _gym.get_children():
-		if child is RigidBody3D and child.has_node("WeaponPickup") and (child.get_node("WeaponPickup") as WeaponPickup).weapon == bat:
-			loose += 1
-	_check(loose == 1, "o taco ficou no chão no lugar do machado (%d)" % loose)
+	_check(equipment.weapon == bat and inventory.has_tool(&"machado") and inventory.has_tool(&"taco"),
+			"machado guardado na mochila, taco continua na mão")
+	await _hold(&"hotbar_2", 2)
+	await _frames(5)
+	_check(equipment.weapon == axe and inventory.selected == 1, "tecla 2 empunha o machado")
+	await _hold(&"hotbar_2", 2)
+	await _frames(5)
+	_check(equipment.weapon == null and inventory.has_tool(&"machado"), "de novo: guarda (mãos livres, machado na mochila)")
+	await _hold(&"hotbar_2", 2)
+	await _frames(5)
 	# Soltar.
 	await _hold(&"drop_weapon", 2)
 	await _frames(60)
-	_check(equipment.weapon == null and not model.visible, "soltou a arma (G / direcional baixo)")
+	_check(equipment.weapon == null and not model.visible and not inventory.has_tool(&"machado"), "soltou o machado (G / direcional baixo)")
 	_check(_body.guard_clip == BodyAnimator.GUARD_CLIP, "voltou à guarda de punhos")
 	_check(drop_buttons.is_empty() or not (drop_buttons[0] as Control).visible, "botão SOLTAR some sem arma")
 	for child in _gym.get_children():
@@ -1651,14 +1677,19 @@ func _test_world_caves_and_roads() -> void:
 		if g.density(x, y, z) < 0.0:
 			air += 1
 	_check(air > samples * 0.02, "%.1f%% do subsolo é caverna" % (air * 100.0 / samples))
-	var openings := 0
-	for i in 8000:
-		var x := rng.randf_range(-800.0, 800.0)
-		var z := rng.randf_range(-800.0, 800.0)
-		var s := g.surface_height(x, z)
-		if g.density(x, s - 1.5, z) < 0.0 and g.density(x, s - 6.0, z) < 0.0:
-			openings += 1
-	_check(openings > 0, "bocas de caverna abertas na superfície (%d em 8000 pontos)" % openings)
+	# Bocas: as únicas aberturas são as rampas de entrada (os poços verticais
+	# da etapa 7 foram eliminados na etapa 8). Cada uma tem a boca aberta
+	# na superfície e o túnel desobstruído até a galeria.
+	var ramps := g.entrances_near(Vector3.ZERO, 800.0)
+	var open := 0
+	for ramp in ramps:
+		var top: Vector3 = ramp["top"]
+		var bottom: Vector3 = ramp["bottom"]
+		var middle := top.lerp(bottom, 0.5)
+		var middle_floor := lerpf(top.y, bottom.y, 0.5 / 0.8)
+		if g.density(top.x, top.y + 1.0, top.z) < 0.0 and g.density(middle.x, middle_floor + 1.5, middle.z) < 0.0:
+			open += 1
+	_check(ramps.size() >= 8 and open == ramps.size(), "%d entradas de caverna em rampa, todas com boca e túnel abertos" % open)
 	_check(g.density(0.0, WorldGenerator.FLOOR_Y + 1.0, 0.0) > 0.0, "leito de rocha no fundo")
 	# Estrada: plana de lado a lado e sem buracos de caverna sob o asfalto.
 	var worst := 0.0
@@ -1841,6 +1872,755 @@ func _test_world_main_scene() -> void:
 	scene.queue_free()
 	await _frames(5)
 	_camera.make_current()
+
+
+# --- Etapa 8: mochila, coleta, zumbis e cavernas --------------------------------
+
+## Mira num corpo (corrigindo enquanto a cabeça assenta) e aperta PEGAR.
+func _aim_and_take(body: Node3D) -> void:
+	for attempt in 3:
+		var eye := _camera.global_position
+		var target := body.global_position
+		var flat := Vector2(target.x - eye.x, target.z - eye.z)
+		_player.set_view_rotation(atan2(-flat.x, -flat.y), atan2(target.y - eye.y, flat.length()))
+		_rig.snap()
+		await _frames(20)
+	await _hold(&"interact", 2)
+	await _frames(90)
+
+
+## Olha para um ponto (yaw e pitch a partir dos olhos).
+func _look_at_point(target: Vector3) -> void:
+	var eye := _camera.global_position
+	var flat := Vector2(target.x - eye.x, target.z - eye.z)
+	_player.set_view_rotation(atan2(-flat.x, -flat.y), atan2(target.y - eye.y, flat.length()))
+	_rig.snap()
+
+
+func _test_inventory_pickup() -> void:
+	_begin("Mochila: PEGAR coloca na mochila (com nome e ícone), sem pegar duas vezes")
+	var inventory: Inventory = _player.get_node("Inventory")
+	var hud: InventoryHud = _gym.get_node("InventoryHud")
+	_clear_inventory()
+	await _reset(Vector3(30.0, 0.0, 10.0), YAW_TOWARD_POSITIVE_Z)
+	for id in [&"machado", &"picareta", &"taco", &"madeira", &"pedra", &"carvao", &"ferro"]:
+		var item := ItemData.find(id)
+		_check(item != null and item.get_icon() != null and item.display_name != "", "%s: item com nome e ícone" % id)
+	var added := []
+	var on_added := func(item: ItemData, amount: int) -> void: added.append([item.id, amount])
+	inventory.item_added.connect(on_added)
+	# Machado no chão: o cartão mostra o ícone, o toque vira PEGAR.
+	var axe := WeaponPickup.spawn(load(WEAPONS[1]), Transform3D(Basis(Vector3.FORWARD, PI * 0.5), _player.global_position + _forward() * 0.9 + Vector3.UP * 0.3), _gym)
+	await _frames(90)
+	for attempt in 3:
+		_look_at_point(axe.global_position)
+		await _frames(20)
+	var interact_button: TouchActionButton = _gym.get_node("TouchControlsLayer/TouchControls/InteractButton")
+	_check(_interaction.focused is WeaponPickup and interact_button.label == "PEGAR" and hud._card.visible,
+			"mirando: botão PEGAR e cartão com o ícone do machado")
+	await _hold(&"interact", 2)
+	await _frames(90)
+	_check(inventory.has_tool(&"machado") and not is_instance_valid(axe), "pegou: machado na mochila, sumiu do chão")
+	_check(inventory.equipped_item() != null and inventory.equipped_item().id == &"machado", "mãos livres: já empunha o machado")
+	_check(added.size() == 1 and added[0][0] == &"machado", "aviso de coleta com o nome do item (%s)" % str(added))
+	# Não dá para pegar duas vezes o mesmo objeto: dois toques no mesmo
+	# quadro (antes de o corpo sumir) contam uma vez só.
+	var twice := ItemPickup.spawn(ItemData.find(&"carvao"), Transform3D(Basis.IDENTITY, _player.global_position + Vector3(2.0, 0.3, 0.0)), _gym)
+	var twice_pickup: ItemPickup = twice.get_node("ItemPickup")
+	twice_pickup.interact(_player)
+	twice_pickup.interact(_player)
+	await _frames(5)
+	_check(inventory.count(&"carvao") == 1, "o mesmo objeto não entra duas vezes (%d carvão)" % inventory.count(&"carvao"))
+	# Recursos empilham.
+	var stones := ItemPickup.spawn(ItemData.find(&"pedra"), Transform3D(Basis.IDENTITY, _player.global_position + _forward() * 1.0 + Vector3.UP * 0.3), _gym, 3)
+	await _frames(60)
+	await _aim_and_take(stones)
+	_check(inventory.count(&"pedra") == 3 and not is_instance_valid(stones), "pegou 3 pedras de uma vez (%d)" % inventory.count(&"pedra"))
+	# Guardar e soltar.
+	await _hold(&"hotbar_1", 2)
+	await _frames(5)
+	_check(inventory.selected == -1 and inventory.has_tool(&"machado") and (_player.get_node("Equipment") as PlayerEquipment).weapon == null,
+			"guardar: tecla 1 de novo, machado na mochila e mãos livres")
+	inventory.drop_resource(&"pedra", 1)
+	await _frames(60)
+	var loose := 0
+	for child in _gym.get_children():
+		if child.has_node("ItemPickup"):
+			loose += 1
+	_check(inventory.count(&"pedra") == 2 and loose == 1, "soltar 1 pedra: vira objeto no chão (%d na mochila)" % inventory.count(&"pedra"))
+	inventory.item_added.disconnect(on_added)
+	for child in _gym.get_children():
+		if child.has_node("ItemPickup") or child.has_node("WeaponPickup"):
+			child.queue_free()
+	_clear_inventory()
+	await _frames(5)
+
+
+func _test_inventory_ui_and_touch() -> void:
+	_begin("Mochila: painel (I / MOCHILA) e barra rápida no toque, sem golpes acidentais")
+	var inventory: Inventory = _player.get_node("Inventory")
+	var hud: InventoryHud = _gym.get_node("InventoryHud")
+	_clear_inventory()
+	await _reset(OPEN_LANE, YAW_TOWARD_POSITIVE_Z)
+	inventory.add(ItemData.find(&"taco"))
+	inventory.add(ItemData.find(&"picareta"))
+	inventory.add(ItemData.find(&"madeira"), 4)
+	inventory.unequip()
+	await _hold(&"inventory_toggle", 2)
+	await _frames(5)
+	_check(hud.is_open and not _player.input_enabled, "I abre a mochila e o personagem para")
+	_check(hud._tool_list.get_child_count() == 2 and hud._resource_list.get_child_count() == 1, "lista 2 ferramentas e 1 recurso")
+	var start := _player.global_position
+	await _hold(&"move_forward", 30)
+	_check(_player.global_position.distance_to(start) < 0.05, "com a mochila aberta não anda")
+	hud.close()
+	await _frames(5)
+	_check(not hud.is_open and _player.input_enabled, "fecha e volta a controlar")
+	# Organizar: picareta antes de taco.
+	inventory.sort()
+	_check((inventory.tool_at(0)["item"] as ItemData).id == &"picareta", "ORGANIZAR ordena as ferramentas")
+	# Toque: tocar na casa 2 da barra empunha o taco; não ataca.
+	var controls := _touch_setup()
+	var attacks := [0]
+	var on_attack := func(_kind: StringName) -> void: attacks[0] += 1
+	_combat.attack_started.connect(on_attack)
+	await _frames(5)
+	var slot := InventoryHud.slot_center(1, _screen())
+	_check(controls.get_target_at(slot) == &"button:HotbarSlot2", "casa 2 da barra é um botão do toque (%s)" % controls.get_target_at(slot))
+	_android_touch(0, slot, true)
+	await _frames(3)
+	_android_touch(0, slot, false)
+	await _frames(10)
+	_check(inventory.selected == 1 and (inventory.equipped_item() as ItemData).id == &"taco", "toque na casa 2 empunha o taco")
+	_check(attacks[0] == 0, "tocar na barra não golpeia")
+	var bag := (controls.get_node("InventoryButton") as Control).get_global_rect().get_center()
+	_android_touch(0, bag, true)
+	await _frames(3)
+	_android_touch(0, bag, false)
+	await _frames(10)
+	_check(hud.is_open, "botão MOCHILA abre o painel no toque")
+	hud.close()
+	_combat.attack_started.disconnect(on_attack)
+	await _touch_teardown(controls)
+	_clear_inventory()
+
+
+## Procura no mundo, perto de FAR, uma árvore com chão plano em volta.
+func _find_tree(world: ProceduralWorld) -> Array:
+	var g := world.generator
+	var center := ProceduralWorld.chunk_of(FAR)
+	for r in 6:
+		for dz in range(-r, r + 1):
+			for dx in range(-r, r + 1):
+				var coord := center + Vector2i(dx, dz)
+				var data := g.build_chunk(coord)
+				var trees: Array = data["tree_list"]
+				for i in trees.size():
+					var base: Vector3 = (trees[i][2] as Transform3D).origin
+					var stand := base + Vector3(1.25, 0.0, 0.0)
+					if g.slope_at(stand.x, stand.z) < 0.2 and g.slope_at(base.x, base.z) < 0.2:
+						var crowded := false
+						for j in trees.size():
+							if j != i and ((trees[j][2] as Transform3D).origin - stand).length() < 1.6:
+								crowded = true
+						if not crowded:
+							return [coord, i, base]
+	return []
+
+
+func _test_chop_tree() -> void:
+	_begin("Machado: corta a árvore (resistência por golpe), ela tomba e vira madeira coletável")
+	var inventory: Inventory = _player.get_node("Inventory")
+	var equipment: PlayerEquipment = _player.get_node("Equipment")
+	var world := _world_node(1)
+	world.target = _player
+	add_child(world)
+	await _frames(1)
+	var found := _find_tree(world)
+	_check(not found.is_empty(), "árvore achada para o teste")
+	if found.is_empty():
+		world.queue_free()
+		return
+	var base: Vector3 = found[2]
+	world.generate_now(base, 1)
+	var g := world.generator
+	var stand := base + Vector3(1.25, 0.0, 0.0)
+	stand.y = g.surface_height(stand.x, stand.z)
+	await _reset(stand + Vector3.UP * 0.1, 0.0)
+	var resources := world.resources_of(found[0])
+	var entry: Dictionary = {}
+	for e in resources.entries():
+		if e["key"] == "a_%d_%d_%d" % [found[0].x, found[0].y, found[1]]:
+			entry = e
+	_check(not entry.is_empty() and entry["health"] > 0.0, "árvore com resistência própria (%.0f)" % entry.get("health", 0.0))
+	var trunk_point := Vector3(base.x, stand.y + 1.15, base.z)
+	# Sem machado (taco): não corta, avisa.
+	_clear_inventory()
+	equipment.equip(load(WEAPONS[0]))
+	var messages := []
+	var on_message := func(text: String) -> void: messages.append(text)
+	inventory.message.connect(on_message)
+	_look_at_point(trunk_point)
+	await _frames(30)
+	var before: float = entry["health"]
+	await _hold(&"attack", 2)
+	await _frames(70)
+	_check(is_equal_approx(entry["health"], before) and messages.size() > 0 and messages[0].contains("machado"),
+			"com o taco não corta e avisa (\"%s\")" % (messages[0] if messages.size() > 0 else ""))
+	# Com o machado.
+	_clear_inventory()
+	equipment.equip(load(WEAPONS[1]))
+	_look_at_point(trunk_point)
+	await _frames(40)
+	var durability: float = inventory.equipped()["durability"]
+	await _hold(&"attack", 2)
+	await _frames(4)
+	_check(_body.current_animation(BodyAnimator.SLOT_ACTION) == &"chop", "diante da árvore o golpe é o corte de lenhador")
+	await _frames(80)
+	_check(entry["health"] < before, "um golpe tira resistência (%.0f → %.0f)" % [before, entry["health"]])
+	_check(inventory.equipped()["durability"] < durability, "o machado se desgasta (%.0f → %.0f)" % [durability, inventory.equipped()["durability"]])
+	var swings := 1
+	while entry["health"] > 0.0 and swings < 25:
+		_look_at_point(trunk_point)
+		await _hold(&"attack", 2)
+		await _frames(75)
+		swings += 1
+	_check(entry["health"] <= 0.0, "a árvore cede depois de %d golpes" % swings)
+	_check((entry["shape"] as CollisionShape3D).disabled and world.is_removed(entry["key"]), "tronco sai do lugar (fica o toco) e não volta ao recarregar")
+	var chunk := world.chunk_node(found[0])
+	var falling := chunk.find_children("ArvoreCaindo", "RigidBody3D", true, false)
+	_check(falling.size() == 1, "a árvore tomba como corpo físico")
+	var start_tilt := 0.0
+	if falling.size() == 1:
+		await _frames(90)
+		start_tilt = rad_to_deg((falling[0] as Node3D).global_basis.y.angle_to(Vector3.UP))
+		_check(start_tilt > 30.0, "caiu de lado (%.0f° da vertical)" % start_tilt)
+	await _frames(240)
+	var logs: Array = []
+	for node in chunk.find_children("*", "ItemPickup", true, false):
+		if (node as ItemPickup).item.id == &"madeira":
+			logs.append(node.get_parent())
+	_check(logs.size() >= 3, "o tronco virou %d toras de madeira" % logs.size())
+	# Coleta: anda até as toras e pega com PEGAR.
+	var collected := 0
+	for candidate: Variant in logs.slice(0, 2):
+		if not is_instance_valid(candidate):
+			continue
+		var log_body := candidate as Node3D
+		var near := log_body.global_position + Vector3(0.9, 0.0, 0.0)
+		near.y = g.surface_height(near.x, near.z)
+		_player.teleport(near + Vector3.UP * 0.1)
+		await _frames(30)
+		await _aim_and_take(log_body)
+		if not is_instance_valid(log_body):
+			collected += 1
+	_check(collected == 2 and inventory.count(&"madeira") == 2, "coletou madeira com PEGAR (%d na mochila)" % inventory.count(&"madeira"))
+	inventory.message.disconnect(on_message)
+	_clear_inventory()
+	world.queue_free()
+	await _frames(5)
+
+
+func _find_deposit(world: ProceduralWorld, type: StringName, near: Vector3, radius: int) -> Array:
+	var g := world.generator
+	var center := ProceduralWorld.chunk_of(near)
+	for r in radius:
+		for dz in range(-r, r + 1):
+			for dx in range(-r, r + 1):
+				var coord := center + Vector2i(dx, dz)
+				var deposits: Array = g.build_chunk(coord)["deposits"]
+				for i in deposits.size():
+					if deposits[i][0] == type:
+						return [coord, i, (deposits[i][1] as Transform3D).origin]
+	return []
+
+
+## Fica ao lado de um depósito e o quebra com a picareta; retorna o que caiu.
+func _mine(world: ProceduralWorld, found: Array, stand: Vector3) -> Dictionary:
+	var resources := world.resources_of(found[0])
+	var entry: Dictionary = {}
+	for e in resources.entries():
+		if e["key"] == "d_%d_%d_%d" % [found[0].x, found[0].y, found[1]]:
+			entry = e
+	if entry.is_empty():
+		return {}
+	var target := (found[2] as Vector3) + Vector3.UP * 0.45
+	await _reset(stand + Vector3.UP * 0.1, 0.0)
+	_look_at_point(target)
+	await _frames(30)
+	var first := true
+	var swings := 0
+	while entry["health"] > 0.0 and swings < 20:
+		_look_at_point(target)
+		await _hold(&"attack", 2)
+		if first:
+			await _frames(4)
+			entry["first_clip"] = _body.current_animation(BodyAnimator.SLOT_ACTION)
+			first = false
+		await _frames(95)
+		swings += 1
+	entry["swings"] = swings
+	return entry
+
+
+func _test_mine_rock() -> void:
+	_begin("Picareta: pega do chão, minera a rocha e coleta as pedras")
+	var inventory: Inventory = _player.get_node("Inventory")
+	var world := _world_node(1)
+	world.target = _player
+	add_child(world)
+	await _frames(1)
+	var g := world.generator
+	var found := _find_deposit(world, &"pedra", FAR, 8)
+	_check(not found.is_empty(), "rocha de pedra achada")
+	if found.is_empty():
+		world.queue_free()
+		return
+	var rock: Vector3 = found[2]
+	world.generate_now(rock, 1)
+	var stand := rock + Vector3(1.6, 0.0, 0.0)
+	stand.y = g.surface_height(stand.x, stand.z)
+	# A picareta está no chão: PEGAR.
+	_clear_inventory()
+	await _reset(stand + Vector3.UP * 0.1, 0.0)
+	var tool_spot := stand + Vector3(0.0, 0.0, 0.9)
+	tool_spot.y = g.surface_height(tool_spot.x, tool_spot.z) + 0.4
+	var tool := WeaponPickup.spawn(load(WEAPONS[2]), Transform3D(Basis(Vector3.FORWARD, PI * 0.5), tool_spot), world)
+	await _frames(60)
+	await _aim_and_take(tool)
+	_check(inventory.has_tool(&"picareta") and inventory.equipped_item().id == &"picareta", "pegou a picareta e empunhou")
+	var entry := await _mine(world, found, stand)
+	_check(entry.get("first_clip", &"") == &"mine", "diante da rocha o golpe é o da picareta de cima para baixo (%s)" % entry.get("first_clip", &""))
+	_check(entry.get("health", 1.0) <= 0.0, "rocha quebrada em %d golpes" % entry.get("swings", 0))
+	await _frames(60)
+	var chunk := world.chunk_node(found[0])
+	var pieces: Array = []
+	for node in chunk.find_children("*", "ItemPickup", true, false):
+		if (node as ItemPickup).item.id == &"pedra":
+			pieces.append(node.get_parent())
+	_check(pieces.size() >= 3, "soltou %d pedras" % pieces.size())
+	# As pedras rolam encosta abaixo: espera assentarem. Pegar uma pode
+	# recolher a vizinha que estiver sob a mira, então a cada tentativa usa a
+	# primeira que ainda está no chão.
+	for attempt in 6:
+		if inventory.count(&"pedra") >= 2:
+			break
+		var piece: RigidBody3D = null
+		for candidate: Variant in pieces:
+			if is_instance_valid(candidate):
+				piece = candidate as RigidBody3D
+				break
+		if piece == null:
+			break
+		for wait in 12:
+			if piece.linear_velocity.length() < 0.05:
+				break
+			await _frames(10)
+		var near := piece.global_position + Vector3(0.7, 0.0, 0.2)
+		near.y = g.surface_height(near.x, near.z)
+		_player.teleport(near + Vector3.UP * 0.1)
+		await _frames(30)
+		await _aim_and_take(piece)
+	_check(inventory.count(&"pedra") >= 2, "coletou pedras (%d na mochila)" % inventory.count(&"pedra"))
+	_clear_inventory()
+	world.queue_free()
+	await _frames(5)
+
+
+func _test_zombie_combat() -> void:
+	_begin("Zumbi: persegue, ataca, apanha do taco (dano, recuo, cambaleio) e morre em ragdoll")
+	var equipment: PlayerEquipment = _player.get_node("Equipment")
+	var inventory: Inventory = _player.get_node("Inventory")
+	_clear_inventory()
+	await _reset(Vector3(30.0, 0.0, 10.0), YAW_TOWARD_POSITIVE_Z)
+	equipment.equip(load(WEAPONS[0]))
+	_check(equipment.weapon != null and equipment.weapon.id == &"taco", "taco empunhado")
+	var zombie := Zombie.new()
+	zombie.target = _player
+	_gym.add_child(zombie)
+	zombie.global_position = _player.global_position + _forward() * 6.0
+	zombie.rotation.y = PI # de costas: percebe pelo barulho/visão ao virar
+	await _frames(10)
+	var start_distance := zombie.global_position.distance_to(_player.global_position)
+	await _frames(150)
+	_check(zombie.state in [Zombie.State.CHASE, Zombie.State.ATTACK], "percebeu o jogador e persegue")
+	_check(zombie.global_position.distance_to(_player.global_position) < start_distance - 0.5,
+			"vem andando (%.1f → %.1f m)" % [start_distance, zombie.global_position.distance_to(_player.global_position)])
+	# Deixa o zumbi chegar e atacar.
+	var health_before := _health.current
+	var frames := 0
+	while _health.current >= health_before and frames < 600:
+		await _frames(1)
+		frames += 1
+	_check(_health.current < health_before, "o arranhão fere o jogador (%.0f → %.0f)" % [health_before, _health.current])
+	# Revida com o taco.
+	var zombie_health := zombie.health
+	var durability: float = inventory.equipped()["durability"]
+	var before := zombie.global_position
+	_look_at_point(zombie.global_position + Vector3.UP * 1.3)
+	await _frames(2)
+	await _hold(&"attack", 2)
+	await _frames(40)
+	_check(zombie.health < zombie_health, "o taco fere o zumbi (%.0f → %.0f)" % [zombie_health, zombie.health])
+	_check(zombie.state == Zombie.State.STAGGER or zombie.hits_taken > 0, "cambaleia com o golpe")
+	var pushed := Vector2(zombie.global_position.x - before.x, zombie.global_position.z - before.z)
+	var away := Vector2(before.x - _player.global_position.x, before.z - _player.global_position.z).normalized()
+	_check(pushed.dot(away) > 0.15, "recua na direção do golpe (%.2f m)" % pushed.dot(away))
+	_check(inventory.equipped()["durability"] < durability, "o taco se desgasta (%.0f → %.0f)" % [durability, inventory.equipped()["durability"]])
+	var hits := 1
+	while not zombie.is_dead() and hits < 15:
+		await _frames(20)
+		_look_at_point(zombie.global_position + Vector3.UP * 1.2)
+		await _hold(&"attack", 2)
+		await _frames(30)
+		hits += 1
+	_check(zombie.is_dead(), "morreu depois de %d golpes" % hits)
+	var simulator := zombie.find_child("PhysicalBoneSimulator3D", true, false) as PhysicalBoneSimulator3D
+	_check(simulator != null and simulator.active, "corpo vira ragdoll")
+	await _frames(60)
+	zombie.queue_free()
+	_health.revive()
+	_clear_inventory()
+	await _frames(5)
+
+
+func _test_bat_breaks() -> void:
+	_begin("Durabilidade: o taco gasto quebra no golpe")
+	var inventory: Inventory = _player.get_node("Inventory")
+	var equipment: PlayerEquipment = _player.get_node("Equipment")
+	var dummy := await _face_dummy()
+	_clear_inventory()
+	equipment.equip(load(WEAPONS[0]))
+	inventory.equipped()["durability"] = 1.0
+	var broken := []
+	var on_broken := func(item: ItemData) -> void: broken.append(item.id)
+	inventory.tool_broken.connect(on_broken)
+	await _frames(60)
+	var hits := dummy.hits
+	await _hold(&"attack", 2)
+	await _frames(60)
+	_check(dummy.hits == hits + 1, "último golpe ainda acerta")
+	_check(broken == [&"taco"] and not inventory.has_tool(&"taco") and equipment.weapon == null, "o taco quebrou: some da mochila e da mão")
+	inventory.tool_broken.disconnect(on_broken)
+	_clear_inventory()
+
+
+func _test_cave_exploration() -> void:
+	_begin("Cavernas: entrar pela boca, andar e correr nas galerias, minerar e sair")
+	var inventory: Inventory = _player.get_node("Inventory")
+	var world := _world_node(2)
+	world.target = _player
+	add_child(world)
+	await _frames(1)
+	var g := world.generator
+	var spawn := g.spawn_point()
+	var entrances := g.entrances_near(spawn, 330.0)
+	_check(entrances.size() >= 3, "%d entradas de caverna perto do ponto de partida" % entrances.size())
+	var nearest := INF
+	for e in entrances:
+		nearest = minf(nearest, Vector2((e["top"] as Vector3).x - spawn.x, (e["top"] as Vector3).z - spawn.z).length())
+	_check(nearest < 120.0, "uma entrada a %.0f m da partida" % nearest)
+	var mined := false
+	for e in entrances.slice(0, 2):
+		var top: Vector3 = e["top"]
+		var bottom: Vector3 = e["bottom"]
+		var down := Vector3(bottom.x - top.x, 0.0, bottom.z - top.z).normalized()
+		var start := top - down * 6.0
+		start.y = g.surface_height(start.x, start.z)
+		world.generate_now(start, 2)
+		await _reset(start + Vector3.UP * 0.1, 0.0)
+		var path := []
+		for i in range(1, 11):
+			path.append(top.lerp(bottom, i / 10.0))
+		path.append(bottom + down * 3.0)
+		var went_in := await _walk_path(path, false)
+		var depth := g.surface_height(_player.global_position.x, _player.global_position.z) - _player.global_position.y
+		_check(went_in and depth > 8.0, "desceu a rampa até a galeria (%.0f m sob a superfície)" % depth)
+		# Galeria: corre seguindo o eixo e agacha.
+		var here := bottom + down * 3.0
+		var heading := down
+		var gallery := []
+		for step in 4:
+			# A galeria pode cruzar a rampa de lado: procura até ±150°.
+			var turns := [0]
+			for k in range(1, 16):
+				turns.append_array([-k, k])
+			for k in turns:
+				var d: Vector3 = heading.rotated(Vector3.UP, k * deg_to_rad(10.0))
+				var q: Vector3 = here + d * 3.0
+				var ga := g.gallery_at(q.x, q.z, g.surface_height(q.x, q.z))
+				if ga.x < ga.y * 0.5:
+					here = q
+					heading = d
+					gallery.append(q)
+					break
+		var ran := await _walk_path(gallery, true)
+		_check(ran and gallery.size() >= 3, "correu %d m pela galeria" % (gallery.size() * 3))
+		await _hold(&"crouch_toggle", 2)
+		await _frames(30)
+		_check(_player._crouch_toggled and _player.is_on_floor(), "agacha dentro da caverna")
+		await _hold(&"crouch_toggle", 2)
+		await _frames(30)
+		# Minerar dentro: o minério mais perto ao alcance da galeria.
+		if not mined:
+			var ore := _nearest_ore(world, _player.global_position, 28.0)
+			if not ore.is_empty():
+				_clear_inventory()
+				(_player.get_node("Equipment") as PlayerEquipment).equip(load(WEAPONS[2]))
+				var deposit: Vector3 = ore[2]
+				var stand := deposit + Vector3((_player.global_position - deposit).x, 0.0, (_player.global_position - deposit).z).normalized() * 1.7
+				var fy := deposit.y + 2.0
+				while g.density(stand.x, fy - 0.1, stand.z) < 0.0 and fy > deposit.y - 3.0:
+					fy -= 0.1
+				stand.y = fy
+				var entry := await _mine(world, ore, stand)
+				_check(entry.get("health", 1.0) <= 0.0, "quebrou o %s dentro da caverna em %d golpes" % [ore[3], entry.get("swings", 0)])
+				await _frames(60)
+				for node in world.chunk_node(ore[0]).find_children("*", "ItemPickup", true, false):
+					var id := (node as ItemPickup).item.id
+					if (id == &"carvao" or id == &"ferro") and inventory.count(&"carvao") + inventory.count(&"ferro") == 0:
+						var piece := node.get_parent() as Node3D
+						var near := piece.global_position + (_player.global_position - piece.global_position).normalized() * 0.7
+						near.y = piece.global_position.y + 0.1
+						_player.teleport(near)
+						await _frames(30)
+						await _aim_and_take(piece)
+				mined = (inventory.count(&"carvao") + inventory.count(&"ferro")) > 0
+				_check(mined, "coletou o minério (%d carvão, %d ferro)" % [inventory.count(&"carvao"), inventory.count(&"ferro")])
+				_clear_inventory()
+				_player.teleport(bottom + Vector3.UP * 0.3)
+				await _frames(30)
+		# Volta: sobe a rampa e sai.
+		var back := []
+		for i in range(9, -1, -1):
+			back.append(top.lerp(bottom, i / 10.0))
+		back.append(start)
+		var out := await _walk_path(back, false)
+		var sky := g.sky_visibility(_player.global_position + Vector3.UP)
+		_check(out and sky > 0.9, "saiu da caverna e voltou ao ar livre (céu %.2f)" % sky)
+	world.queue_free()
+	await _frames(5)
+
+
+func _nearest_ore(world: ProceduralWorld, near: Vector3, radius: float) -> Array:
+	var best := []
+	var best_distance := radius
+	for coord in world.loaded_chunks():
+		var resources := world.resources_of(coord)
+		if resources == null:
+			continue
+		for e in resources.entries():
+			if e["kind"] != &"deposito" or e["health"] <= 0.0 or e["type"] == &"pedra":
+				continue
+			var t: Transform3D = e["transform"]
+			var d := t.origin.distance_to(near)
+			if d < best_distance:
+				best_distance = d
+				var key: String = e["key"]
+				var parts := key.split("_")
+				best = [Vector2i(int(parts[1]), int(parts[2])), int(parts[3]), t.origin, e["type"]]
+	return best
+
+
+## Anda (ou corre) por uma lista de pontos, mirando em cada um. Falso se
+## travar (sem avançar por 3 s) ou demorar demais.
+func _walk_path(points: Array, run: bool) -> bool:
+	if run:
+		Input.action_press(&"sprint")
+	for target: Vector3 in points:
+		var frames := 0
+		var last := _player.global_position
+		var stuck := 0
+		Input.action_press(&"move_forward")
+		while Vector2(_player.global_position.x - target.x, _player.global_position.z - target.z).length() > 1.5:
+			var d := target - _player.global_position
+			_player.set_view_rotation(atan2(-d.x, -d.z), 0.0)
+			await _frames(1)
+			frames += 1
+			if frames % 60 == 0:
+				if _player.global_position.distance_to(last) < 0.5:
+					stuck += 1
+				last = _player.global_position
+			if stuck >= 3 or frames > 900:
+				_release_all()
+				return false
+	_release_all()
+	return true
+
+
+func _test_cave_geometry() -> void:
+	_begin("Cavernas: chão caminhável, altura livre, rampas e nenhum buraco fora das entradas")
+	var g := WorldGenerator.new(WORLD_SEED)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7
+	var floors := 0
+	var steep := 0
+	var low := 0
+	var tries := 0
+	while floors < 300 and tries < 30000:
+		tries += 1
+		var x := rng.randf_range(-700.0, 700.0)
+		var z := rng.randf_range(-700.0, 700.0)
+		var s := g.surface_height(x, z)
+		var ga := g.gallery_at(x, z, s)
+		if ga.x > ga.y * 0.75:
+			continue
+		var fy := ga.w + 2.0
+		if g.density(x, fy, z) >= 0.0:
+			continue
+		while g.density(x, fy - 0.1, z) < 0.0 and fy > ga.w - 4.0:
+			fy -= 0.1
+		floors += 1
+		var e := 0.3
+		var normal := -Vector3(g.density(x + e, fy - 0.1, z) - g.density(x - e, fy - 0.1, z),
+				g.density(x, fy - 0.1 + e, z) - g.density(x, fy - 0.1 - e, z),
+				g.density(x, fy - 0.1, z + e) - g.density(x, fy - 0.1, z - e)).normalized()
+		if normal.y < cos(deg_to_rad(40.0)):
+			steep += 1
+		var h := 0.0
+		while h < 4.0 and g.density(x, fy + h + 0.1, z) < 0.0:
+			h += 0.1
+		if h < 2.1:
+			low += 1
+	_check(floors >= 200, "%d pontos de chão de galeria medidos" % floors)
+	_check(steep <= floors * 0.03, "chão com mais de 40°: %.1f%%" % (steep * 100.0 / maxi(floors, 1)))
+	_check(low <= floors * 0.03, "altura livre abaixo de 2,1 m: %.1f%%" % (low * 100.0 / maxi(floors, 1)))
+	# Rampas: inclinação média caminhável e nunca um degrau impossível.
+	var worst := 0.0
+	var ramps := g.entrances_near(Vector3.ZERO, 500.0)
+	for ramp in ramps:
+		var top: Vector3 = ramp["top"]
+		var bottom: Vector3 = ramp["bottom"]
+		var step := Vector2(top.x - bottom.x, top.z - bottom.z).length() / 40.0
+		var previous := top.y
+		var smoothed := []
+		for i in range(0, 41):
+			var p := top.lerp(bottom, i / 40.0)
+			var fy := lerpf(top.y, bottom.y, minf(i / 40.0 / 0.8, 1.0)) + 1.5
+			while g.density(p.x, fy - 0.1, p.z) < 0.0 and fy > -40.0:
+				fy -= 0.1
+			smoothed.append(fy)
+		for i in range(4, 41, 4):
+			worst = maxf(worst, rad_to_deg(atan2(absf(smoothed[i] - smoothed[i - 4]), step * 4.0)))
+	_check(ramps.size() >= 5 and worst < 32.0, "%d rampas de entrada; trecho mais íngreme %.0f° (limite do personagem 46°)" % [ramps.size(), worst])
+	# Buracos: chão que se abre fora das rampas (antes eram poços).
+	var holes := 0
+	for i in 4000:
+		var x := rng.randf_range(-900.0, 900.0)
+		var z := rng.randf_range(-900.0, 900.0)
+		var s := g.surface_height(x, z)
+		if g.density(x, s - 1.5, z) < 0.0:
+			var in_ramp := false
+			for ramp in g.entrances_near(Vector3(x, 0.0, z), 200.0):
+				var a := Vector2((ramp["top"] as Vector3).x, (ramp["top"] as Vector3).z)
+				var b := Vector2((ramp["bottom"] as Vector3).x, (ramp["bottom"] as Vector3).z)
+				if Geometry2D.get_closest_point_to_segment(Vector2(x, z), a, b).distance_to(Vector2(x, z)) < 10.0:
+					in_ramp = true
+			if not in_ramp:
+				holes += 1
+	_check(holes == 0, "nenhum buraco na superfície fora das rampas (%d)" % holes)
+
+
+func _test_headlamp() -> void:
+	_begin("Lanterna: na testa, sem sombra do próprio corpo, segue a mira; acende na caverna")
+	var world := _world_node(1)
+	world.target = _player
+	add_child(world)
+	await _frames(1)
+	var g := world.generator
+	var ramp: Dictionary = g.entrances_near(FAR, 400.0)[0]
+	var top: Vector3 = ramp["top"]
+	var bottom: Vector3 = ramp["bottom"]
+	var environment := WorldEnvironment.new()
+	environment.environment = Environment.new()
+	environment.environment.ambient_light_energy = 1.0
+	add_child(environment)
+	var atmosphere := CaveAtmosphere.new()
+	atmosphere.world = world
+	atmosphere.camera = _camera
+	atmosphere.eyes = _player.get_node("Head/CameraEffects")
+	atmosphere.body = _body
+	atmosphere.environment = environment
+	atmosphere.adapt_time = 0.3
+	add_child(atmosphere)
+	var player_layer := CaveAtmosphere.PLAYER_RENDER_LAYER
+	var meshes := _body.find_children("*", "GeometryInstance3D", true, false)
+	var on_layer := 0
+	for mesh: GeometryInstance3D in meshes:
+		if mesh.layers == player_layer:
+			on_layer += 1
+	_check(on_layer == meshes.size(), "corpo do sobrevivente na camada do jogador (%d de %d malhas)" % [on_layer, meshes.size()])
+	var lamp := atmosphere.headlamp
+	_check(lamp.shadow_enabled and (lamp.shadow_caster_mask & player_layer) == 0 and (lamp.light_cull_mask & player_layer) == 0,
+			"foco com sombra, mas o corpo não projeta sombra nele nem fica estourado por ele")
+	_check(not atmosphere.spill.shadow_enabled and not atmosphere.body_fill.shadow_enabled and (atmosphere.body_fill.light_cull_mask == player_layer),
+			"um único mapa de sombras (halo e luz do corpo sem sombra; celular)")
+	# Ar livre.
+	var outside := top - Vector3(bottom.x - top.x, 0.0, bottom.z - top.z).normalized() * 10.0
+	outside.y = g.surface_height(outside.x, outside.z)
+	world.generate_now(outside, 1)
+	await _reset(outside + Vector3.UP * 0.1, 0.0)
+	await _frames(60)
+	_check(atmosphere.underground < 0.05 and not lamp.visible, "ao ar livre a lanterna fica apagada (dia)")
+	# Boca da rampa: transição.
+	var mouth := top.lerp(bottom, 0.15)
+	mouth.y = lerpf(top.y, bottom.y, 0.15 / 0.8) + 0.2
+	world.generate_now(mouth, 1)
+	_player.teleport(mouth)
+	await _frames(90)
+	var at_mouth := atmosphere.underground
+	# Fundo da galeria.
+	var deep := bottom + Vector3.UP * 0.3
+	world.generate_now(deep, 1)
+	_player.teleport(deep)
+	_player.set_view_rotation(0.0, 0.0)
+	_rig.set_third_person(false)
+	_rig.snap()
+	await _frames(90)
+	_check(at_mouth > 0.05 and at_mouth < atmosphere.underground, "escurece aos poucos: boca %.2f, fundo %.2f" % [at_mouth, atmosphere.underground])
+	_check(atmosphere.underground > 0.9 and lamp.visible and lamp.light_energy > 3.0, "dentro da caverna acende (%.1f)" % lamp.light_energy)
+	var eyes: Vector3 = atmosphere.eyes.global_position
+	var offset := lamp.global_position - eyes
+	_check(offset.y > 0.03 and offset.length() < 0.2, "na testa: %.0f cm acima e %.0f cm dos olhos" % [offset.y * 100.0, offset.length() * 100.0])
+	var level := lamp.global_position
+	for pitch in [-1.2, 1.0]:
+		_player.set_view_rotation(0.0, pitch)
+		_rig.snap()
+		await _frames(10)
+		var aim := -_camera.global_basis.z
+		var moved := lamp.global_position.distance_to(atmosphere.forehead())
+		_check((-lamp.global_basis.z).dot(aim) > 0.99 and moved < 0.01,
+				"olhando para %s: foco segue a mira e a lanterna fica na testa" % ("o chão" if pitch < 0.0 else "o teto"))
+	_check(level.distance_to(atmosphere.forehead()) < 0.15, "olhar para cima/baixo não leva a lanterna para dentro do peito ou do gorro")
+	# Colado na parede: a lanterna não entra na rocha.
+	_player.set_view_rotation(0.0, 0.0)
+	var side := Vector3(1.0, 0.0, 0.0)
+	var p := deep
+	while g.density(p.x + side.x * 1.0, p.y + 1.6, p.z + side.z * 1.0) < 0.0 and p.distance_to(deep) < 10.0:
+		p += side * 0.25
+	_player.teleport(p)
+	_player.set_view_rotation(-PI * 0.5, 0.0)
+	_rig.snap()
+	await _frames(30)
+	_check(g.density(lamp.global_position.x, lamp.global_position.y, lamp.global_position.z) < 0.0,
+			"de cara para a parede a lanterna continua no ar, fora da rocha")
+	# Câmera em movimento e 3ª pessoa.
+	for i in 30:
+		_player.set_view_rotation(i * 0.1, sin(i * 0.3) * 0.5)
+		await _frames(1)
+	_check((-lamp.global_basis.z).dot(-_camera.global_basis.z) > 0.99, "girando a câmera, o foco acompanha")
+	_rig.set_third_person(true)
+	_rig.snap()
+	await _frames(30)
+	_check(lamp.global_position.distance_to(atmosphere.eyes.global_position) < 0.2 and lamp.global_position.distance_to(_camera.global_position) > 1.0,
+			"em 3ª pessoa a luz sai da testa do personagem, não da câmera")
+	_rig.set_third_person(false)
+	atmosphere.queue_free()
+	environment.queue_free()
+	world.queue_free()
+	for mesh: GeometryInstance3D in meshes:
+		mesh.layers = 1
+	await _frames(5)
 
 
 func _test_ragdoll_death_and_respawn() -> void:

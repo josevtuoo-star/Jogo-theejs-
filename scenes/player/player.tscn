@@ -1,4 +1,4 @@
-[gd_scene load_steps=15 format=3]
+[gd_scene load_steps=16 format=3]
 
 [ext_resource type="Script" path="res://scripts/player/player_controller.gd" id="1_controller"]
 [ext_resource type="Resource" path="res://resources/player/default_movement_settings.tres" id="2_settings"]
@@ -12,6 +12,7 @@
 [ext_resource type="Script" path="res://scripts/player/player_death.gd" id="11_death"]
 [ext_resource type="Script" path="res://scripts/audio/player_sounds.gd" id="12_sounds"]
 [ext_resource type="Script" path="res://scripts/weapons/player_equipment.gd" id="13_equipment"]
+[ext_resource type="Script" path="res://scripts/inventory/inventory.gd" id="20_inventory"]
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_body"]
 radius = 0.3
@@ -19,7 +20,7 @@ height = 1.8
 
 [node name="Player" type="CharacterBody3D" node_paths=PackedStringArray("health", "head", "collision_shape") groups=["player"]]
 collision_layer = 2
-collision_mask = 5
+collision_mask = 13
 script = ExtResource("1_controller")
 settings = ExtResource("2_settings")
 default_surface = ExtResource("5_surface")
@@ -95,7 +96,13 @@ health = NodePath("../Health")
 combat = NodePath("../Combat")
 interaction = NodePath("../Interaction")
 
-[node name="Equipment" type="Node" parent="." node_paths=PackedStringArray("player", "body")]
+[node name="Equipment" type="Node" parent="." node_paths=PackedStringArray("player", "body", "inventory")]
 script = ExtResource("13_equipment")
 player = NodePath("..")
 body = NodePath("../Survivor")
+inventory = NodePath("../Inventory")
+
+[node name="Inventory" type="Node" parent="." node_paths=PackedStringArray("player", "equipment")]
+script = ExtResource("20_inventory")
+player = NodePath("..")
+equipment = NodePath("../Equipment")

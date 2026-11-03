@@ -103,6 +103,28 @@ for i, (start, end) in enumerate([(0.0, 1.05), (1.05, 2.2), (2.2, 3.17)]):
 
 # Mundo
 add("world/fogueira.ogg", "L:fire-1.ogg", -20)
+
+# Coleta (etapa 8): machado na árvore, árvore rachando e caindo; picareta na
+# rocha, rocha quebrando e pedras caindo (todos do pacote CC0 do rubberduck).
+for i, n in enumerate(["01", "02", "03", "04"]):
+    add(f"world/arvore_racha_{i}.ogg", f"P:sfx_breaking_and_falling/bfh1_wood_breaking_{n}.ogg", -15)
+add("world/pedra_golpe_0.ogg", "P:sfx_breaking_and_falling/bfh1_rock_hit_01.ogg", -16)
+for i, n in enumerate(["02", "04", "06"]):
+    add(f"world/pedra_golpe_{i + 1}.ogg", f"P:sfx_breaking_and_falling/bfh1_hit_{n}.ogg", -17, extra="lowpass=f=3500")
+for i, n in enumerate(["01", "02", "03"]):
+    add(f"world/pedra_quebra_{i}.ogg", f"P:sfx_breaking_and_falling/bfh1_rock_breaking_{n}.ogg", -15)
+for i, n in enumerate(["01", "03", "05", "07"]):
+    add(f"world/pedra_cai_{i}.ogg", f"P:sfx_breaking_and_falling/bfh1_rock_falling_{n}.ogg", -18)
+
+# Zumbis: a voz do sobrevivente (qubodup, CC0) bem mais grave, rouca e
+# abafada (sem cópia de outro jogo).
+ZOMBIE = "asetrate=44100*0.62,aresample=44100,lowpass=f=2200,highpass=f=80,aecho=0.6:0.4:40:0.3"
+for i, n in enumerate(["02", "04", "06", "08", "10"]):
+    add(f"voice/zumbi_geme_{i}.ogg", f"P:slightscreams/slightscream-{n}.flac", -19, extra=ZOMBIE)
+for i, n in enumerate(["01", "03", "05"]):
+    add(f"voice/zumbi_ataque_{i}.ogg", f"P:slightscreams/slightscream-{n}.flac", -16, extra=ZOMBIE)
+for i, n in enumerate(["13", "14", "15"]):
+    add(f"voice/zumbi_morte_{i}.ogg", f"P:slightscreams/slightscream-{n}.flac", -16, extra=ZOMBIE)
 # Sem trilha nem passarinhos: o único ambiente é o vento (gerado abaixo),
 # com a intensidade controlada pelo sistema de vento do jogo.
 

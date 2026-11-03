@@ -57,6 +57,9 @@ ASSETS = [
     ("rust_coarse_01", "textures", "1k"),
     ("road_damaged", "textures", "1k"),
     ("mossy_rock", "textures", "1k"),
+    # Cavernas (etapa 8): estratos da rocha e chão de cascalho
+    ("cliff_side", "textures", "1k"),
+    ("brown_mud_rocks_01", "textures", "1k"),
 ]
 
 # Mapas usados de cada textura (formato jpg; normal no padrão OpenGL usado pelo Godot).

@@ -1,10 +1,13 @@
 class_name WeaponPickup
 extends Interactable
-## Arma no chão: um corpo físico de verdade (cai, rola, soa ao bater) que o
-## jogador pega com USAR. Quem pega é o PlayerEquipment do jogador; se ele já
-## segurava outra arma, a outra cai no lugar desta.
+## Ferramenta no chão: um corpo físico de verdade (cai, rola, soa ao bater)
+## que o jogador pega com PEGAR. Ela entra na mochila (barra rápida), com a
+## durabilidade que tinha; com as mãos livres, já vai para a mão. O
+## Interactable é desligado ao pegar: não dá para pegar duas vezes.
 
 @export var weapon: WeaponData
+## Durabilidade restante (< 0 = nova).
+@export var durability: float = -1.0
 
 
 func _ready() -> void:
@@ -14,17 +17,18 @@ func _ready() -> void:
 
 
 func _on_interacted(by: Node) -> void:
-	var equipment := by.get_node_or_null("Equipment") as PlayerEquipment
-	if equipment == null or weapon == null:
+	var inventory := by.get_node_or_null("Inventory") as Inventory
+	if inventory == null or weapon == null or not enabled:
 		return
-	var body := get_parent() as Node3D
-	equipment.equip(weapon, body.global_transform if body != null else Transform3D.IDENTITY)
-	if body != null:
-		body.queue_free()
+	if inventory.add(ItemData.find(weapon.id), 1, durability):
+		enabled = false
+		var body := get_parent() as Node3D
+		if body != null:
+			body.queue_free()
 
 
 ## Cria o corpo físico de uma arma solta no mundo.
-static func spawn(data: WeaponData, where: Transform3D, parent: Node) -> RigidBody3D:
+static func spawn(data: WeaponData, where: Transform3D, parent: Node, wear: float = -1.0) -> RigidBody3D:
 	var body := RigidBody3D.new()
 	body.name = "Arma_" + String(data.id)
 	body.mass = data.mass
@@ -48,7 +52,27 @@ static func spawn(data: WeaponData, where: Transform3D, parent: Node) -> RigidBo
 	var pickup := WeaponPickup.new()
 	pickup.name = "WeaponPickup"
 	pickup.weapon = data
+	pickup.durability = wear
 	body.add_child(pickup)
 	parent.add_child(body)
 	body.global_transform = where
 	return body
+
+# Rede de segurança: o terreno é uma casca; se o corpo atravessar o chão
+# (nasceu dentro de um morro, foi empurrado contra a parede), volta ao último
+# lugar onde estava parado.
+var _rest_position := Vector3.INF
+
+
+func _physics_process(_delta: float) -> void:
+	var body := get_parent() as RigidBody3D
+	if body == null:
+		return
+	if body.linear_velocity.length_squared() < 0.04:
+		_rest_position = body.global_position
+	elif _rest_position == Vector3.INF:
+		_rest_position = body.global_position + Vector3.UP * 0.5
+	if body.global_position.y < _rest_position.y - 25.0:
+		body.linear_velocity = Vector3.ZERO
+		body.angular_velocity = Vector3.ZERO
+		body.global_position = _rest_position + Vector3.UP * 0.6

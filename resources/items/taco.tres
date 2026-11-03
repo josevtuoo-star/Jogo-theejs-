@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="ItemData" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/inventory/item_data.gd" id="1_sj7br"]
+[ext_resource type="Resource" path="res://resources/weapons/taco.tres" id="2_a5w8u"]
+[ext_resource type="ArrayMesh" path="res://resources/models/weapons/taco.res" id="3_8ucal"]
+
+[resource]
+script = ExtResource("1_sj7br")
+id = &"taco"
+display_name = "Taco com pregos"
+kind = 0
+world_mesh = ExtResource("3_8ucal")
+mass = 1.2
+weapon = ExtResource("2_a5w8u")
+max_durability = 60.0
+impact_material = &"madeira"

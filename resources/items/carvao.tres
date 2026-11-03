@@ -1,0 +1,12 @@
+[gd_resource type="Resource" script_class="ItemData" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/inventory/item_data.gd" id="1_0m58r"]
+[ext_resource type="ArrayMesh" path="res://resources/models/world/pedaco_carvao.res" id="2_y08bc"]
+
+[resource]
+script = ExtResource("1_0m58r")
+id = &"carvao"
+display_name = "Carvão"
+world_mesh = ExtResource("2_y08bc")
+mass = 0.8
+max_durability = 1.0

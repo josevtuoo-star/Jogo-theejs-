@@ -127,3 +127,16 @@ Todos CC0 1.0 (OpenGameArt), exceto o vento, gerado pelo projeto. Pacotes, pági
 | `ambience/vento.ogg` | gerado por `tools/prepare_audio.py` (ruído marrom + rosa, constante; volume, tom e filtro vêm do sistema de vento do jogo) | do projeto |
 
 Removidos na etapa 7: `ambience/floresta.ogg` (Forest Ambience, TinyWorlds) e `ambience/passaros.ogg` (Ambient Bird Sounds, isaiah658) — o ambiente agora é só o vento.
+
+## Etapa 8: coleta e zumbis
+
+| Arquivo | Origem no pacote | Autor |
+|---|---|---|
+| `world/arvore_racha_0..3.ogg` | `sfx_breaking_and_falling/bfh1_wood_breaking_01..04.ogg` | rubberduck |
+| `world/pedra_golpe_0.ogg` | `sfx_breaking_and_falling/bfh1_rock_hit_01.ogg` | rubberduck |
+| `world/pedra_golpe_1..3.ogg` | `sfx_breaking_and_falling/bfh1_hit_02/04/06.ogg` (passa-baixa) | rubberduck |
+| `world/pedra_quebra_0..2.ogg` | `sfx_breaking_and_falling/bfh1_rock_breaking_01..03.ogg` | rubberduck |
+| `world/pedra_cai_0..3.ogg` | `sfx_breaking_and_falling/bfh1_rock_falling_01/03/05/07.ogg` | rubberduck |
+| `voice/zumbi_geme_0..4.ogg` | `slightscreams/slightscream-02/04/06/08/10.flac` (62% da velocidade, passa-baixa, eco curto) | qubodup |
+| `voice/zumbi_ataque_0..2.ogg` | `slightscreams/slightscream-01/03/05.flac` (idem) | qubodup |
+| `voice/zumbi_morte_0..2.ogg` | `slightscreams/slightscream-13/14/15.flac` (idem) | qubodup |

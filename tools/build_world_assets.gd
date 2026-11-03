@@ -55,6 +55,7 @@ func _initialize() -> void:
 	for name in WRECKS:
 		var mesh := _wreck(name, WRECKS[name], materials)
 		_save(name, mesh)
+	_procedural()
 	for name in PROPS:
 		var parts := MeshTools.simplified(MeshTools.flatten(PH + "%s/%s_1k.gltf" % [name, name]), PROPS[name])
 		var box := MeshTools.bounds(parts)
@@ -146,3 +147,180 @@ func _dent(v: Vector3, length: float) -> Vector3:
 	var p := v * (4.0 / length)
 	return Vector3(_noise.get_noise_3dv(p), _noise.get_noise_3dv(p + Vector3(31.0, 0.0, 0.0)) * 1.4,
 			_noise.get_noise_3dv(p + Vector3(0.0, 0.0, 57.0))) * 0.035
+
+
+# --- Malhas procedurais das cavernas e dos recursos (etapa 8) ------------------
+
+const CAVE_ROCK := "res://assets/polyhaven/textures/cliff_side/cliff_side_albedo_1k.jpg"
+
+
+func _rock_material(file: String, tint: Color, fleck: Color, amount: float, metallic: float, roughness: float, wet: float) -> ShaderMaterial:
+	var material := ShaderMaterial.new()
+	material.shader = load("res://resources/materials/cave_rock.gdshader")
+	material.set_shader_parameter("rock_albedo", load(CAVE_ROCK))
+	material.set_shader_parameter("tint", tint)
+	material.set_shader_parameter("fleck_color", fleck)
+	material.set_shader_parameter("fleck_amount", amount)
+	material.set_shader_parameter("fleck_metallic", metallic)
+	material.set_shader_parameter("fleck_roughness", roughness)
+	material.set_shader_parameter("wetness", wet)
+	ResourceSaver.save(material, OUT + file)
+	return load(OUT + file)
+
+
+func _procedural() -> void:
+	var formation := _rock_material("rocha_caverna.tres", Color(0.95, 0.9, 0.84), Color.BLACK, 0.0, 0.0, 0.8, 0.45)
+	var coal := _rock_material("minerio_carvao.tres", Color(0.5, 0.48, 0.46), Color(0.03, 0.03, 0.035), 0.7, 0.15, 0.3, 0.2)
+	var iron := _rock_material("minerio_ferro.tres", Color(0.55, 0.5, 0.46), Color(0.34, 0.14, 0.06), 0.62, 0.1, 0.7, 0.2)
+	var stone := _rock_material("pedra_solta.tres", Color(1.0, 0.97, 0.92), Color.BLACK, 0.0, 0.0, 0.85, 0.1)
+	_save("estalagmite", _spire(1.7, 0.42, 1.0, 11, formation))
+	_save("estalactite", _spire(1.4, 0.3, -1.0, 12, formation))
+	_save("minerio_carvao", _lump(0.75, Vector3(1.0, 0.95, 0.9), 0.15, 21, coal, 3))
+	_save("minerio_ferro", _lump(0.75, Vector3(1.0, 0.95, 0.85), 0.15, 22, iron, 3))
+	# Pedaços coletáveis (cabem na mão).
+	_save("pedaco_pedra", _lump(0.11, Vector3(1.0, 0.75, 0.9), 0.3, 31, stone))
+	# Pedaços já separados da rocha: quase só mineral.
+	var coal_piece := _rock_material("carvao_pedaco.tres", Color(0.12, 0.12, 0.13), Color(0.02, 0.02, 0.025), 0.75, 0.2, 0.25, 0.0)
+	var iron_piece := _rock_material("ferro_pedaco.tres", Color(0.62, 0.36, 0.26), Color(0.32, 0.14, 0.07), 0.7, 0.15, 0.7, 0.0)
+	_save("pedaco_carvao", _lump(0.09, Vector3(1.0, 0.8, 0.85), 0.3, 32, coal_piece))
+	_save("pedaco_ferro", _lump(0.1, Vector3(1.0, 0.8, 0.9), 0.3, 33, iron_piece))
+	_save("tora", _log(0.85, 0.13))
+
+
+## Estalagmite (direction 1, base em y = 0, ponta para cima) ou estalactite
+## (direction -1, presa no teto em y = 0, ponta para baixo): cone irregular
+## com anéis de crescimento.
+func _spire(height: float, radius: float, direction: float, seed_value: int, material: Material) -> ArrayMesh:
+	var noise := FastNoiseLite.new()
+	noise.seed = seed_value
+	noise.frequency = 2.2
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var sides := 12
+	var rings := 10
+	var points := []
+	for r in rings + 1:
+		var t := float(r) / rings
+		var ring := []
+		var profile := radius * pow(1.0 - t, 0.85) + 0.015
+		# Anéis de crescimento: o raio pulsa ao longo da altura.
+		profile *= 1.0 + 0.08 * sin(t * 23.0)
+		for k in sides:
+			var angle := TAU * k / sides
+			var dir := Vector3(cos(angle), 0.0, sin(angle))
+			var y := t * height * direction
+			var bump := 1.0 + noise.get_noise_3d(dir.x * 2.0, y * 1.5, dir.z * 2.0) * 0.28
+			ring.append(dir * profile * bump + Vector3(0.0, y, 0.0) + Vector3(0.04, 0.0, 0.03) * t * t * direction)
+		points.append(ring)
+	var tip := Vector3(0.0, height * direction * 1.04, 0.0)
+	for r in rings:
+		for k in sides:
+			var a: Vector3 = points[r][k]
+			var b: Vector3 = points[r][(k + 1) % sides]
+			var c: Vector3 = points[r + 1][(k + 1) % sides]
+			var d: Vector3 = points[r + 1][k]
+			_quad_faces(st, a, b, c, d, direction > 0.0)
+	for k in sides:
+		var a: Vector3 = points[rings][k]
+		var b: Vector3 = points[rings][(k + 1) % sides]
+		if direction > 0.0:
+			st.add_vertex(a); st.add_vertex(tip); st.add_vertex(b)
+		else:
+			st.add_vertex(a); st.add_vertex(b); st.add_vertex(tip)
+	st.generate_normals()
+	var mesh := st.commit()
+	mesh.surface_set_material(0, material)
+	return mesh
+
+
+func _quad_faces(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3, d: Vector3, outward: bool) -> void:
+	if outward:
+		for v in [a, c, b, a, d, c]:
+			st.add_vertex(v)
+	else:
+		for v in [a, b, c, a, c, d]:
+			st.add_vertex(v)
+
+
+## Bloco de rocha irregular: icosaedro subdividido, achatado e deformado por
+## ruído; base achatada para assentar no chão.
+func _lump(radius: float, squash: Vector3, roughness: float, seed_value: int, material: Material, subdivisions: int = 2) -> ArrayMesh:
+	var noise := FastNoiseLite.new()
+	noise.seed = seed_value
+	noise.frequency = 1.4
+	noise.fractal_octaves = 3
+	var sphere := _icosphere(subdivisions)
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var moved := {}
+	for v: Vector3 in sphere[0]:
+		var bump := 1.0 + noise.get_noise_3dv(v * 1.3) * roughness * 2.0
+		var p := v * bump * radius * squash
+		p.y = maxf(p.y, -radius * squash.y * 0.55)
+		moved[v] = p + Vector3(0.0, radius * squash.y * 0.55, 0.0)
+	var indices: PackedInt32Array = sphere[1]
+	var vertices: PackedVector3Array = sphere[0]
+	for i in indices.size():
+		st.add_vertex(moved[vertices[indices[i]]])
+	st.generate_normals()
+	var mesh := st.commit()
+	mesh.surface_set_material(0, material)
+	return mesh
+
+
+## Icosaedro subdividido (vértices unitários e índices).
+func _icosphere(subdivisions: int) -> Array:
+	var t := (1.0 + sqrt(5.0)) / 2.0
+	var vertices := PackedVector3Array([
+		Vector3(-1, t, 0), Vector3(1, t, 0), Vector3(-1, -t, 0), Vector3(1, -t, 0),
+		Vector3(0, -1, t), Vector3(0, 1, t), Vector3(0, -1, -t), Vector3(0, 1, -t),
+		Vector3(t, 0, -1), Vector3(t, 0, 1), Vector3(-t, 0, -1), Vector3(-t, 0, 1)])
+	for i in vertices.size():
+		vertices[i] = vertices[i].normalized()
+	var faces := [[0, 11, 5], [0, 5, 1], [0, 1, 7], [0, 7, 10], [0, 10, 11], [1, 5, 9], [5, 11, 4],
+		[11, 10, 2], [10, 7, 6], [7, 1, 8], [3, 9, 4], [3, 4, 2], [3, 2, 6], [3, 6, 8], [3, 8, 9],
+		[4, 9, 5], [2, 4, 11], [6, 2, 10], [8, 6, 7], [9, 8, 1]]
+	for level in subdivisions:
+		var cache := {}
+		var next := []
+		for f in faces:
+			var m := []
+			for e in [[f[0], f[1]], [f[1], f[2]], [f[2], f[0]]]:
+				var key := Vector2i(mini(e[0], e[1]), maxi(e[0], e[1]))
+				if not cache.has(key):
+					cache[key] = vertices.size()
+					vertices.append(((vertices[e[0]] + vertices[e[1]]) * 0.5).normalized())
+				m.append(cache[key])
+			next.append_array([[f[0], m[0], m[2]], [f[1], m[1], m[0]], [f[2], m[2], m[1]], [m[0], m[1], m[2]]])
+		faces = next
+	var indices := PackedInt32Array()
+	for f in faces:
+		# Ordem invertida: frente horária no Godot, vista de fora.
+		indices.append_array([f[0], f[2], f[1]])
+	return [vertices, indices]
+
+
+## Tora de madeira: cilindro de casca de pinheiro com os topos claros.
+func _log(length: float, radius: float) -> ArrayMesh:
+	var cylinder := CylinderMesh.new()
+	cylinder.top_radius = radius
+	cylinder.bottom_radius = radius * 1.05
+	cylinder.height = length
+	cylinder.radial_segments = 10
+	cylinder.rings = 1
+	var arrays := cylinder.get_mesh_arrays()
+	# Deitada ao longo de X, apoiada no chão.
+	var xform := Transform3D(Basis(Vector3.FORWARD, PI * 0.5), Vector3(0.0, radius, 0.0))
+	arrays = MeshTools.transformed(arrays, xform)
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	var bark := ORMMaterial3D.new()
+	var folder := "res://assets/polyhaven/textures/pine_bark/pine_bark_"
+	bark.albedo_texture = load(folder + "albedo_1k.jpg")
+	bark.normal_enabled = true
+	bark.normal_texture = load(folder + "normal_1k.jpg")
+	bark.orm_texture = load(folder + "arm_1k.jpg")
+	bark.uv1_scale = Vector3(1.0, 1.5, 1.0)
+	mesh.surface_set_material(0, bark)
+	return mesh
+

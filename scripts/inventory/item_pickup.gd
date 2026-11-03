@@ -1,0 +1,76 @@
+class_name ItemPickup
+extends Interactable
+## Recurso solto no chão (madeira, pedra, carvão, ferro): corpo físico que o
+## jogador pega com PEGAR. Ao pegar, entra na mochila e some do chão. O
+## Interactable é desligado no mesmo instante: não dá para pegar duas vezes.
+
+@export var item: ItemData
+@export var amount: int = 1
+
+
+func _ready() -> void:
+	if item != null:
+		prompt = "Pegar %s%s" % [item.display_name.to_lower(), " (%d)" % amount if amount > 1 else ""]
+	interacted.connect(_on_interacted)
+
+
+func _on_interacted(by: Node) -> void:
+	var inventory := by.get_node_or_null("Inventory") as Inventory
+	if inventory == null or item == null or not enabled:
+		return
+	if inventory.add(item, amount):
+		enabled = false
+		var body := get_parent() as Node3D
+		if body != null:
+			body.queue_free()
+
+
+## Cria o corpo físico de um recurso solto.
+static func spawn(data: ItemData, where: Transform3D, parent: Node, count: int = 1) -> RigidBody3D:
+	var body := RigidBody3D.new()
+	body.name = "Item_" + String(data.id)
+	body.mass = data.mass * count
+	body.collision_layer = 4
+	body.collision_mask = 1 | 2 | 4
+	var material := PhysicsMaterial.new()
+	material.friction = 0.9
+	material.bounce = 0.05
+	body.physics_material_override = material
+	var model := MeshInstance3D.new()
+	model.name = "Model"
+	model.mesh = data.world_mesh
+	body.add_child(model)
+	var shape := CollisionShape3D.new()
+	shape.shape = data.world_mesh.create_convex_shape(true, true)
+	body.add_child(shape)
+	var sound := ImpactSound.new()
+	sound.name = "ImpactSound"
+	sound.material = data.impact_material
+	body.add_child(sound)
+	var pickup := ItemPickup.new()
+	pickup.name = "ItemPickup"
+	pickup.item = data
+	pickup.amount = count
+	body.add_child(pickup)
+	parent.add_child(body)
+	body.global_transform = where
+	return body
+
+# Rede de segurança: o terreno é uma casca; se o corpo atravessar o chão
+# (nasceu dentro de um morro, foi empurrado contra a parede), volta ao último
+# lugar onde estava parado.
+var _rest_position := Vector3.INF
+
+
+func _physics_process(_delta: float) -> void:
+	var body := get_parent() as RigidBody3D
+	if body == null:
+		return
+	if body.linear_velocity.length_squared() < 0.04:
+		_rest_position = body.global_position
+	elif _rest_position == Vector3.INF:
+		_rest_position = body.global_position + Vector3.UP * 0.5
+	if body.global_position.y < _rest_position.y - 25.0:
+		body.linear_velocity = Vector3.ZERO
+		body.angular_velocity = Vector3.ZERO
+		body.global_position = _rest_position + Vector3.UP * 0.6

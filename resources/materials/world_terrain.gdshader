@@ -19,6 +19,11 @@ uniform sampler2D gravel_albedo : source_color, filter_linear_mipmap_anisotropic
 uniform sampler2D gravel_normal : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D rock_albedo : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D rock_normal : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
+// Cavernas (etapa 8): estratos quentes na rocha cinza e chão de cascalho.
+uniform sampler2D strata_albedo : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D cave_floor_albedo : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D cave_floor_normal : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform vec3 cave_tint : source_color = vec3(0.74, 0.71, 0.66);
 uniform float floor_tile = 3.0;
 uniform float grass_tile = 2.5;
 uniform float road_tile = 4.0;
@@ -65,6 +70,20 @@ vec3 asphalt(vec2 p, vec2 frame, vec2 info) {
 	return grey;
 }
 
+float hash3(vec3 p) {
+	p = fract(p * 0.3183099 + 0.1);
+	p *= 17.0;
+	return fract(p.x * p.y * p.z * (p.x + p.y + p.z));
+}
+
+float value_noise(vec3 x) {
+	vec3 i = floor(x);
+	vec3 f = fract(x);
+	f = f * f * (3.0 - 2.0 * f);
+	return mix(mix(mix(hash3(i), hash3(i + vec3(1, 0, 0)), f.x), mix(hash3(i + vec3(0, 1, 0)), hash3(i + vec3(1, 1, 0)), f.x), f.y),
+			mix(mix(hash3(i + vec3(0, 0, 1)), hash3(i + vec3(1, 0, 1)), f.x), mix(hash3(i + vec3(0, 1, 1)), hash3(i + vec3(1, 1, 1)), f.x), f.y), f.z);
+}
+
 // Normal de uma textura projetada de cima, somada à normal da superfície.
 vec3 top_normal(sampler2D tex, vec2 uv, vec3 n) {
 	vec3 t = texture(tex, uv).rgb * 2.0 - 1.0;
@@ -104,8 +123,16 @@ void fragment() {
 			b += top_normal(road_normal, p / road_tile, n) * w.z;
 		}
 		if (w.w > 0.01) {
-			a += texture(gravel_albedo, p / gravel_tile).rgb * gravel_tint * w.w;
-			b += top_normal(gravel_normal, p / gravel_tile, n) * w.w;
+			// Fora: lama com folhas; dentro da terra: cascalho com pedras.
+			float inside = 1.0 - sky;
+			if (inside < 0.99) {
+				a += texture(gravel_albedo, p / gravel_tile).rgb * gravel_tint * w.w * (1.0 - inside);
+				b += top_normal(gravel_normal, p / gravel_tile, n) * w.w * (1.0 - inside);
+			}
+			if (inside > 0.01) {
+				a += texture(cave_floor_albedo, p / 2.5).rgb * cave_tint * w.w * inside;
+				b += top_normal(cave_floor_normal, p / 2.5, n) * w.w * inside;
+			}
 		}
 		albedo += a * flat_weight;
 		bump += b * flat_weight;
@@ -120,17 +147,35 @@ void fragment() {
 		vec3 ty = texture(rock_normal, q.xz).rgb * 2.0 - 1.0;
 		vec3 tz = texture(rock_normal, q.xy).rgb * 2.0 - 1.0;
 		vec3 b = vec3(0.0, tx.y, tx.x) * tw.x + vec3(ty.x, 0.0, -ty.y) * tw.y + vec3(tz.x, tz.y, 0.0) * tw.z;
-		albedo += a * rock_tint * rock;
+		vec3 rock_color = a * rock_tint;
+		float inside = 1.0 - sky;
+		if (inside > 0.01) {
+			// Rocha de caverna: a mesma foto sem o verde do musgo (cinza),
+			// com estratos alaranjados em faixas que ondulam, e manchas
+			// escuras e lisas de umidade. Varia pelo mundo: sem repetição.
+			vec3 grey = vec3(dot(a, vec3(0.3, 0.59, 0.11)));
+			vec3 strata = texture(strata_albedo, q.zy * 0.7).rgb * tw.x + texture(strata_albedo, q.xz * 0.7).rgb * tw.y + texture(strata_albedo, q.xy * 0.7).rgb * tw.z;
+			strata = mix(strata, vec3(dot(strata, vec3(0.3, 0.59, 0.11))), 0.45);
+			float band = smoothstep(0.45, 0.85, sin(world_position.y * 0.9 + value_noise(world_position * 0.12) * 7.0) * 0.5 + 0.5)
+					* smoothstep(0.3, 0.6, value_noise(world_position * 0.05 + 3.0));
+			float damp = smoothstep(0.55, 0.8, value_noise(world_position * 0.35 + 7.0));
+			vec3 cave_color = mix(grey * 1.15, strata, band * 0.45) * cave_tint * mix(1.0, 0.6, damp);
+			rock_color = mix(rock_color, cave_color, inside);
+			rough -= 0.3 * damp * inside * rock;
+		}
+		albedo += rock_color * rock;
 		bump += b * rock;
 		rough += 0.88 * rock;
 	}
 	float macro = sin(p.x * 0.031 + sin(p.y * 0.023) * 2.0) * sin(p.y * 0.027 + 1.7);
 	// Dentro da terra: úmido e escuro.
-	ALBEDO = albedo * (1.0 + macro * macro_variation) * mix(0.8, 1.0, sky);
+	ALBEDO = albedo * (1.0 + macro * macro_variation) * mix(0.85, 1.0, sky);
 	vec3 world_bumped = normalize(n + bump * normal_strength);
 	NORMAL = normalize((VIEW_MATRIX * vec4(world_bumped, 0.0)).xyz);
-	ROUGHNESS = mix(0.7, rough, sky);
+	ROUGHNESS = clamp(mix(0.75, rough, sky), 0.3, 1.0);
 	SPECULAR = 0.25;
-	AO = mix(0.03, 1.0, sky * sky);
+	// Luz difusa do céu só onde o céu se vê (fator medido por raios): entra
+	// pelas bocas e some para dentro. Um resto (0,2) imita a luz rebatida.
+	AO = mix(0.2, 1.0, sky);
 	AO_LIGHT_AFFECT = 0.0;
 }

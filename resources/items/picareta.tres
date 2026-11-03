@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="ItemData" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/inventory/item_data.gd" id="1_5krav"]
+[ext_resource type="Resource" path="res://resources/weapons/picareta.tres" id="2_22ab8"]
+[ext_resource type="ArrayMesh" path="res://resources/models/weapons/picareta.res" id="3_gj8qg"]
+
+[resource]
+script = ExtResource("1_5krav")
+id = &"picareta"
+display_name = "Picareta"
+kind = 0
+world_mesh = ExtResource("3_gj8qg")
+mass = 2.6
+weapon = ExtResource("2_22ab8")
+max_durability = 140.0
+impact_material = &"metal"

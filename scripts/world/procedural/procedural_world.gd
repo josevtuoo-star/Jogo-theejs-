@@ -35,6 +35,8 @@ var _boxes: Dictionary = {} # nome -> AABB da malha (colisão)
 var _weapons: Dictionary = {}
 ## Armas já pegas (não reaparecem): "x_z_i".
 var _taken: Dictionary = {}
+## Árvores cortadas e depósitos quebrados (não voltam ao recarregar o pedaço).
+var _removed: Dictionary = {}
 var _center := Vector2i(1 << 30, 0)
 var _generation_usec: Array[int] = []
 
@@ -85,6 +87,20 @@ func loaded_chunks() -> Array:
 
 func chunk_node(coord: Vector2i) -> Node3D:
 	return _chunks.get(coord)
+
+
+func mark_removed(key: String) -> void:
+	_removed[key] = true
+
+
+func is_removed(key: String) -> bool:
+	return _removed.has(key)
+
+
+## Árvores e depósitos coletáveis do pedaço (ChunkResources) ou null.
+func resources_of(coord: Vector2i) -> ChunkResources:
+	var chunk := chunk_node(coord)
+	return chunk.get_node_or_null("Recursos") as ChunkResources if chunk != null else null
 
 
 ## Tempo médio de geração de um pedaço em segundo plano (ms).
@@ -250,19 +266,57 @@ func _build_chunk_node(data: Dictionary) -> Node3D:
 	solids.collision_layer = 1
 	solids.collision_mask = 0
 	chunk.add_child(solids)
-	# Árvores: impostores, troncos e colisão dos troncos.
-	var trees: Array = data["trees"]
+	# Árvores e depósitos coletáveis (cada um com colisão e resistência
+	# próprias, em ChunkResources). Os já colhidos não voltam (fica o toco).
+	var resources := ChunkResources.new()
+	resources.name = "Recursos"
+	resources.collision_layer = 1
+	resources.collision_mask = 0
+	resources.world = self
+	resources.coord = coord
+	chunk.add_child(resources)
+	var cards: Array = [[], [], []]
+	var trunks: Array = []
+	var standing: Array = [] # [chave, dados da árvore, índice na copa, índice no tronco]
+	var tree_list: Array = data.get("tree_list", [])
+	for i in tree_list.size():
+		var tree: Array = tree_list[i]
+		var key := "a_%d_%d_%d" % [coord.x, coord.y, i]
+		if is_removed(key):
+			resources._stump((tree[2] as Transform3D).origin, tree[1])
+			continue
+		standing.append([key, tree, (cards[tree[0]] as Array).size(), trunks.size()])
+		(cards[tree[0]] as Array).append(tree[2])
+		trunks.append(tree[3])
+	var card_scatters: Array = []
 	for variant in 3:
-		_scatter(chunk, "Arvores%d" % variant, _tree_cards[variant], trees[variant], 170.0, true)
-	_scatter(chunk, "Troncos", _trunk_mesh, data["trunks"], 70.0, true)
-	for entry in data["trunk_colliders"]:
-		var cylinder := CylinderShape3D.new()
-		cylinder.radius = entry[1]
-		cylinder.height = 4.0
-		var trunk := CollisionShape3D.new()
-		trunk.shape = cylinder
-		trunk.position = entry[0]
-		solids.add_child(trunk)
+		card_scatters.append(_scatter(chunk, "Arvores%d" % variant, _tree_cards[variant], cards[variant], 170.0, true))
+	var trunk_scatter := _scatter(chunk, "Troncos", _trunk_mesh, trunks, 70.0, true)
+	for entry in standing:
+		var tree: Array = entry[1]
+		var base: Transform3D = tree[2]
+		resources.add_tree(entry[0], tree[0], tree[1], tree[4], Transform3D(Basis.IDENTITY, base.origin), 0.16 * tree[1],
+				[[card_scatters[tree[0]], entry[2]], [trunk_scatter, entry[3]]])
+	var deposits: Array = data.get("deposits", [])
+	var deposit_lists := {}
+	var deposit_entries: Array = []
+	for i in deposits.size():
+		var deposit: Array = deposits[i]
+		var key := "d_%d_%d_%d" % [coord.x, coord.y, i]
+		if is_removed(key):
+			continue
+		var mesh_kind: String = deposit[2]
+		if not deposit_lists.has(mesh_kind):
+			deposit_lists[mesh_kind] = []
+		deposit_entries.append([key, deposit, mesh_kind, (deposit_lists[mesh_kind] as Array).size()])
+		(deposit_lists[mesh_kind] as Array).append(deposit[1])
+	var deposit_scatters := {}
+	for mesh_kind in deposit_lists:
+		deposit_scatters[mesh_kind] = _scatter(chunk, "Deposito_" + mesh_kind, _mesh(mesh_kind), deposit_lists[mesh_kind], 90.0, true)
+	for entry in deposit_entries:
+		var deposit: Array = entry[1]
+		resources.add_deposit(entry[0], StringName(deposit[0]), deposit[1], _boxes[entry[2]],
+				[[deposit_scatters[entry[2]], entry[3]]])
 	# Objetos espalhados (uma instância múltipla por tipo).
 	var props: Dictionary = data["props"]
 	for kind in props:
@@ -281,6 +335,19 @@ func _build_chunk_node(data: Dictionary) -> Node3D:
 	for kind in by_kind:
 		# (PackedColorArray é cópia por valor: monta no fim, de uma vez.)
 		_scatter(chunk, "Carcacas_" + kind, _mesh(kind), by_kind[kind][0], 160.0, true, PackedColorArray(by_kind[kind][1]))
+	# Zumbis (os mortos não voltam).
+	var zombies: Array = data.get("zombies", [])
+	for i in zombies.size():
+		var key := "z_%d_%d_%d" % [coord.x, coord.y, i]
+		if is_removed(key):
+			continue
+		var zombie := Zombie.new()
+		zombie.name = "Zumbi%d" % i
+		zombie.target = target
+		chunk.add_child(zombie)
+		zombie.global_position = zombies[i]
+		zombie.rotation.y = hash(key) % 628 / 100.0
+		zombie.died.connect(func() -> void: mark_removed(key))
 	# Armas largadas (corpos físicos de verdade).
 	var weapons: Array = data["weapons"]
 	for i in weapons.size():
@@ -317,10 +384,21 @@ func _mesh(kind: String) -> Mesh:
 	return _meshes[kind]
 
 
-## Caixa de colisão do objeto (a caixa da malha, um pouco menor).
+## Caixa de colisão do objeto (a caixa da malha, um pouco menor). Formações
+## pontudas usam um cilindro fino no tronco.
 func _box_collider(body: StaticBody3D, kind: String, t: Transform3D) -> void:
 	_mesh(kind)
 	var box: AABB = _boxes[kind]
+	if kind == "estalagmite":
+		var scale := t.basis.get_scale()
+		var cylinder := CylinderShape3D.new()
+		cylinder.radius = box.size.x * scale.x * 0.28
+		cylinder.height = box.size.y * scale.y * 0.7
+		var spire := CollisionShape3D.new()
+		spire.shape = cylinder
+		spire.transform = Transform3D(Basis.IDENTITY, t.origin + Vector3.UP * cylinder.height * 0.5)
+		body.add_child(spire)
+		return
 	# A física não aceita forma escalada: a escala vai para o tamanho da caixa.
 	var scale := t.basis.get_scale()
 	var shape := BoxShape3D.new()

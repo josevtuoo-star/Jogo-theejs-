@@ -37,13 +37,18 @@ const FPS := 30.0
 const TARGET_SKELETON_PATH := "Armature/Skeleton3D"
 
 ## Ciclos de marcha: medidos para sincronizar com a passada física.
-const GAIT_CLIPS := ["walk", "jog", "sprint", "crouch_walk", "walk_carry"]
+const GAIT_CLIPS := ["walk", "jog", "sprint", "crouch_walk", "walk_carry", "zombie_walk"]
 ## Golpes e gestos: o quadro de maior extensão do braço vira evento.
 const REACH_EVENTS := {"punch_jab": "hit", "punch_cross": "hit", "punch_hook": "hit",
-		"weapon_swing_a": "hit", "weapon_swing_b": "hit",
+		"weapon_swing_a": "hit", "weapon_swing_b": "hit", "chop": "hit", "mine": "hit", "zombie_attack": "hit",
 		"interact": "contact", "pickup": "contact", "open_container": "contact"}
 
-## [arquivo fonte, nome na fonte, nome no jogo, em loop]
+## Golpes com ferramenta: o impacto é o quadro com a mão mais à frente.
+const TOOL_STRIKES := ["weapon_swing_a", "weapon_swing_b", "chop", "mine"]
+## Momento do impacto definido à mão (quando a extensão não o identifica).
+const EVENT_OVERRIDES := {"zombie_attack": 0.62, "chop": 0.2}
+
+## [arquivo fonte, nome na fonte, nome no jogo, em loop, (congelar a partir de)]
 const CLIPS := [
 	["res://assets/_source/AL_Standard.fbx", "Rig|Idle", "idle", true],
 	["res://assets/_source/AL_Standard.fbx", "Rig|Walk", "walk", true],
@@ -83,6 +88,16 @@ const CLIPS := [
 	["res://assets/_source/UAL2_Standard.glb", "Sword_Regular_A", "weapon_swing_a", false, 0.255],
 	["res://assets/_source/UAL2_Standard.glb", "Sword_Regular_B", "weapon_swing_b", false, 0.28],
 	["res://assets/_source/AL_Standard.fbx", "Rig|Sword_Idle", "weapon_idle", true],
+	# Etapa 8: corte de árvore (um ciclo do TreeChopping: começa com o machado
+	# erguido atrás, desce até a altura da cintura e volta) e mineração (golpe
+	# de cima para baixo do Sword_Attack, congelado depois do primeiro
+	# impacto, antes da segunda estocada).
+	["res://assets/_source/UAL2_Standard.glb", "TreeChopping", "chop", false],
+	["res://assets/_source/AL_Standard.fbx", "Rig|Sword_Attack", "mine", false, 0.62],
+	# Zumbis (mesmo esqueleto): parado, andar arrastado e arranhão.
+	["res://assets/_source/UAL2_Standard.glb", "Zombie_Idle", "zombie_idle", true],
+	["res://assets/_source/UAL2_Standard.glb", "Zombie_Walk_Fwd", "zombie_walk", true],
+	["res://assets/_source/UAL2_Standard.glb", "Zombie_Scratch", "zombie_attack", false],
 ]
 
 
@@ -159,9 +174,10 @@ func _initialize() -> void:
 			quit(1)
 			return
 		var animation := _retarget(source, source.player.get_animation(clip[1]), clip[3])
+		var freeze: float = clip[4] if clip.size() > 4 else INF
 		if clip.size() > 4:
-			_freeze_after(animation, clip[4])
-		var report := _analyze(clip[2], animation)
+			_freeze_after(animation, freeze)
+		var report := _analyze(clip[2], animation, freeze)
 		library.add_animation(clip[2], animation)
 		print("  %-16s <- %-20s %.2f s %s" % [clip[2], clip[1], animation.length, report])
 	var error := ResourceSaver.save(library, OUTPUT)
@@ -329,7 +345,7 @@ func _record_sample(t: float, rotations: Array[Basis], pelvis_local: Vector3) ->
 	_samples.append(sample)
 
 
-func _analyze(anim_name: String, animation: Animation) -> String:
+func _analyze(anim_name: String, animation: Animation, freeze: float = INF) -> String:
 	if anim_name in GAIT_CLIPS:
 		# Contato do calcanhar esquerdo: pé esquerdo mais à frente (+Z no modelo).
 		var contact := 0.0
@@ -392,15 +408,19 @@ func _analyze(anim_name: String, animation: Animation) -> String:
 		# Socos: o quadro de maior extensão do braço. Armas: o braço passa
 		# pela maior extensão também na preparação (atrás do corpo), então o
 		# golpe é o quadro em que a mão está mais à frente do peito (+Z).
-		var weapon := anim_name.begins_with("weapon_")
+		var weapon: bool = anim_name in TOOL_STRIKES
 		for side in (["hand_r"] if weapon else ["hand_l", "hand_r"]):
 			for sample in _samples:
+				if float(sample["t"]) > freeze:
+					continue
 				var offset := (sample[side] as Vector3) - (sample["spine_03"] as Vector3)
 				var reach := offset.z if weapon else offset.length()
 				if reach > best:
 					best = reach
 					best_t = sample["t"]
 					hand = side
+		if EVENT_OVERRIDES.has(anim_name):
+			best_t = EVENT_OVERRIDES[anim_name]
 		animation.set_meta(&"events", {REACH_EVENTS[anim_name]: best_t})
 		animation.set_meta(&"hand", hand)
 		# Golpes carregados: seguram no meio da preparação.

@@ -9,8 +9,8 @@ Todos os assets de terceiros em uso são **CC0 1.0** (domínio público): uso co
 | Recurso | Autor | Origem | Licença verificada | Uso no jogo |
 |---|---|---|---|---|
 | Sobrevivente (`assets/characters/survivor/Sobrevivente.fbx`): malha com gorro, jaqueta, calça cargo, botas e luvas, esqueleto de 65 ossos (convenção Mixamo) | Dono do projeto | enviado pelo dono do projeto em 02/11/2026 para substituir o personagem | uso autorizado pelo dono do projeto | personagem jogável; ossos renomeados para os nomes do jogo e animações retargetadas por `tools/retarget_animations.gd` e `tools/build_survivor.gd` |
-| Universal Animation Library (Standard, FBX Unreal) | Quaternius | https://opengameart.org/content/universal-animation-library (também em quaternius.itch.io) | CC0 1.0 (página do OpenGameArt e `License.txt` no pacote) | 18 animações retargetadas: parado, andar, trotar, correr, agachado, salto, queda, aterrissagem, socos, ferimentos, interagir, pegar, empurrar, morte, postura com arma (Sword_Idle) |
-| Universal Animation Library 2 (Standard, GLB) | Quaternius | https://opengameart.org/content/universal-animation-library-2 | CC0 1.0 (página do OpenGameArt) | 10 animações: gancho e sua recuperação (o quadro final é a guarda de defesa), impacto na guarda (Sword_Block), recuo, levantar, consumir, abrir baú, andar carregando, golpes de arma rápido e amplo (Sword_Regular_A/B) |
+| Universal Animation Library (Standard, FBX Unreal) | Quaternius | https://opengameart.org/content/universal-animation-library (também em quaternius.itch.io) | CC0 1.0 (página do OpenGameArt e `License.txt` no pacote) | 19 animações retargetadas: parado, andar, trotar, correr, agachado, salto, queda, aterrissagem, socos, ferimentos, interagir, pegar, empurrar, morte, postura com arma (Sword_Idle), golpe de picareta (Sword_Attack, só o primeiro golpe) |
+| Universal Animation Library 2 (Standard, GLB) | Quaternius | https://opengameart.org/content/universal-animation-library-2 | CC0 1.0 (página do OpenGameArt) | 14 animações: gancho e sua recuperação (o quadro final é a guarda de defesa), impacto na guarda (Sword_Block), recuo, levantar, consumir, abrir baú, andar carregando, golpes de arma rápido e amplo (Sword_Regular_A/B), corte de árvore (um ciclo do TreeChopping) e os zumbis (Zombie_Idle, Zombie_Walk_Fwd, Zombie_Scratch) |
 
 Os pacotes de animação originais ficam em `assets/_source/` (fora do Git e do APK). `tools/retarget_animations.gd` gera `resources/animations/survivor_body.res` (retarget por delta no espaço do mundo com alinhamento de poses, pois o personagem está em T, + medição de passada e quadros de contato). `tools/build_survivor.gd` monta o personagem (materiais PBR por superfície, cabeça separada para a primeira pessoa) e o ragdoll.
 
@@ -24,10 +24,10 @@ Licença conferida no campo "License(s)" da página de cada pacote e nos arquivo
 | 50 RPG sound effects | Kenney | https://opengameart.org/content/50-rpg-sound-effects | passos na grama e calcanhar abafado do passo na terra, roupa, interruptor, couro |
 | 42 Snow and Gravel Footsteps | Corsica_S (extração: qubodup) | https://opengameart.org/content/42-snow-and-gravel-footsteps | passos no gelo |
 | 37 hits/punches | Independent.nu | https://opengameart.org/content/37-hitspunches | soco acertando o corpo |
-| 75 CC0 breaking/falling/hit sfx | rubberduck | https://opengameart.org/content/75-cc0-breaking-falling-hit-sfx | impactos em madeira, metal e genéricos, objetos caindo, corpo caindo, defesa |
+| 75 CC0 breaking/falling/hit sfx | rubberduck | https://opengameart.org/content/75-cc0-breaking-falling-hit-sfx | impactos em madeira, metal e genéricos, objetos caindo, corpo caindo, defesa; machado na árvore, árvore rachando, picareta na rocha, rocha quebrando e pedras caindo |
 | Metal Impact Sounds | BMacZero | https://opengameart.org/content/metal-impact-sounds | metal tilintando, golpe na parede |
 | Swishes Sound Pack | artisticdude | https://opengameart.org/content/swishes-sound-pack | braço cortando o ar |
-| 15 vocal male strain/hurt/pain/jump sounds | qubodup | https://opengameart.org/content/15-vocal-male-strainhurtpainjump-sounds | esforço, dor, morte |
+| 15 vocal male strain/hurt/pain/jump sounds | qubodup | https://opengameart.org/content/15-vocal-male-strainhurtpainjump-sounds | esforço, dor, morte; gemidos, ataque e morte dos zumbis (a mesma voz mais grave, rouca e abafada por `tools/prepare_audio.py`) |
 | Jump Landing | Macro | https://opengameart.org/content/jump-landing | aterrissagem |
 | Fire Crackling | AntumDeluge | https://opengameart.org/content/fire-crackling | fogueira |
 | 20 rustles (dry leaves) | qubodup | https://opengameart.org/content/20-rustles-dry-leaves | folhas secas sob o pé (camada do passo no chão de floresta) |
@@ -72,7 +72,9 @@ Licença conferida no campo "License(s)" da página de cada pacote e nos arquivo
 | Rusty Painted Metal (textura) | Amal Kumar | escorridos da pintura das carcaças |
 | Rust Coarse 01 (textura) | Dimitrios Savva, Rico Cilliers | ferrugem das carcaças e dos pregos |
 | Road Damaged (textura) | Dimitrios Savva | asfalto velho das rodovias |
-| Mossy Rock (textura) | Rob Tuytel | rocha dos barrancos e das cavernas |
+| Mossy Rock (textura) | Rob Tuytel | rocha dos barrancos e, sem o verde do musgo, das cavernas |
+| Cliff Side (textura) | James Ray Cock, Jenelle van Heerden, Dario Barresi | estratos alaranjados da rocha das cavernas; estalagmites, estalactites e minérios |
+| Brown Mud Rocks 01 (textura) | Rob Tuytel | chão de cascalho das galerias |
 
 Baixados pela API oficial com `tools/download_polyhaven.py` (1k, glTF). Cada pasta tem `SOURCE.txt` com nome, autores, licença e link. Os modelos do mundo procedural são reduzidos (malha simplificada pelo próprio motor) por `tools/build_world_assets.gd`; os arquivos originais que só servem de fonte ficam fora do APK (`exclude_filter` em `export_presets.cfg`).
 
@@ -93,6 +95,8 @@ Licença conferida no campo "License(s)" da página de cada pacote.
 | Céu encoberto, neblina, iluminação, terreno gerado, posicionamento da floresta e do posto | `tools/build_demo_map.gd` |
 | Mundo procedural (relevo, cavernas, estradas e pintura das faixas, distribuição de floresta, carcaças, destroços e armas) e os shaders do terreno e das carcaças | `scripts/world/procedural/`, `resources/materials/world_terrain.gdshader`, `wreck.gdshader` |
 | Pregos do taco (geometria), pintura do machado, empunhadura das armas | `tools/build_weapons.gd`, `scripts/weapons/` |
+| Estalagmites, estalactites, blocos de minério, pedaços de pedra/carvão/ferro e toras (geometria procedural) e o shader de rocha com veios minerais | `tools/build_world_assets.gd`, `resources/materials/cave_rock.gdshader` |
+| Ícones dos itens (desenhados a partir dos modelos 3D do próprio jogo) | `tools/build_items.gd`, `resources/icons/` |
 | Roupas do personagem (geometria derivada da malha CC0) e ragdoll | `tools/build_survivor.gd` |
 | Ícone `icon.svg`, shader `dev_grid`, cenário de calibração | raiz, `resources/materials/`, `tools/build_test_gym.gd` |
 
@@ -122,7 +126,9 @@ Licença conferida no campo "License(s)" da página de cada pacote.
 | Quaternius Universal Animation Library "Pro" (strafe, giro no lugar, paradas) | paga; giro no lugar, parada e inclinação foram feitos com a física sobre as capturas gratuitas (ver docs/ETAPA_05_JOGABILIDADE.md) |
 | "fps arms (rigged only)", OpenGameArt (autor: para), CC0 | só rig, sem animações. |
 | "LowPoly Animated Sword (W/12 Animations)", OpenGameArt (autor: zisongbr), CC0 | animações de espada só em `.blend`; as armas usam os golpes de espada da UAL2 (Sword_Regular_A/B) e a postura Sword_Idle da UAL1. |
-| TreeChopping (UAL2) como golpe de machado | é um laço de cortar lenha: o impacto fica na emenda do ciclo, não serve como golpe único |
+| TreeChopping (UAL2) como golpe de combate do machado | é um laço de cortar lenha; na etapa 8 passou a ser usado só para cortar árvores, um ciclo por golpe, com o impacto marcado à mão (0,2 s) |
+| Dark Rock (Poly Haven, CC0) | escura demais para as paredes das cavernas (média 33/255): a rocha ficava preta mesmo sob a lanterna |
+| Pacote "wood crack hit destruction" (Independent.nu) | sem arquivo de licença no pacote baixado; os sons de madeira vêm do pacote CC0 do rubberduck, já verificado |
 | Low World first-person arms (itch.io) | não é CC0 e estava indisponível. |
 
 ## Como adicionar um asset

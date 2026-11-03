@@ -200,7 +200,8 @@ func _process(delta: float) -> void:
 	_flash_alpha = maxf(_flash_alpha - delta * 1.6, 0.0)
 	_flash.color.a = maxf(_flash_alpha, pulse)
 	if interaction.focused != null and not player.health.is_dead:
-		var key := "USAR" if GameInput.uses_touch_controls() else "[E]"
+		var pickup := interaction.focused is ItemPickup or interaction.focused is WeaponPickup
+		var key := ("PEGAR" if pickup else "USAR") if GameInput.uses_touch_controls() else "[E]"
 		_prompt_label.text = "%s  %s" % [key, interaction.focused.prompt]
 	if _death_panel.visible:
 		var panel := _death_panel as ColorRect
@@ -227,7 +228,8 @@ func _on_focus_changed(target: Interactable) -> void:
 	if target == null:
 		_prompt_label.text = ""
 		return
-	var key := "USAR" if GameInput.uses_touch_controls() else "[E]"
+	var pickup := target is ItemPickup or target is WeaponPickup
+	var key := ("PEGAR" if pickup else "USAR") if GameInput.uses_touch_controls() else "[E]"
 	_prompt_label.text = "%s  %s" % [key, target.prompt]
 
 

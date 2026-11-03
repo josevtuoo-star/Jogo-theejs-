@@ -1,4 +1,4 @@
-[gd_resource type="ShaderMaterial" load_steps=12 format=3]
+[gd_resource type="ShaderMaterial" load_steps=15 format=3]
 
 [ext_resource type="Shader" path="res://resources/materials/world_terrain.gdshader" id="1"]
 [ext_resource type="Texture2D" path="res://assets/polyhaven/textures/forest_floor/forest_floor_albedo_1k.jpg" id="2"]
@@ -11,6 +11,9 @@
 [ext_resource type="Texture2D" path="res://assets/polyhaven/textures/brown_mud_leaves_01/brown_mud_leaves_01_normal_1k.jpg" id="9"]
 [ext_resource type="Texture2D" path="res://assets/polyhaven/textures/mossy_rock/mossy_rock_albedo_1k.jpg" id="10"]
 [ext_resource type="Texture2D" path="res://assets/polyhaven/textures/mossy_rock/mossy_rock_normal_1k.jpg" id="11"]
+[ext_resource type="Texture2D" path="res://assets/polyhaven/textures/cliff_side/cliff_side_albedo_1k.jpg" id="12"]
+[ext_resource type="Texture2D" path="res://assets/polyhaven/textures/brown_mud_rocks_01/brown_mud_rocks_01_albedo_1k.jpg" id="13"]
+[ext_resource type="Texture2D" path="res://assets/polyhaven/textures/brown_mud_rocks_01/brown_mud_rocks_01_normal_1k.jpg" id="14"]
 
 [resource]
 render_priority = 0
@@ -25,3 +28,6 @@ shader_parameter/gravel_albedo = ExtResource("8")
 shader_parameter/gravel_normal = ExtResource("9")
 shader_parameter/rock_albedo = ExtResource("10")
 shader_parameter/rock_normal = ExtResource("11")
+shader_parameter/strata_albedo = ExtResource("12")
+shader_parameter/cave_floor_albedo = ExtResource("13")
+shader_parameter/cave_floor_normal = ExtResource("14")

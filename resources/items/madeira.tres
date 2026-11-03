@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="ItemData" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/inventory/item_data.gd" id="1_k80mq"]
+[ext_resource type="ArrayMesh" path="res://resources/models/world/tora.res" id="2_wwnt4"]
+
+[resource]
+script = ExtResource("1_k80mq")
+id = &"madeira"
+display_name = "Madeira"
+world_mesh = ExtResource("2_wwnt4")
+mass = 4.0
+max_durability = 1.0
+impact_material = &"madeira"

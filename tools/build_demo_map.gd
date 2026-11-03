@@ -830,6 +830,13 @@ func _player_and_ui() -> void:
 	hud.set("interaction", player.get_node("Interaction"))
 	hud.set("death", player.get_node("Death"))
 	hud.set("camera_rig", player.get_node("CameraRig"))
+	var inventory_hud := CanvasLayer.new()
+	inventory_hud.name = "InventoryHud"
+	inventory_hud.set_script(load("res://scripts/ui/inventory_hud.gd"))
+	_own(inventory_hud)
+	inventory_hud.set("player", player)
+	inventory_hud.set("inventory", player.get_node("Inventory"))
+	inventory_hud.set("interaction", player.get_node("Interaction"))
 	var debug_layer := CanvasLayer.new()
 	debug_layer.name = "DebugLayer"
 	debug_layer.layer = 20

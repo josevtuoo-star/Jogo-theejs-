@@ -31,10 +31,13 @@ scripts/
   animation/               Animador do corpo inteiro (BodyAnimator)
   audio/                   Sons: SoundSet, SoundEmitter, PlayerSounds, ImpactSound
   weapons/                 Armas brancas: WeaponData, PlayerEquipment, WeaponPickup, WeaponSpawn
+  inventory/               Mochila: ItemData, Inventory (barra rápida, recursos, durabilidade), ItemPickup
+  npc/                     Zumbis (Zombie)
   interaction/             Interactable e objetos interagíveis
   world/                   Vento (singleton Wind), perigos, alvos, fogueira, instâncias (ScatterInstances), impostores (TreeCards)
     procedural/            Mundo infinito: WorldGenerator (relevo, estradas, cavernas, surface nets, objetos),
-                           ProceduralWorld (pedaços em segundo plano), CaveAtmosphere (luz nas cavernas, lanterna)
+                           ProceduralWorld (pedaços em segundo plano), ChunkResources (árvores e minério
+                           coletáveis), CaveAtmosphere (luz nas cavernas, lanterna de testa)
   physics/                 SurfaceProfile e utilidades físicas
   ui/                      Controles de toque e HUD
   debug/                   Ferramentas de diagnóstico
@@ -57,10 +60,10 @@ assets/                    Assets: personagem do dono do projeto e de terceiros 
 
 | Camada | Nome | Quem usa | Máscara típica |
 |---|---|---|---|
-| 1 | mundo | cenário estático, terreno, construções | — |
-| 2 | jogador | `CharacterBody3D` do jogador | 1, 3 |
+| 1 | mundo | cenário estático, terreno, construções, árvores e depósitos coletáveis (`ChunkResources`) | — |
+| 2 | jogador | `CharacterBody3D` do jogador | 1, 3, 4 |
 | 3 | objetos_fisicos | `RigidBody3D` soltos (caixas, latas, cadáveres em ragdoll) | 1, 2, 3 |
-| 4 | zumbis | corpo de movimento dos zumbis | 1, 2, 3, 4 |
+| 4 | zumbis | corpo de movimento dos zumbis (`Zombie`, etapa 8) | 1, 2, 3, 4 |
 | 5 | interagiveis | áreas de interação (itens, portas) | — |
 | 6 | hitboxes | partes do corpo atingíveis (cabeça, tronco, membros) | — |
 | 8 | ragdoll | ossos físicos do corpo morto | 1, 3 |
@@ -98,10 +101,11 @@ Cada etapa só começa depois que a anterior passa nos testes e é validada no a
 | 5 | **Correção profunda da jogabilidade** | origem do soco ao arrastar no toque, controles por índice de dedo e áreas exclusivas, personagem em proporções naturais com roupa modelada, pés plantados, inclinação pela aceleração, curvas centrípetas, combate em máquina de estados com impacto pelo braço, defesa | **concluída** (`ETAPA_05_JOGABILIDADE.md`) |
 | 6 | **Sobrevivente, sons e mapa ampliado** | personagem do `Sobrevivente.fbx` com animações retargetadas, resistência desligada, defesa por toque, pés no terreno (IK), câmera e toque ajustados, 95 sons CC0, mapa de 400 m preservando a clareira | **concluída** (`ETAPA_06_SOBREVIVENTE_SONS_MAPA.md`) |
 | 7 | **Armas brancas e mundo procedural** | picareta, machado de bombeiro e taco com pregos (pegar, trocar, soltar, golpes próprios); mundo infinito por pedaços com cavernas, rodovias abandonadas, floresta e lanterna de cabeça; ambiente só com vento variável | **concluída** (`ETAPA_07_ARMAS_MUNDO_PROCEDURAL.md`) |
-| 8 | Interação e inventário | inventário por peso e volume (define `carried_mass`), portas, UI de toque; as armas já são corpos físicos que se pegam e soltam | próxima |
+| 8 | **Coleta, mochila e cavernas** | lanterna na testa sem sombra do próprio corpo; cavernas em galerias caminháveis com rampas de entrada e luz pelas aberturas; mochila com PEGAR, ícones, barra rápida e durabilidade; corte de árvores e mineração; zumbis | **concluída** (`ETAPA_08_COLETA_CAVERNAS.md`) |
+| 8b | Construção e portas | usar madeira, pedra e ferro (receitas), portas, peso na mochila (define `carried_mass`) | próxima |
 | 9 | Status vitais | fome, sede, sangramento, cura; a vida e as lesões já existem | — |
 | 10 | Armas de fogo | recuo, dispersão, munição, sobre o combate e o equipamento da etapa 7 | — |
-| 11 | Zumbis | mesmo esqueleto do sobrevivente (Quaternius UAL 1/2, CC0), `NavigationAgent3D` sobre o mundo gerado, percepção por visão e ruído (passos com superfície), ataques com `receive_hit` | — |
+| 11 | Zumbis avançados | os zumbis básicos existem (etapa 8); falta navegação por caminhos (`NavigationAgent3D` sobre o mundo gerado), hordas, entrar nas cavernas, ouvir os passos pela superfície | — |
 | 12 | Ragdoll parcial e reações | o ragdoll de morte já existe (etapa 4); falta mistura física parcial em golpes fortes e zumbis | — |
 | 13 | Otimização Android | perfis de qualidade, LOD, testes em aparelhos reais | — |
 | 14 | PC | configurações gráficas e de controle | — |
