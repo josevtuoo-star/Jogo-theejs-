@@ -1,5 +1,5 @@
 extends SceneTree
-## Ferramenta de produção: monta as três armas brancas.
+## Ferramenta de produção: monta as armas brancas e ferramentas.
 ##
 ## Uso: godot --headless --path . --script res://tools/build_weapons.gd
 ##
@@ -15,6 +15,11 @@ extends SceneTree
 ##   fio da lâmina em metal nu, como na referência.
 ## - Taco com pregos: baseball_bat (Poly Haven, CC0) com pregos enferrujados
 ##   cravados no barril (geometria gerada aqui: haste e cabeça de cada prego).
+## - Etapa 9 (feitas na bancada): machado, picareta e faca de pedra, lança e
+##   tocha — cabo de galho com casca (textura pine_bark, Poly Haven, CC0),
+##   pedra lascada (malha irregular gerada aqui, textura de rocha projetada) e
+##   amarração de corda. Facão (machete) e pé de cabra (crowbar_01) são da
+##   Poly Haven (CC0).
 
 const OUT_MESH := "res://resources/models/weapons/"
 const OUT_DATA := "res://resources/weapons/"
@@ -27,7 +32,8 @@ func _initialize() -> void:
 	_rng.seed = 7707
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(OUT_MESH))
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(OUT_DATA))
-	var results := [_pickaxe(), _fire_axe(), _nail_bat()]
+	var results := [_pickaxe(), _fire_axe(), _nail_bat(), _stone_axe(), _stone_pickaxe(), _stone_knife(),
+			_spear(), _torch(), _machete(), _crowbar()]
 	for data: WeaponData in results:
 		var mesh_path := OUT_MESH + String(data.id) + ".res"
 		ResourceSaver.save(data.mesh, mesh_path)
@@ -171,6 +177,181 @@ func _nail_bat() -> WeaponData:
 	data.heavy_max_impulse = 42.0
 	data.heavy_recovery = 0.32
 	data.impact_material = &"madeira"
+	return data
+
+
+# --- Ferramentas de pedra, lança e tocha (etapa 9) ------------------------------
+
+var _bark_material: StandardMaterial3D
+var _rope_material: StandardMaterial3D
+
+
+func _bark() -> StandardMaterial3D:
+	if _bark_material == null:
+		_bark_material = StandardMaterial3D.new()
+		_bark_material.albedo_texture = load(PH + "textures/pine_bark/pine_bark_albedo_1k.jpg")
+		_bark_material.normal_enabled = true
+		_bark_material.normal_texture = load(PH + "textures/pine_bark/pine_bark_normal_1k.jpg")
+		_bark_material.albedo_color = Color(0.85, 0.78, 0.68)
+		_bark_material.uv1_scale = Vector3(0.6, 0.6, 0.6)
+		_bark_material.roughness = 0.9
+	return _bark_material
+
+
+func _rope() -> StandardMaterial3D:
+	if _rope_material == null:
+		_rope_material = StandardMaterial3D.new()
+		_rope_material.albedo_color = Color(0.42, 0.33, 0.22)
+		_rope_material.roughness = 1.0
+	return _rope_material
+
+
+## Galho reto (cabo) de `bottom` a `top` no eixo Y.
+func _stick_part(bottom: float, top: float, radius: float) -> Array:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	_add_cylinder(st, Vector3(0.0, bottom, 0.0), Vector3.UP, radius, top - bottom, 9)
+	_add_cylinder(st, Vector3(0.0, top, 0.0), Vector3.DOWN, radius, top - bottom, 9)
+	st.generate_normals()
+	return [st.commit_to_arrays(), _bark()]
+
+
+## Amarração: voltas de corda em torno do cabo.
+func _rope_part(y: float, radius: float, height: float) -> Array:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var turns := 4
+	for i in turns:
+		var yy := y - height * 0.5 + height * (i + 0.5) / turns
+		_add_cylinder(st, Vector3(0.0, yy - height / turns * 0.42, 0.0), Vector3.UP, radius + 0.004, height / turns * 0.84, 10)
+		_add_cylinder(st, Vector3(0.0, yy + height / turns * 0.42, 0.0), Vector3.DOWN, radius + 0.004, height / turns * 0.84, 10)
+	st.generate_normals()
+	return [st.commit_to_arrays(), _rope()]
+
+
+## Pedra lascada: esfera deformada por ruído, achatada em `size` e afinada
+## (`taper_axis`: 1 = afina para +Y, 2 = afina nas duas pontas de Z).
+func _rock_part(center: Vector3, size: Vector3, seed_value: int, material: Material, taper_axis: int = 0) -> Array:
+	var noise := FastNoiseLite.new()
+	noise.seed = seed_value
+	noise.frequency = 3.0
+	var sphere := SphereMesh.new()
+	sphere.radius = 0.5
+	sphere.height = 1.0
+	sphere.radial_segments = 14
+	sphere.rings = 8
+	var arrays := sphere.get_mesh_arrays()
+	var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for index in indices:
+		var v := vertices[index]
+		var bump := 1.0 + noise.get_noise_3dv(v * 2.0) * 0.35
+		var p := v * 2.0 * bump
+		# Faces de lascamento: o ruído é quantizado em facetas.
+		p = p.snapped(Vector3.ONE * 0.18)
+		if taper_axis == 1 and p.y > 0.0:
+			var t := clampf(p.y, 0.0, 1.0)
+			p.x *= 1.0 - t * 0.75
+			p.z *= 1.0 - t * 0.55
+		elif taper_axis == 2:
+			var t := clampf(absf(p.z), 0.0, 1.0)
+			p.x *= 1.0 - t * 0.7
+			p.y *= 1.0 - t * 0.7
+		st.add_vertex(center + p * size * 0.5)
+	st.generate_normals()
+	return [st.commit_to_arrays(), material]
+
+
+func _stone() -> Material:
+	return load("res://resources/models/world/pedra_solta.tres")
+
+
+func _stone_axe() -> WeaponData:
+	var parts := [_stick_part(-0.08, 0.56, 0.017), _rock_part(Vector3(0.0, 0.47, 0.06), Vector3(0.05, 0.11, 0.17), 51, _stone()),
+			_rope_part(0.47, 0.017, 0.07)]
+	var data := _numbers(&"machado_pedra", "Machado de pedra", MeshTools.build(parts), 1.3, 0.55, 0.12,
+			[18.0, 12.0, 0.95, 0.24], [26.0, 44.0, 18.0, 36.0, 0.42], &"madeira")
+	return data
+
+
+func _stone_pickaxe() -> WeaponData:
+	var parts := [_stick_part(-0.08, 0.58, 0.017), _rock_part(Vector3(0.0, 0.5, 0.0), Vector3(0.05, 0.07, 0.38), 52, _stone(), 2),
+			_rope_part(0.5, 0.017, 0.06)]
+	return _numbers(&"picareta_pedra", "Picareta de pedra", MeshTools.build(parts), 1.5, 0.58, 0.12,
+			[18.0, 12.0, 0.9, 0.26], [26.0, 46.0, 18.0, 38.0, 0.45], &"madeira")
+
+
+func _stone_knife() -> WeaponData:
+	var parts := [_stick_part(-0.03, 0.09, 0.015), _rope_part(0.04, 0.015, 0.1),
+			_rock_part(Vector3(0.0, 0.17, 0.004), Vector3(0.014, 0.17, 0.05), 53, _stone(), 1)]
+	return _numbers(&"faca_pedra", "Faca de pedra", MeshTools.build(parts), 0.3, 0.2, 0.1,
+			[14.0, 7.0, 1.35, 0.1], [20.0, 30.0, 10.0, 18.0, 0.22], &"madeira")
+
+
+func _spear() -> WeaponData:
+	var parts := [_stick_part(-0.55, 1.06, 0.017), _rope_part(1.04, 0.017, 0.07),
+			_rock_part(Vector3(0.0, 1.13, 0.0), Vector3(0.022, 0.15, 0.055), 54, _stone(), 1)]
+	return _numbers(&"lanca", "Lança", MeshTools.build(parts), 1.4, 1.2, 0.1,
+			[24.0, 16.0, 0.95, 0.25], [34.0, 56.0, 22.0, 40.0, 0.45], &"madeira")
+
+
+func _torch() -> WeaponData:
+	var coal: Material = load("res://resources/models/world/carvao_pedaco.tres")
+	var parts := [_stick_part(-0.08, 0.42, 0.019), _rope_part(0.38, 0.019, 0.05),
+			_rock_part(Vector3(0.0, 0.45, 0.0), Vector3(0.075, 0.11, 0.075), 55, coal)]
+	return _numbers(&"tocha", "Tocha", MeshTools.build(parts), 0.5, 0.42, 0.1,
+			[8.0, 6.0, 1.1, 0.18], [12.0, 18.0, 8.0, 14.0, 0.3], &"madeira")
+
+
+func _machete() -> WeaponData:
+	var parts := MeshTools.flatten(PH + "models/machete/machete_1k.gltf")
+	var box := MeshTools.bounds(parts)
+	var blade_up := _wide_end_is_top(parts, box, 2)
+	var bottom := box.position.y if blade_up else box.end.y
+	var direction := 1.0 if blade_up else -1.0
+	var grip := Vector3(box.get_center().x, bottom + direction * 0.07, box.get_center().z)
+	var flip := Basis.IDENTITY if blade_up else Basis(Vector3.RIGHT, PI)
+	var xform := Transform3D(flip, Vector3.ZERO) * Transform3D(Basis.IDENTITY, -grip)
+	return _numbers(&"facao", "Facão", MeshTools.build(parts, xform), 0.7, 0.62, 0.1,
+			[26.0, 13.0, 1.15, 0.16], [34.0, 56.0, 18.0, 34.0, 0.3], &"metal")
+
+
+func _crowbar() -> WeaponData:
+	var parts := MeshTools.flatten(PH + "models/crowbar_01/crowbar_01_1k.gltf")
+	var box := MeshTools.bounds(parts)
+	var hook_up := _wide_end_is_top(parts, box, 2)
+	var bottom := box.position.y if hook_up else box.end.y
+	var direction := 1.0 if hook_up else -1.0
+	var grip := Vector3(box.get_center().x, bottom + direction * 0.06, box.get_center().z)
+	var flip := Basis.IDENTITY if hook_up else Basis(Vector3.RIGHT, PI)
+	var xform := Transform3D(flip.scaled(Vector3.ONE * 1.3), Vector3.ZERO) * Transform3D(Basis.IDENTITY, -grip)
+	return _numbers(&"pe_de_cabra", "Pé de cabra", MeshTools.build(parts, xform), 1.6, 0.62, 0.12,
+			[25.0, 16.0, 0.9, 0.24], [38.0, 64.0, 26.0, 48.0, 0.45], &"metal")
+
+
+## light = [dano, impulso, velocidade, recuperação];
+## heavy = [dano mín, dano máx, impulso mín, impulso máx, recuperação].
+func _numbers(id: StringName, display: String, mesh: Mesh, mass: float, reach: float, radius: float,
+		light: Array, heavy: Array, sound: StringName) -> WeaponData:
+	var data := WeaponData.new()
+	data.id = id
+	data.display_name = display
+	data.mesh = mesh
+	data.mass = mass
+	data.reach = reach
+	data.hit_radius = radius
+	data.light_damage = light[0]
+	data.light_impulse = light[1]
+	data.light_speed = light[2]
+	data.light_recovery = light[3]
+	data.heavy_min_damage = heavy[0]
+	data.heavy_max_damage = heavy[1]
+	data.heavy_min_impulse = heavy[2]
+	data.heavy_max_impulse = heavy[3]
+	data.heavy_recovery = heavy[4]
+	data.impact_material = sound
 	return data
 
 

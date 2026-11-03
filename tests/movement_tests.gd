@@ -46,6 +46,7 @@ func _ready() -> void:
 		_test_slope_downhill,
 		_test_slope_idle_no_drift,
 		_test_slope_steep_slide,
+		_test_slope_scramble,
 		_test_uphill_sprint_stamina,
 		_test_surface_ice,
 		_test_surface_mud,
@@ -461,12 +462,18 @@ func _test_slope_uphill() -> void:
 		var top := sin(deg_to_rad(case[1])) * 6.0
 		var max_y := 0.0
 		var speeds: Array[float] = []
+		var scramble_speeds: Array[float] = []
+		var upright_frames := 0
 		Input.action_press(&"move_forward")
-		for i in 360:
+		for i in (360 if case[1] < 46.0 else 720):
 			await _frames(1)
 			max_y = maxf(max_y, _player.global_position.y)
-			if _player.global_position.y > top * 0.3 and _player.global_position.y < top * 0.7 and _player.is_on_floor():
-				speeds.append(_player.velocity.length())
+			if _player.global_position.y > top * 0.3 and _player.global_position.y < top * 0.7:
+				if _player.is_on_floor():
+					speeds.append(_player.velocity.length())
+					upright_frames += 1
+				if _player.is_scrambling:
+					scramble_speeds.append(_player.velocity.length())
 			if max_y > top - 0.02:
 				break
 		Input.action_release(&"move_forward")
@@ -476,7 +483,14 @@ func _test_slope_uphill() -> void:
 			var expected := _settings.jog_speed * (1.0 - sin(deg_to_rad(case[1])) * _settings.uphill_penalty)
 			_check(absf(average - expected) < 0.12, "subida mais lenta em %d°: %.2f m/s (esperado %.2f)" % [int(case[1]), average, expected])
 		else:
-			_check(max_y < 0.6, "não escala rampa de %d° (altura %.2f)" % [int(case[1]), max_y])
+			# Íngreme demais para andar: sobe escalando com as mãos, devagar.
+			_check(upright_frames == 0 and not scramble_speeds.is_empty(),
+					"rampa de %d° não se sobe andando: escala com as mãos (%d quadros escalando)" % [int(case[1]), scramble_speeds.size()])
+			_check(max_y > top - 0.1, "chega ao topo da rampa de %d° escalando (altura %.2f de %.2f)" % [int(case[1]), max_y, top])
+			var climb := _average(scramble_speeds)
+			# Componente que não entra na rocha: ao longo da encosta.
+			_check(climb < _settings.scramble_speed + 0.4 and climb > _settings.scramble_speed * 0.6,
+					"escalada lenta: %.2f m/s (caminhada %.2f)" % [climb, _settings.walk_speed])
 
 
 func _test_slope_downhill() -> void:
@@ -525,8 +539,69 @@ func _test_slope_idle_no_drift() -> void:
 		_check(drift < 0.01 and _player.is_on_floor(), "deriva em 2 s na rampa de %d°: %.4f m" % [int(angle), drift])
 
 
+## Rampa temporária de `degrees` graus subindo para -z, com o pé em z = base_z.
+func _temporary_ramp(degrees: float, x: float, base_z: float) -> StaticBody3D:
+	var angle := deg_to_rad(degrees)
+	var body := StaticBody3D.new()
+	body.collision_layer = 1
+	var shape := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(3.0, 0.4, 8.0)
+	shape.shape = box
+	body.add_child(shape)
+	_gym.add_child(body)
+	var basis := Basis(Vector3.RIGHT, angle)
+	var center := Vector3(x, 4.0 * sin(angle) - 0.2 * cos(angle), base_z - 4.0 * cos(angle) - 0.2 * sin(angle))
+	body.global_transform = Transform3D(basis, center)
+	return body
+
+
+func _test_slope_scramble() -> void:
+	_begin("Escalada com as mãos: 62° sobe, parede de 76° não; soltar = escorrega")
+	for case in [[62.0, true], [76.0, false]]:
+		var ramp := _temporary_ramp(case[0], -34.0, 30.0)
+		await _reset(Vector3(-34.0, 0.0, 31.2), 0.0)
+		var max_y := 0.0
+		var scrambling := 0
+		var fastest := 0.0
+		Input.action_press(&"move_forward")
+		for i in 480:
+			await _frames(1)
+			max_y = maxf(max_y, _player.global_position.y)
+			if _player.is_scrambling:
+				scrambling += 1
+				fastest = maxf(fastest, _player.velocity.length())
+				_check_once(_player.movement_state == PlayerController.MovementState.SCRAMBLING, "estado SCRAMBLING durante a escalada")
+			if case[1] and max_y > 3.0:
+				break
+		if case[1]:
+			_check(scrambling > 60 and max_y > 3.0, "encosta de %d°: escala (%.2f m de altura, %d quadros)" % [int(case[0]), max_y, scrambling])
+			_check(fastest < _settings.scramble_speed + 0.9, "velocidade na escalada %.2f m/s" % fastest)
+			# Solta o comando no meio da encosta: escorrega de volta.
+			Input.action_release(&"move_forward")
+			var before := _player.global_position.y
+			await _frames(90)
+			_check(not _player.is_scrambling and _player.global_position.y < before - 0.3,
+					"ao soltar, para de escalar e escorrega (%.2f → %.2f m)" % [before, _player.global_position.y])
+		else:
+			Input.action_release(&"move_forward")
+			_check(scrambling == 0 and max_y < 0.6, "parede de %d° não se escala (altura %.2f)" % [int(case[0]), max_y])
+		ramp.queue_free()
+		await _frames(2)
+
+
+var _once: Dictionary = {}
+
+
+func _check_once(condition: bool, description: String) -> void:
+	if _once.has(description):
+		return
+	_once[description] = true
+	_check(condition, description)
+
+
 func _test_slope_steep_slide() -> void:
-	_begin("Encosta de 55°: escorrega com atrito, sem poder subir")
+	_begin("Encosta de 55°: sem empurrar morro acima, escorrega com atrito")
 	var angle := deg_to_rad(55.0)
 	var z := -3.0
 	var surface_y := (-1.0 - z) * tan(angle)
@@ -535,7 +610,8 @@ func _test_slope_steep_slide() -> void:
 	var on_slide := func() -> void: slid[0] = true
 	_player.slide_started.connect(on_slide)
 	_player.teleport(Vector3(18.0, surface_y + 0.7, z))
-	Input.action_press(&"move_forward")
+	# Empurrando para o lado (sem morro acima suficiente) não escala.
+	Input.action_press(&"move_right")
 	var max_speed := 0.0
 	var frames := 0
 	var saw_state := false
@@ -547,10 +623,10 @@ func _test_slope_steep_slide() -> void:
 			saw_state = saw_state or _player.movement_state == PlayerController.MovementState.SLIDING
 		if _player.is_on_floor() and _player.global_position.y < 0.05:
 			break
-	Input.action_release(&"move_forward")
+	Input.action_release(&"move_right")
 	_player.slide_started.disconnect(on_slide)
 	_check(slid[0] and saw_state, "entra no estado SLIDING")
-	_check(_player.global_position.y < 0.05 and _player.global_position.z > -1.2, "escorrega até a base mesmo tentando subir (z = %.2f)" % _player.global_position.z)
+	_check(_player.global_position.y < 0.05 and _player.global_position.z > -1.2, "escorrega até a base (z = %.2f)" % _player.global_position.z)
 	# Aceleração ao longo da encosta: g·(senθ − μ·k·cosθ).
 	var mu := _player.default_surface.traction * _settings.slide_friction_factor
 	var acceleration := G * (sin(angle) - mu * cos(angle))

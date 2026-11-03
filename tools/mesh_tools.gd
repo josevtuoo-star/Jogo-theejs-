@@ -7,10 +7,14 @@ extends RefCounted
 
 ## Todas as superfícies do modelo, com as transformações dos nós aplicadas:
 ## [[arrays, material], ...].
-static func flatten(path: String) -> Array:
+## `only`: só os nós cujo nome contém algum destes textos (pacotes com várias
+## variantes lado a lado: escolhe uma).
+static func flatten(path: String, only: Array = []) -> Array:
 	var root: Node3D = (load(path) as PackedScene).instantiate()
 	var result := []
 	for mi: MeshInstance3D in root.find_children("*", "MeshInstance3D", true, false):
+		if not only.is_empty() and not only.any(func(text: String) -> bool: return String(mi.name).contains(text)):
+			continue
 		var xform := Transform3D.IDENTITY
 		var node: Node = mi
 		while node != null and node != root:

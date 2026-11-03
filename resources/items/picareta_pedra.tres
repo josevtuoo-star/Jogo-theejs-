@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="ItemData" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/inventory/item_data.gd" id="1_2ywxv"]
+[ext_resource type="Resource" path="res://resources/weapons/picareta_pedra.tres" id="2_olesm"]
+[ext_resource type="ArrayMesh" path="res://resources/models/weapons/picareta_pedra.res" id="3_l8yay"]
+
+[resource]
+script = ExtResource("1_2ywxv")
+id = &"picareta_pedra"
+display_name = "Picareta de pedra"
+kind = 0
+world_mesh = ExtResource("3_l8yay")
+mass = 1.5
+weapon = ExtResource("2_olesm")
+max_durability = 70.0
+impact_material = &"madeira"
+stack_size = 1
+tool_type = &"picareta"
+tier = 1
+work_power = 0.6
+description = "Quebra pedra e carvão. Ferro pede picareta de metal."

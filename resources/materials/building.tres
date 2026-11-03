@@ -1,0 +1,22 @@
+[gd_resource type="ShaderMaterial" load_steps=8 format=3]
+
+[ext_resource type="Shader" path="res://resources/materials/building.gdshader" id="1_4rabw"]
+[ext_resource type="Texture2D" path="res://assets/polyhaven/textures/brick_wall_02/brick_wall_02_albedo_1k.jpg" id="2_7ympi"]
+[ext_resource type="Texture2D" path="res://assets/polyhaven/textures/concrete_wall_004/concrete_wall_004_albedo_1k.jpg" id="3_6tgn7"]
+[ext_resource type="Texture2D" path="res://assets/polyhaven/textures/weathered_planks/weathered_planks_albedo_1k.jpg" id="4_nen6i"]
+[ext_resource type="Texture2D" path="res://assets/polyhaven/textures/worn_plaster_wall/worn_plaster_wall_albedo_1k.jpg" id="5_3ni3a"]
+[ext_resource type="Texture2D" path="res://assets/polyhaven/textures/grey_roof_01/grey_roof_01_albedo_1k.jpg" id="6_0xidf"]
+[ext_resource type="Texture2D" path="res://assets/polyhaven/textures/rusty_corrugated_iron/rusty_corrugated_iron_albedo_1k.jpg" id="7_fw6fo"]
+
+[resource]
+render_priority = 0
+shader = ExtResource("1_4rabw")
+shader_parameter/brick_albedo = ExtResource("2_7ympi")
+shader_parameter/plaster_albedo = ExtResource("5_3ni3a")
+shader_parameter/concrete_albedo = ExtResource("3_6tgn7")
+shader_parameter/planks_albedo = ExtResource("4_nen6i")
+shader_parameter/roof_albedo = ExtResource("6_0xidf")
+shader_parameter/tin_albedo = ExtResource("7_fw6fo")
+shader_parameter/floor_height = null
+shader_parameter/bay_width = null
+shader_parameter/vine_color = null

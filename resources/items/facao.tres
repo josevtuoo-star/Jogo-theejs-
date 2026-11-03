@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="ItemData" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/inventory/item_data.gd" id="1_24qb7"]
+[ext_resource type="Resource" path="res://resources/weapons/facao.tres" id="2_8vxef"]
+[ext_resource type="ArrayMesh" path="res://resources/models/weapons/facao.res" id="3_x2syu"]
+
+[resource]
+script = ExtResource("1_24qb7")
+id = &"facao"
+display_name = "Facão"
+kind = 0
+world_mesh = ExtResource("3_x2syu")
+mass = 0.7
+weapon = ExtResource("2_8vxef")
+max_durability = 110.0
+impact_material = &"metal"
+stack_size = 1
+tool_type = &"facao"
+tier = 1
+work_power = 0.45
+description = "Arma rápida; também corta árvores, devagar."

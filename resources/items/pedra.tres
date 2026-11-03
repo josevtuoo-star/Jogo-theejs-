@@ -10,3 +10,4 @@ display_name = "Pedra"
 world_mesh = ExtResource("2_j1sfh")
 mass = 1.5
 max_durability = 1.0
+description = "Lâminas e cabeças de ferramentas."

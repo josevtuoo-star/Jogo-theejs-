@@ -16,3 +16,5 @@ shader_parameter/fleck_roughness = 0.25
 shader_parameter/fleck_metallic = 0.2
 shader_parameter/fleck_scale = null
 shader_parameter/wetness = 0.0
+shader_parameter/moss_amount = null
+shader_parameter/moss_color = null

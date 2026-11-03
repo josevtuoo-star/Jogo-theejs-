@@ -1,0 +1,13 @@
+[gd_resource type="ORMMaterial3D" load_steps=4 format=3]
+
+[ext_resource type="Texture2D" path="res://assets/polyhaven/textures/rusty_painted_metal/rusty_painted_metal_albedo_1k.jpg" id="1_x4lxn"]
+[ext_resource type="Texture2D" path="res://assets/polyhaven/textures/rusty_painted_metal/rusty_painted_metal_normal_1k.jpg" id="2_s2njh"]
+[ext_resource type="Texture2D" path="res://assets/polyhaven/textures/rusty_painted_metal/rusty_painted_metal_arm_1k.jpg" id="3_cgnmo"]
+
+[resource]
+albedo_color = Color(0.5, 0.56, 0.46, 1)
+albedo_texture = ExtResource("1_x4lxn")
+orm_texture = ExtResource("3_cgnmo")
+normal_enabled = true
+normal_texture = ExtResource("2_s2njh")
+uv1_scale = Vector3(0.6, 0.6, 0.6)

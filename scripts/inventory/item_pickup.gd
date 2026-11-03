@@ -6,6 +6,8 @@ extends Interactable
 
 @export var item: ItemData
 @export var amount: int = 1
+## Armadura solta: durabilidade que tinha (< 0 = nova).
+@export var durability: float = -1.0
 
 
 func _ready() -> void:
@@ -18,7 +20,7 @@ func _on_interacted(by: Node) -> void:
 	var inventory := by.get_node_or_null("Inventory") as Inventory
 	if inventory == null or item == null or not enabled:
 		return
-	if inventory.add(item, amount):
+	if inventory.add(item, amount, durability):
 		enabled = false
 		var body := get_parent() as Node3D
 		if body != null:
@@ -26,7 +28,7 @@ func _on_interacted(by: Node) -> void:
 
 
 ## Cria o corpo físico de um recurso solto.
-static func spawn(data: ItemData, where: Transform3D, parent: Node, count: int = 1) -> RigidBody3D:
+static func spawn(data: ItemData, where: Transform3D, parent: Node, count: int = 1, wear: float = -1.0) -> RigidBody3D:
 	var body := RigidBody3D.new()
 	body.name = "Item_" + String(data.id)
 	body.mass = data.mass * count
@@ -51,6 +53,7 @@ static func spawn(data: ItemData, where: Transform3D, parent: Node, count: int =
 	pickup.name = "ItemPickup"
 	pickup.item = data
 	pickup.amount = count
+	pickup.durability = wear
 	body.add_child(pickup)
 	parent.add_child(body)
 	body.global_transform = where

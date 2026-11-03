@@ -27,6 +27,13 @@ func _init() -> void:
 	_add_action("hotbar_2", 0.5, [_key(KEY_2)])
 	_add_action("hotbar_3", 0.5, [_key(KEY_3)])
 	_add_action("hotbar_4", 0.5, [_key(KEY_4)])
+	# Etapa 9: barra de 9 casas, menu de pausa.
+	_add_action("hotbar_5", 0.5, [_key(KEY_5)])
+	_add_action("hotbar_6", 0.5, [_key(KEY_6)])
+	_add_action("hotbar_7", 0.5, [_key(KEY_7)])
+	_add_action("hotbar_8", 0.5, [_key(KEY_8)])
+	_add_action("hotbar_9", 0.5, [_key(KEY_9)])
+	_add_action("pause_menu", 0.5, [_key(KEY_P), _button(JOY_BUTTON_START)])
 	_add_action("hotbar_next", 0.5, [_button(JOY_BUTTON_DPAD_RIGHT)])
 	_add_action("hotbar_prev", 0.5, [_button(JOY_BUTTON_DPAD_LEFT)])
 	_add_action("inventory_toggle", 0.5, [_key(KEY_I), _key(KEY_TAB), _button(JOY_BUTTON_Y)])

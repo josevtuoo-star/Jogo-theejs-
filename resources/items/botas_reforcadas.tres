@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="ItemData" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/inventory/item_data.gd" id="1_yosif"]
+[ext_resource type="ArrayMesh" path="res://resources/models/world/armadura_bota.res" id="2_s6q31"]
+
+[resource]
+script = ExtResource("1_yosif")
+id = &"botas_reforcadas"
+display_name = "Botas reforçadas"
+kind = 2
+world_mesh = ExtResource("2_s6q31")
+max_durability = 70.0
+impact_material = &"metal"
+stack_size = 1
+armor_slot = &"pes"
+armor_value = 0.06
+description = "Pés: absorvem 6% do dano."

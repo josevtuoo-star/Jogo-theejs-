@@ -1,14 +1,16 @@
-[gd_scene load_steps=11 format=3]
+[gd_scene load_steps=13 format=3]
 
-[ext_resource type="Script" path="res://scripts/world/procedural/world_scene.gd" id="1_t8boj"]
-[ext_resource type="Script" path="res://scripts/world/procedural/procedural_world.gd" id="2_h2l7i"]
-[ext_resource type="PackedScene" path="res://scenes/player/player.tscn" id="3_dsmiq"]
-[ext_resource type="PackedScene" path="res://scenes/ui/touch_controls.tscn" id="4_6erlo"]
-[ext_resource type="Script" path="res://scripts/ui/player_hud.gd" id="5_na3uo"]
-[ext_resource type="Script" path="res://scripts/ui/inventory_hud.gd" id="6_fcn4g"]
-[ext_resource type="Script" path="res://scripts/world/procedural/cave_atmosphere.gd" id="7_kegvl"]
+[ext_resource type="Script" path="res://scripts/world/procedural/world_scene.gd" id="1_dsmiq"]
+[ext_resource type="Script" path="res://scripts/world/procedural/procedural_world.gd" id="2_6erlo"]
+[ext_resource type="PackedScene" path="res://scenes/player/player.tscn" id="3_na3uo"]
+[ext_resource type="PackedScene" path="res://scenes/ui/touch_controls.tscn" id="4_fcn4g"]
+[ext_resource type="Script" path="res://scripts/ui/player_hud.gd" id="5_kegvl"]
+[ext_resource type="Script" path="res://scripts/ui/inventory_hud.gd" id="6_y4gja"]
+[ext_resource type="Script" path="res://scripts/ui/pause_menu.gd" id="7_52jc1"]
+[ext_resource type="Script" path="res://scripts/ui/cave_compass.gd" id="8_k5g47"]
+[ext_resource type="Script" path="res://scripts/world/procedural/cave_atmosphere.gd" id="9_hgoho"]
 
-[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_y4gja"]
+[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_umup1"]
 sky_top_color = Color(0.46, 0.52, 0.57, 1)
 sky_horizon_color = Color(0.66, 0.69, 0.69, 1)
 sky_curve = 0.1
@@ -18,13 +20,13 @@ sun_angle_max = 25.0
 sun_curve = 0.06
 energy_multiplier = 0.8
 
-[sub_resource type="Sky" id="Sky_52jc1"]
-sky_material = SubResource("ProceduralSkyMaterial_y4gja")
+[sub_resource type="Sky" id="Sky_uth38"]
+sky_material = SubResource("ProceduralSkyMaterial_umup1")
 radiance_size = 2
 
-[sub_resource type="Environment" id="Environment_k5g47"]
+[sub_resource type="Environment" id="Environment_akupr"]
 background_mode = 2
-sky = SubResource("Sky_52jc1")
+sky = SubResource("Sky_uth38")
 ambient_light_source = 3
 ambient_light_energy = 1.1
 reflected_light_source = 2
@@ -44,12 +46,12 @@ adjustment_contrast = 1.05
 adjustment_saturation = 0.8
 
 [node name="Mundo" type="Node3D" node_paths=PackedStringArray("world", "player")]
-script = ExtResource("1_t8boj")
+script = ExtResource("1_dsmiq")
 world = NodePath("ProceduralWorld")
 player = NodePath("Player")
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
-environment = SubResource("Environment_k5g47")
+environment = SubResource("Environment_akupr")
 
 [node name="Sun" type="DirectionalLight3D" parent="."]
 transform = Transform3D(-0.57357645, 0.54811966, -0.60874856, 0, 0.7431448, 0.6691306, 0.819152, 0.38379756, -0.42625037, 0, 0, 0)
@@ -62,29 +64,40 @@ directional_shadow_split_1 = 0.25
 directional_shadow_max_distance = 50.0
 
 [node name="ProceduralWorld" type="Node3D" parent="." node_paths=PackedStringArray("target")]
-script = ExtResource("2_h2l7i")
+script = ExtResource("2_6erlo")
+use_session_seed = true
 target = NodePath("../Player")
 
-[node name="Player" parent="." instance=ExtResource("3_dsmiq")]
+[node name="Player" parent="." instance=ExtResource("3_na3uo")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 30, 0)
 
-[node name="TouchControlsLayer" parent="." instance=ExtResource("4_6erlo")]
+[node name="TouchControlsLayer" parent="." instance=ExtResource("4_fcn4g")]
 
 [node name="PlayerHud" type="CanvasLayer" parent="." node_paths=PackedStringArray("player", "interaction", "death", "camera_rig")]
-script = ExtResource("5_na3uo")
+script = ExtResource("5_kegvl")
 player = NodePath("../Player")
 interaction = NodePath("../Player/Interaction")
 death = NodePath("../Player/Death")
 camera_rig = NodePath("../Player/CameraRig")
 
 [node name="InventoryHud" type="CanvasLayer" parent="." node_paths=PackedStringArray("player", "inventory", "interaction")]
-script = ExtResource("6_fcn4g")
+script = ExtResource("6_y4gja")
 player = NodePath("../Player")
 inventory = NodePath("../Player/Inventory")
 interaction = NodePath("../Player/Interaction")
 
+[node name="PauseMenu" type="CanvasLayer" parent="." node_paths=PackedStringArray("world_scene", "player")]
+script = ExtResource("7_52jc1")
+world_scene = NodePath("..")
+player = NodePath("../Player")
+
+[node name="CaveCompass" type="CanvasLayer" parent="." node_paths=PackedStringArray("world", "camera")]
+script = ExtResource("8_k5g47")
+world = NodePath("../ProceduralWorld")
+camera = NodePath("../Player/CameraRig/Camera3D")
+
 [node name="CaveAtmosphere" type="Node" parent="." node_paths=PackedStringArray("world", "camera", "eyes", "body", "environment", "sun")]
-script = ExtResource("7_kegvl")
+script = ExtResource("9_hgoho")
 world = NodePath("../ProceduralWorld")
 camera = NodePath("../Player/CameraRig/Camera3D")
 eyes = NodePath("../Player/Head/CameraEffects")

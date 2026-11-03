@@ -18,7 +18,7 @@ grow_vertical = 2
 mouse_filter = 2
 script = ExtResource("1_controls")
 joystick = NodePath("Joystick")
-buttons = [NodePath("AttackButton"), NodePath("JumpButton"), NodePath("CrouchButton"), NodePath("SprintButton"), NodePath("BlockButton"), NodePath("InteractButton"), NodePath("CameraButton"), NodePath("DropWeaponButton"), NodePath("InventoryButton"), NodePath("HotbarSlot1"), NodePath("HotbarSlot2"), NodePath("HotbarSlot3"), NodePath("HotbarSlot4")]
+buttons = [NodePath("AttackButton"), NodePath("JumpButton"), NodePath("CrouchButton"), NodePath("SprintButton"), NodePath("BlockButton"), NodePath("InteractButton"), NodePath("CameraButton"), NodePath("DropWeaponButton"), NodePath("InventoryButton"), NodePath("HotbarSlot1"), NodePath("HotbarSlot2"), NodePath("HotbarSlot3"), NodePath("HotbarSlot4"), NodePath("HotbarSlot5"), NodePath("HotbarSlot6"), NodePath("HotbarSlot7"), NodePath("HotbarSlot8"), NodePath("HotbarSlot9"), NodePath("MenuButton")]
 sprint_button = NodePath("SprintButton")
 
 [node name="Joystick" type="Control" parent="TouchControls"]
@@ -230,29 +230,88 @@ layout_mode = 0
 mouse_filter = 2
 script = ExtResource("4_slot")
 slot_index = 0
-radius = 36.0
-hit_padding = 4.0
+radius = 32.0
+hit_padding = 2.0
 
 [node name="HotbarSlot2" type="Control" parent="TouchControls"]
 layout_mode = 0
 mouse_filter = 2
 script = ExtResource("4_slot")
 slot_index = 1
-radius = 36.0
-hit_padding = 4.0
+radius = 32.0
+hit_padding = 2.0
 
 [node name="HotbarSlot3" type="Control" parent="TouchControls"]
 layout_mode = 0
 mouse_filter = 2
 script = ExtResource("4_slot")
 slot_index = 2
-radius = 36.0
-hit_padding = 4.0
+radius = 32.0
+hit_padding = 2.0
 
 [node name="HotbarSlot4" type="Control" parent="TouchControls"]
 layout_mode = 0
 mouse_filter = 2
 script = ExtResource("4_slot")
 slot_index = 3
-radius = 36.0
-hit_padding = 4.0
+radius = 32.0
+hit_padding = 2.0
+
+[node name="HotbarSlot5" type="Control" parent="TouchControls"]
+layout_mode = 0
+mouse_filter = 2
+script = ExtResource("4_slot")
+slot_index = 4
+radius = 32.0
+hit_padding = 2.0
+
+[node name="HotbarSlot6" type="Control" parent="TouchControls"]
+layout_mode = 0
+mouse_filter = 2
+script = ExtResource("4_slot")
+slot_index = 5
+radius = 32.0
+hit_padding = 2.0
+
+[node name="HotbarSlot7" type="Control" parent="TouchControls"]
+layout_mode = 0
+mouse_filter = 2
+script = ExtResource("4_slot")
+slot_index = 6
+radius = 32.0
+hit_padding = 2.0
+
+[node name="HotbarSlot8" type="Control" parent="TouchControls"]
+layout_mode = 0
+mouse_filter = 2
+script = ExtResource("4_slot")
+slot_index = 7
+radius = 32.0
+hit_padding = 2.0
+
+[node name="HotbarSlot9" type="Control" parent="TouchControls"]
+layout_mode = 0
+mouse_filter = 2
+script = ExtResource("4_slot")
+slot_index = 8
+radius = 32.0
+hit_padding = 2.0
+
+[node name="MenuButton" type="Control" parent="TouchControls"]
+custom_minimum_size = Vector2(64, 64)
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -392.0
+offset_top = 36.0
+offset_right = -328.0
+offset_bottom = 100.0
+grow_horizontal = 0
+mouse_filter = 2
+script = ExtResource("3_button")
+action = &"pause_menu"
+mode = 2
+label = "MENU"
+radius = 32.0
+font_size = 12

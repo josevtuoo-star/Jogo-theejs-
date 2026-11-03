@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="ItemData" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/inventory/item_data.gd" id="1_373k5"]
+[ext_resource type="ArrayMesh" path="res://resources/models/world/armadura_capacete.res" id="2_555ii"]
+
+[resource]
+script = ExtResource("1_373k5")
+id = &"capacete"
+display_name = "Capacete de sucata"
+kind = 2
+world_mesh = ExtResource("2_555ii")
+mass = 1.2
+max_durability = 80.0
+impact_material = &"metal"
+stack_size = 1
+armor_slot = &"cabeca"
+armor_value = 0.15
+description = "Cabeça: absorve 15% do dano."

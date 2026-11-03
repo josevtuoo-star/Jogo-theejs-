@@ -33,7 +33,7 @@ signal slide_started
 signal slide_ended
 
 enum Stance { STANDING, CROUCHING }
-enum MovementState { IDLE, WALKING, JOGGING, SPRINTING, CROUCH_IDLE, CROUCH_WALKING, AIRBORNE, SLIDING }
+enum MovementState { IDLE, WALKING, JOGGING, SPRINTING, CROUCH_IDLE, CROUCH_WALKING, AIRBORNE, SLIDING, SCRAMBLING }
 
 @export var settings: MovementSettings
 ## Superfície usada quando o piso não define uma.
@@ -76,6 +76,8 @@ var is_sprinting: bool = false
 ## Modo andar (alternado com a tecla de caminhada): limita ao passo de caminhada.
 var is_walk_mode: bool = false
 var is_sliding: bool = false
+## Escalando uma encosta íngreme com as mãos no chão.
+var is_scrambling: bool = false
 var current_surface: SurfaceProfile
 var last_impact_speed: float = 0.0
 
@@ -108,6 +110,7 @@ var _left_foot_next: bool = true
 var _grounded: bool = false
 var _floor_collider: Object = null
 var _slide_normal: Vector3 = Vector3.UP
+var _scramble_normal: Vector3 = Vector3.UP
 var _uphill_amount: float = 0.0
 ## Distância horizontal que ainda falta percorrer após subir um degrau antes
 ## de liberar a descida ativa (o centro do corpo precisa passar da quina).
@@ -200,7 +203,9 @@ func _physics_process(delta: float) -> void:
 	_update_sprint(delta, was_grounded)
 	_apply_gravity_and_drag(delta)
 	_handle_jump(delta)
-	if is_sliding:
+	if is_scrambling:
+		_apply_scramble(delta)
+	elif is_sliding:
 		_apply_slide_control(delta)
 	elif was_grounded:
 		_apply_ground_movement(delta)
@@ -209,7 +214,21 @@ func _physics_process(delta: float) -> void:
 
 	var pre_move_transform := global_transform
 	var pre_move_velocity := velocity
+	# Escalando, a encosta é apoio: o bloqueio de "subir por parede" não vale.
+	floor_block_on_wall = not is_scrambling
 	move_and_slide()
+	_update_scramble()
+	if is_scrambling:
+		# Apoiado nas mãos e nos pés: conta como chão (sem queda nem degrau).
+		_grounded = true
+		_step_up_clearance_remaining = 0.0
+		if is_sliding:
+			is_sliding = false
+			slide_ended.emit()
+		_update_surface()
+		_update_stride(delta)
+		_update_movement_state()
+		return
 	if was_grounded and not _jumped_this_frame and _is_blocked_by_low_obstacle(pre_move_transform, pre_move_velocity):
 		if _try_step_up(pre_move_transform, pre_move_velocity, delta):
 			# O degrau não deve consumir o momento horizontal.
@@ -618,6 +637,71 @@ func _update_slide(delta: float) -> void:
 			slide_ended.emit()
 
 
+# --- Escalada de encosta -------------------------------------------------------
+
+## Encosta íngreme demais para andar (mais que a inclinação caminhável) mas
+## não uma parede: empurrando morro acima, o personagem sobe apoiando as mãos.
+## Só no cenário fixo (terreno, rochedos), nunca em objetos soltos.
+func _update_scramble() -> void:
+	var was_scrambling := is_scrambling
+	is_scrambling = false
+	if not input_enabled or is_dead() or _jumped_this_frame or velocity.y > 3.0:
+		return
+	var wish := _get_wish_direction()
+	if wish == Vector3.ZERO:
+		return
+	var low := floor_max_angle
+	var high := deg_to_rad(settings.scramble_max_angle_degrees)
+	for i in get_slide_collision_count():
+		var collision := get_slide_collision(i)
+		var normal := collision.get_normal()
+		var angle := normal.angle_to(Vector3.UP)
+		if angle <= low or angle > high:
+			continue
+		var collider := collision.get_collider() as CollisionObject3D
+		if collider == null or not (collider is StaticBody3D) or (collider.collision_layer & 1) == 0:
+			continue
+		var into := -Vector3(normal.x, 0.0, normal.z).normalized()
+		if wish.dot(into) < settings.scramble_min_push:
+			continue
+		# Encosta de verdade? A quina de um degrau, tocada pela cápsula
+		# arredondada, também dá normais inclinadas; um raio de cima, logo
+		# adiante do contato, acha o piso plano do degrau (aí vale o degrau).
+		var point := collision.get_position()
+		var from := point + into * 0.12 + Vector3.UP * 0.6
+		var ray := PhysicsRayQueryParameters3D.create(from, from + Vector3.DOWN * 1.4, collision_mask, [get_rid()])
+		var hit := get_world_3d().direct_space_state.intersect_ray(ray)
+		if hit.is_empty():
+			continue
+		var slope := (hit["normal"] as Vector3).angle_to(Vector3.UP)
+		if slope > low and slope <= high:
+			is_scrambling = true
+			_scramble_normal = hit["normal"]
+			return
+		if was_scrambling and slope <= low:
+			# Chegando ao topo: continua o impulso da escalada até passar a
+			# borda (o piso plano logo adiante é onde os pés vão apoiar).
+			is_scrambling = true
+			return
+
+
+## Sobe ao longo da encosta na direção do comando, pressionando o corpo contra
+## ela (o contato se mantém a cada quadro). Soltar o comando = escorrega.
+func _apply_scramble(_delta: float) -> void:
+	var normal := _scramble_normal
+	var wish := _get_wish_direction()
+	var along := wish - normal * wish.dot(normal)
+	if along.length_squared() < 0.0001:
+		return
+	var speed := settings.scramble_speed * get_load_speed_multiplier() * external_speed_multiplier \
+			* (1.0 - 0.5 * get_leg_injury())
+	velocity = along.normalized() * speed - normal * 0.8
+
+
+func get_scramble_normal() -> Vector3:
+	return _scramble_normal
+
+
 # --- Superfície --------------------------------------------------------------
 
 func _update_surface() -> void:
@@ -922,7 +1006,9 @@ func _update_movement_state() -> void:
 	var new_state: MovementState
 	var speed := get_horizontal_speed()
 	var moving := speed > 0.2
-	if is_sliding:
+	if is_scrambling:
+		new_state = MovementState.SCRAMBLING
+	elif is_sliding:
 		new_state = MovementState.SLIDING
 	elif not _grounded and _airborne_time > 0.08:
 		new_state = MovementState.AIRBORNE
@@ -1047,6 +1133,7 @@ func teleport(position_on_feet: Vector3) -> void:
 	_stagger_timer = 0.0
 	_grounded = false
 	is_sliding = false
+	is_scrambling = false
 	_step_up_clearance_remaining = 0.0
 	reset_physics_interpolation()
 

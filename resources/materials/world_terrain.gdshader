@@ -24,6 +24,16 @@ uniform sampler2D strata_albedo : source_color, filter_linear_mipmap_anisotropic
 uniform sampler2D cave_floor_albedo : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D cave_floor_normal : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform vec3 cave_tint : source_color = vec3(0.74, 0.71, 0.66);
+// Biomas (etapa 9): folhas secas do bosque de folhosas, capim do campo,
+// chão seco e pedregoso, neve. Pesos por vértice em CUSTOM0.
+uniform sampler2D leaves_albedo : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D meadow_albedo : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D dry_albedo : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D snow_albedo : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform vec3 leaves_tint : source_color = vec3(0.62, 0.55, 0.48);
+uniform vec3 meadow_tint : source_color = vec3(0.62, 0.66, 0.46);
+uniform vec3 dry_tint : source_color = vec3(0.8, 0.74, 0.64);
+uniform vec3 snow_tint : source_color = vec3(0.92, 0.94, 0.98);
 uniform float floor_tile = 3.0;
 uniform float grass_tile = 2.5;
 uniform float road_tile = 4.0;
@@ -43,8 +53,10 @@ varying vec3 world_normal;
 varying vec4 weights;
 varying vec2 road_frame;
 varying vec2 road_info;
+varying vec4 biome;
 
 void vertex() {
+	biome = CUSTOM0;
 	world_position = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	world_normal = normalize((MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz);
 	weights = COLOR;
@@ -118,6 +130,26 @@ void fragment() {
 			a += texture(grass_albedo, p / grass_tile).rgb * grass_tint * w.y;
 			b += top_normal(grass_normal, p / grass_tile, n) * w.y;
 		}
+		// O chão natural (mata ou grama) troca pelo do bioma.
+		vec4 bw = clamp(biome, 0.0, 1.0);
+		float natural = w.x + w.y;
+		float biomes = bw.x + bw.y + bw.z + bw.w;
+		if (natural > 0.01 && biomes > 0.01) {
+			vec3 own = a * max(1.0 - biomes, 0.0);
+			if (bw.x > 0.01) {
+				own += texture(leaves_albedo, p / 3.0).rgb * leaves_tint * bw.x * natural;
+			}
+			if (bw.y > 0.01) {
+				own += texture(meadow_albedo, p / 3.5).rgb * meadow_tint * bw.y * natural;
+			}
+			if (bw.z > 0.01) {
+				own += texture(dry_albedo, p / 3.5).rgb * dry_tint * bw.z * natural;
+			}
+			if (bw.w > 0.01) {
+				own += texture(snow_albedo, p / 4.0).rgb * snow_tint * bw.w * natural;
+			}
+			a = own;
+		}
 		if (w.z > 0.01) {
 			a += asphalt(p, road_frame, road_info) * w.z;
 			b += top_normal(road_normal, p / road_tile, n) * w.z;
@@ -148,6 +180,9 @@ void fragment() {
 		vec3 tz = texture(rock_normal, q.xy).rgb * 2.0 - 1.0;
 		vec3 b = vec3(0.0, tx.y, tx.x) * tw.x + vec3(ty.x, 0.0, -ty.y) * tw.y + vec3(tz.x, tz.y, 0.0) * tw.z;
 		vec3 rock_color = a * rock_tint;
+		// Neve nas encostas menos íngremes das serras.
+		float snowy = clamp(biome.w, 0.0, 1.0) * smoothstep(0.3, 0.65, n.y) * sky;
+		rock_color = mix(rock_color, texture(snow_albedo, world_position.xz / 4.0).rgb * snow_tint, snowy);
 		float inside = 1.0 - sky;
 		if (inside > 0.01) {
 			// Rocha de caverna: a mesma foto sem o verde do musgo (cinza),

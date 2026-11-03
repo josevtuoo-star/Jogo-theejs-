@@ -14,3 +14,5 @@ mass = 1.2
 weapon = ExtResource("2_a5w8u")
 max_durability = 60.0
 impact_material = &"madeira"
+stack_size = 1
+description = "Arma rápida contra zumbis."

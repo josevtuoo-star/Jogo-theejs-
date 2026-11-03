@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="ItemData" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/inventory/item_data.gd" id="1_rksme"]
+[ext_resource type="Resource" path="res://resources/weapons/tocha.tres" id="2_x2l30"]
+[ext_resource type="ArrayMesh" path="res://resources/models/weapons/tocha.res" id="3_4o7ea"]
+
+[resource]
+script = ExtResource("1_rksme")
+id = &"tocha"
+display_name = "Tocha"
+kind = 0
+world_mesh = ExtResource("3_4o7ea")
+mass = 0.5
+weapon = ExtResource("2_x2l30")
+max_durability = 240.0
+impact_material = &"madeira"
+stack_size = 1
+tool_type = &"tocha"
+light_energy = 2.4
+description = "Ilumina as cavernas. Queima com o tempo na mão."

@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="WeaponData" load_steps=3 format=3]
+
+[ext_resource type="ArrayMesh" path="res://resources/models/weapons/facao.res" id="1_qgj1c"]
+[ext_resource type="Script" path="res://scripts/weapons/weapon_data.gd" id="2_fdwp5"]
+
+[resource]
+script = ExtResource("2_fdwp5")
+id = &"facao"
+display_name = "Facão"
+mesh = ExtResource("1_qgj1c")
+mass = 0.7
+reach = 0.62
+hit_radius = 0.1
+light_damage = 26.0
+light_impulse = 13.0
+light_speed = 1.15
+light_recovery = 0.16
+heavy_min_damage = 34.0
+heavy_max_damage = 56.0
+heavy_min_impulse = 18.0
+heavy_max_impulse = 34.0
+heavy_recovery = 0.3

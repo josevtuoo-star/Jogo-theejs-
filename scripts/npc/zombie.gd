@@ -27,6 +27,8 @@ const BODY_SCENE := "res://scenes/characters/survivor.tscn"
 @export_range(0.5, 3.0, 0.05) var attack_range: float = 1.35
 @export_range(0.0, 100.0, 0.5) var attack_damage: float = 12.0
 @export var target: Node3D
+## Roupa (ZombieLook.OUTFITS); -1 = sorteada.
+@export var variant: int = -1
 
 var health: float
 var state: State = State.WANDER
@@ -77,7 +79,7 @@ func _ready() -> void:
 	_simulator = _skeleton.get_node_or_null("PhysicalBoneSimulator3D")
 	if _simulator != null:
 		_simulator.active = false
-	_tint()
+	_dress()
 	_animation.play(&"zombie_walk", 0.2)
 	_voice = AudioStreamPlayer3D.new()
 	_voice.bus = &"Efeitos"
@@ -87,18 +89,25 @@ func _ready() -> void:
 	add_child(_voice)
 
 
-## Pele pálida esverdeada e roupa encardida (multiplica as cores do corpo).
-func _tint() -> void:
-	for mesh: MeshInstance3D in _skeleton.find_children("*", "MeshInstance3D", true, false):
-		for s in mesh.mesh.get_surface_count():
-			var material := mesh.get_active_material(s)
-			if material is BaseMaterial3D:
-				var copy := (material as BaseMaterial3D).duplicate() as BaseMaterial3D
-				var c := copy.albedo_color
-				var grey := (c.r + c.g + c.b) / 3.0
-				copy.albedo_color = Color(lerpf(c.r, grey, 0.5) * 0.72, lerpf(c.g, grey, 0.4) * 0.82, lerpf(c.b, grey, 0.5) * 0.66)
-				copy.roughness = minf(copy.roughness + 0.1, 1.0)
-				mesh.set_surface_override_material(s, copy)
+## Quem ele era: roupa, pele em decomposição, sangue, altura, magreza,
+## postura e o próprio passo (cada zumbi anda diferente).
+func _dress() -> void:
+	var outfit := ZombieLook.dress(_body, variant if variant >= 0 else _rng.randi(), _rng)
+	var height := _rng.randf_range(0.93, 1.07)
+	var thin: bool = outfit.get("magro", false)
+	_body.scale = Vector3(height * (0.88 if thin else 1.0), height, height * (0.9 if thin else 1.0))
+	walk_speed *= _rng.randf_range(0.8, 1.25)
+	var posture := ZombiePosture.new()
+	posture.name = "Postura"
+	posture.hunch = _rng.randf_range(0.1, 0.45)
+	posture.head_tilt = _rng.randf_range(0.1, 0.45) * (1.0 if _rng.randf() < 0.5 else -1.0)
+	posture.limp_arm = _rng.randf_range(0.4, 0.9) if _rng.randf() < 0.4 else 0.0
+	posture.arm_side = "_l" if _rng.randf() < 0.5 else "_r"
+	_skeleton.add_child(posture)
+	_posture = posture
+
+
+var _posture: ZombiePosture
 
 
 func is_dead() -> bool:
@@ -264,6 +273,8 @@ func _die(direction: Vector3, impulse: float) -> void:
 	_say("voice/zumbi_morte", 2.0)
 	if _simulator != null:
 		_animation.stop()
+		if _posture != null:
+			_posture.active = false
 		_simulator.active = true
 		_simulator.physical_bones_start_simulation()
 		var carried := velocity + _knockback

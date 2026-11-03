@@ -16,9 +16,15 @@ signal depleted(entry: Dictionary)
 
 const TREE_TOOL := &"machado"
 const ROCK_TOOL := &"picareta"
+## Mãos nuas também derrubam árvore (como no Minecraft), bem mais devagar:
+## o soco (12) rende metade, ~5 vezes mais golpes que o machado de bombeiro.
+const HAND_TREE_POWER := 0.5
+## Nível mínimo da picareta por depósito (ferro pede metal).
+const DEPOSIT_TIER := {&"pedra": 1, &"carvao": 1, &"ferro": 2}
 ## Resistência por tipo (multiplicada pelo tamanho).
 const DEPOSIT_HEALTH := {&"pedra": 70.0, &"carvao": 90.0, &"ferro": 130.0}
-const TREE_HEALTH := [78.0, 60.0, 44.0]
+## Abetos (3), folhosa, árvore seca e árvore-aljava.
+const TREE_HEALTH := [78.0, 60.0, 44.0, 55.0, 32.0, 40.0]
 
 var world: ProceduralWorld
 var coord: Vector2i
@@ -79,11 +85,12 @@ func receive_hit(hit: Dictionary) -> bool:
 		return false
 	var point: Vector3 = hit.get("point", global_position)
 	var direction: Vector3 = hit.get("direction", Vector3.FORWARD)
-	if hit.get("weapon", &"") != entry["tool"]:
+	var power := work_power(entry, hit.get("weapon", &""))
+	if power <= 0.0:
 		ImpactEffects.sound(self, point, "combat/impacto_madeira" if entry["kind"] == &"arvore" else "world/pedra_golpe", -8.0)
-		_hint(hit.get("attacker"), entry)
+		_hint(hit.get("attacker"), entry, power < 0.0)
 		return false
-	entry["health"] = float(entry["health"]) - float(hit.get("damage", 0.0))
+	entry["health"] = float(entry["health"]) - float(hit.get("damage", 0.0)) * power
 	if entry["kind"] == &"arvore":
 		ImpactEffects.burst(self, point, -direction, &"madeira", 12, 0.035, 3.0)
 		ImpactEffects.sound(self, point, "combat/impacto_madeira", 0.0, 0.9)
@@ -100,15 +107,35 @@ func receive_hit(hit: Dictionary) -> bool:
 	return true
 
 
-func _hint(attacker: Variant, entry: Dictionary) -> void:
+## Rendimento de um golpe no recurso (fração do dano que vale): 0 = a
+## ferramenta não serve; -1 = picareta fraca demais para esse minério.
+static func work_power(entry: Dictionary, weapon_id: StringName) -> float:
+	var item := ItemData.find(weapon_id) if weapon_id != &"" else null
+	if entry["kind"] == &"arvore":
+		if item == null:
+			return HAND_TREE_POWER
+		return item.work_power if item.tool_type in [&"machado", &"facao"] else 0.0
+	if item == null or item.tool_type != &"picareta":
+		return 0.0
+	if item.tier < int(DEPOSIT_TIER.get(entry["type"], 1)):
+		return -1.0
+	return item.work_power
+
+
+func _hint(attacker: Variant, entry: Dictionary, weak: bool = false) -> void:
 	var now := Time.get_ticks_msec() / 1000.0
 	if now - _hint_time < 4.0 or not (attacker is Node):
 		return
 	_hint_time = now
 	var inventory := (attacker as Node).get_node_or_null("Inventory") as Inventory
-	if inventory != null:
-		inventory.message.emit("Precisa de um machado para cortar árvores" if entry["kind"] == &"arvore"
-				else "Precisa de uma picareta para quebrar rocha")
+	if inventory == null:
+		return
+	if entry["kind"] == &"arvore":
+		inventory.message.emit("Isso não corta árvore: use um machado, um facão ou as mãos")
+	elif weak:
+		inventory.message.emit("Minério de ferro: precisa de uma picareta de metal")
+	else:
+		inventory.message.emit("Precisa de uma picareta para quebrar rocha")
 
 
 ## A árvore balança com o golpe (a copa e o tronco giram de leve e voltam).

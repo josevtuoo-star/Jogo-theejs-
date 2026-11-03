@@ -25,9 +25,11 @@ func has_weapon() -> bool:
 	return weapon != null
 
 
-## Mostra `data` na mão (null = mãos livres). Chamado pela mochila.
-func show_weapon(data: WeaponData) -> void:
-	if data == weapon:
+## Mostra `data` na mão (null = mãos livres). Chamado pela mochila. `item`
+## traz o que não é de combate (a tocha acende uma luz na ponta).
+func show_weapon(data: WeaponData, item: ItemData = null) -> void:
+	var light := item.light_energy if item != null else 0.0
+	if data == weapon and light == _light_energy:
 		return
 	weapon = data
 	if data != null:
@@ -36,6 +38,7 @@ func show_weapon(data: WeaponData) -> void:
 		_model.visible = true
 	elif _model != null:
 		_model.visible = false
+	_set_flame(light, data)
 	if body != null:
 		body.guard_clip = &"weapon_idle" if data != null else BodyAnimator.GUARD_CLIP
 	_show_drop_button(data != null)
@@ -48,12 +51,100 @@ func equip(data: WeaponData, _drop_at: Transform3D = Transform3D.IDENTITY) -> vo
 		show_weapon(data)
 		return
 	var item := ItemData.find(data.id)
-	var before := inventory.tools.duplicate()
 	if inventory.add(item):
-		for i in Inventory.TOOL_SLOTS:
-			if before[i].is_empty() and not inventory.tools[i].is_empty():
+		# A unidade nova é a última casa com o item (barra primeiro).
+		for i in Inventory.HOTBAR:
+			if inventory.item_at(i) == item:
 				inventory.equip(i)
-				break
+
+
+# --- Tocha ---------------------------------------------------------------------
+
+var _light_energy: float = 0.0
+var _flame: Node3D
+var _flame_light: OmniLight3D
+var _flicker: float = 0.0
+
+
+## Chama na ponta da tocha: luz quente que tremula e partículas de fogo.
+func _set_flame(energy: float, data: WeaponData) -> void:
+	_light_energy = energy
+	if energy <= 0.0 or data == null:
+		if _flame != null:
+			_flame.queue_free()
+			_flame = null
+			_flame_light = null
+		return
+	if _flame != null:
+		return
+	_flame = Node3D.new()
+	_flame.name = "Chama"
+	_flame.position = Vector3(0.0, data.mesh.get_aabb().end.y - 0.03, 0.0)
+	_model.add_child(_flame)
+	_flame_light = OmniLight3D.new()
+	_flame_light.light_color = Color(1.0, 0.62, 0.3)
+	_flame_light.light_energy = energy
+	_flame_light.omni_range = 9.0
+	_flame_light.omni_attenuation = 1.2
+	_flame_light.shadow_enabled = true
+	_flame_light.position = Vector3(0.0, 0.12, 0.0)
+	# Não ilumina nem sombreia o próprio corpo de dentro dele.
+	_flame_light.light_cull_mask = ~CaveAtmosphere.PLAYER_RENDER_LAYER
+	_flame.add_child(_flame_light)
+	var fire := CPUParticles3D.new()
+	fire.amount = 24
+	fire.lifetime = 0.45
+	fire.local_coords = false
+	fire.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
+	fire.emission_sphere_radius = 0.035
+	fire.direction = Vector3.UP
+	fire.spread = 12.0
+	fire.gravity = Vector3(0.0, 1.6, 0.0)
+	fire.initial_velocity_min = 0.15
+	fire.initial_velocity_max = 0.4
+	fire.scale_amount_min = 0.5
+	fire.scale_amount_max = 1.0
+	var curve := Curve.new()
+	curve.add_point(Vector2(0.0, 0.6))
+	curve.add_point(Vector2(0.3, 1.0))
+	curve.add_point(Vector2(1.0, 0.0))
+	fire.scale_amount_curve = curve
+	var ramp := Gradient.new()
+	ramp.set_color(0, Color(1.0, 0.85, 0.4, 1.0))
+	ramp.set_color(1, Color(0.9, 0.2, 0.05, 0.0))
+	fire.color_ramp = ramp
+	var quad := QuadMesh.new()
+	quad.size = Vector2(0.09, 0.12)
+	var glow := StandardMaterial3D.new()
+	glow.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	glow.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	glow.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	glow.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	glow.vertex_color_use_as_albedo = true
+	glow.albedo_texture = _soft_dot()
+	quad.material = glow
+	fire.mesh = quad
+	_flame.add_child(fire)
+
+
+static func _soft_dot() -> Texture2D:
+	var gradient := Gradient.new()
+	gradient.set_color(0, Color(1, 1, 1, 1))
+	gradient.set_color(1, Color(1, 1, 1, 0))
+	var texture := GradientTexture2D.new()
+	texture.gradient = gradient
+	texture.fill = GradientTexture2D.FILL_RADIAL
+	texture.fill_from = Vector2(0.5, 0.5)
+	texture.fill_to = Vector2(0.5, 0.0)
+	texture.width = 32
+	texture.height = 32
+	return texture
+
+
+func _process(delta: float) -> void:
+	if _flame_light != null:
+		_flicker += delta * 13.0
+		_flame_light.light_energy = _light_energy * (0.85 + 0.1 * sin(_flicker) + 0.06 * sin(_flicker * 2.7 + 1.3))
 
 
 ## Solta a ferramenta da mão no mundo (corpo físico que pode ser pego de novo).

@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="WeaponData" load_steps=3 format=3]
+
+[ext_resource type="ArrayMesh" path="res://resources/models/weapons/tocha.res" id="1_7pfsu"]
+[ext_resource type="Script" path="res://scripts/weapons/weapon_data.gd" id="2_w6js5"]
+
+[resource]
+script = ExtResource("2_w6js5")
+id = &"tocha"
+display_name = "Tocha"
+mesh = ExtResource("1_7pfsu")
+mass = 0.5
+reach = 0.42
+hit_radius = 0.1
+light_damage = 8.0
+light_impulse = 6.0
+light_speed = 1.1
+heavy_min_damage = 12.0
+heavy_max_damage = 18.0
+heavy_min_impulse = 8.0
+heavy_max_impulse = 14.0
+heavy_recovery = 0.3
+impact_material = &"madeira"

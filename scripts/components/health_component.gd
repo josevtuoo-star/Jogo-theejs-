@@ -7,6 +7,8 @@ extends Node
 ## pernas: o personagem manca, perde velocidade e não consegue correr até a
 ## lesão cicatrizar.
 
+## A armadura absorveu parte de um golpe (as peças se gastam).
+signal armor_absorbed(amount: float)
 signal health_changed(current: float, maximum: float)
 ## direction: direção (mundo) de onde o dano veio; zero se não houver.
 signal damaged(amount: float, kind: StringName, direction: Vector3)
@@ -28,6 +30,8 @@ var last_damage_kind: StringName = &""
 ## Filtro opcional aplicado antes do dano (defesa, armadura):
 ## func(amount: float, kind: StringName, direction: Vector3) -> float.
 var damage_filter: Callable = Callable()
+## Fração do dano absorvida pela armadura vestida (Inventory). Quedas não.
+var armor: float = 0.0
 
 
 func _ready() -> void:
@@ -46,6 +50,10 @@ func apply_damage(amount: float, kind: StringName, direction: Vector3 = Vector3.
 		amount = float(damage_filter.call(amount, kind, direction))
 		if amount <= 0.0:
 			return
+	if armor > 0.0 and kind != &"queda":
+		var absorbed := amount * armor
+		amount -= absorbed
+		armor_absorbed.emit(absorbed)
 	last_damage_kind = kind
 	current = maxf(current - amount, 0.0)
 	health_changed.emit(current, max_health)

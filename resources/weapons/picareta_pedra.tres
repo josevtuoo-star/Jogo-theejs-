@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="WeaponData" load_steps=3 format=3]
+
+[ext_resource type="ArrayMesh" path="res://resources/models/weapons/picareta_pedra.res" id="1_gy7t3"]
+[ext_resource type="Script" path="res://scripts/weapons/weapon_data.gd" id="2_8emko"]
+
+[resource]
+script = ExtResource("2_8emko")
+id = &"picareta_pedra"
+display_name = "Picareta de pedra"
+mesh = ExtResource("1_gy7t3")
+mass = 1.5
+reach = 0.58
+hit_radius = 0.12
+light_damage = 18.0
+light_impulse = 12.0
+light_speed = 0.9
+light_recovery = 0.26
+heavy_min_damage = 26.0
+heavy_max_damage = 46.0
+heavy_min_impulse = 18.0
+heavy_max_impulse = 38.0
+heavy_recovery = 0.45
+impact_material = &"madeira"

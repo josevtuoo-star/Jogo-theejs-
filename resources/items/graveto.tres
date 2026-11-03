@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="ItemData" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/inventory/item_data.gd" id="1_b6yql"]
+[ext_resource type="ArrayMesh" path="res://resources/models/world/graveto.res" id="2_8544a"]
+
+[resource]
+script = ExtResource("1_b6yql")
+id = &"graveto"
+display_name = "Graveto"
+world_mesh = ExtResource("2_8544a")
+mass = 0.2
+max_durability = 1.0
+impact_material = &"madeira"
+description = "Cabo de ferramentas e tochas."

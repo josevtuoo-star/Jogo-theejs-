@@ -410,7 +410,7 @@ func _work_clip(weapon: WeaponData) -> StringName:
 	if hit.is_empty() or not (hit["collider"] is ChunkResources):
 		return &"weapon_swing_a"
 	var entry := (hit["collider"] as ChunkResources).entry_for_shape(hit.get("shape", -1))
-	if entry.is_empty() or entry["tool"] != weapon.id:
+	if entry.is_empty() or ChunkResources.work_power(entry, weapon.id) <= 0.0:
 		return &"weapon_swing_a"
 	return &"chop" if entry["kind"] == &"arvore" else &"mine"
 

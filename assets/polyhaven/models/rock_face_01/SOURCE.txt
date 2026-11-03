@@ -1,6 +1,0 @@
-Nome: Rock Face 01
-Autores: Dario Barresi
-Licença: CC0 1.0 (Poly Haven)
-Origem: https://polyhaven.com/a/rock_face_01
-Resolução: 1k
-Polígonos: 20174

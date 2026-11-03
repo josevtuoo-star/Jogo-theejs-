@@ -1,0 +1,20 @@
+[gd_resource type="ShaderMaterial" load_steps=3 format=3]
+
+[ext_resource type="Shader" path="res://resources/materials/cave_rock.gdshader" id="1_667sb"]
+[ext_resource type="Texture2D" path="res://assets/polyhaven/textures/cliff_side/cliff_side_albedo_1k.jpg" id="2_mrw5k"]
+
+[resource]
+render_priority = 0
+shader = ExtResource("1_667sb")
+shader_parameter/rock_albedo = ExtResource("2_mrw5k")
+shader_parameter/tint = Color(0.8, 0.79, 0.75, 1)
+shader_parameter/desaturate = 0.7
+shader_parameter/tile = 1.8
+shader_parameter/fleck_color = Color(0, 0, 0, 1)
+shader_parameter/fleck_amount = 0.0
+shader_parameter/fleck_roughness = 0.85
+shader_parameter/fleck_metallic = 0.0
+shader_parameter/fleck_scale = null
+shader_parameter/wetness = 0.05
+shader_parameter/moss_amount = 0.55
+shader_parameter/moss_color = null

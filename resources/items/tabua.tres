@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="ItemData" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/inventory/item_data.gd" id="1_covhv"]
+[ext_resource type="ArrayMesh" path="res://resources/models/world/tabua.res" id="2_6o2tg"]
+
+[resource]
+script = ExtResource("1_covhv")
+id = &"tabua"
+display_name = "Tábua"
+world_mesh = ExtResource("2_6o2tg")
+max_durability = 1.0
+impact_material = &"madeira"
+description = "Para gravetos e construção."

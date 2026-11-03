@@ -11,3 +11,4 @@ world_mesh = ExtResource("2_wwnt4")
 mass = 4.0
 max_durability = 1.0
 impact_material = &"madeira"
+description = "Tora. Vira tábuas na bancada."

@@ -1,0 +1,6 @@
+Nome: Shrub 04
+Autores: Rico Cilliers
+Licença: CC0 1.0 (Poly Haven)
+Origem: https://polyhaven.com/a/shrub_04
+Resolução: 1k
+Polígonos: 47813

@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="ItemData" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/inventory/item_data.gd" id="1_qpv6k"]
+[ext_resource type="Resource" path="res://resources/weapons/pe_de_cabra.tres" id="2_1yfxi"]
+[ext_resource type="ArrayMesh" path="res://resources/models/weapons/pe_de_cabra.res" id="3_s0wfy"]
+
+[resource]
+script = ExtResource("1_qpv6k")
+id = &"pe_de_cabra"
+display_name = "Pé de cabra"
+kind = 0
+world_mesh = ExtResource("3_s0wfy")
+mass = 1.6
+weapon = ExtResource("2_1yfxi")
+max_durability = 200.0
+impact_material = &"metal"
+stack_size = 1
+description = "Arma pesada e quase indestrutível."

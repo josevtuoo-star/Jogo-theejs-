@@ -187,6 +187,9 @@ var _foot_offsets: Array[float] = [0.0, 0.0]
 var _foot_normals: Array[Vector3] = [Vector3.UP, Vector3.UP]
 var _pelvis_offset: float = 0.0
 var _foot_ik_weight: float = 0.0
+## Escalada de encosta: corpo dobrado e mãos apoiadas na rampa.
+var _scramble_weight: float = 0.0
+var _hand_ray := PhysicsRayQueryParameters3D.new()
 var _delta: float = 0.016
 ## Tempo da última atualização, em microssegundos (diagnóstico de desempenho).
 var last_update_usec: int = 0
@@ -462,6 +465,8 @@ func _update_weights(delta: float) -> void:
 				-deg_to_rad(max_head_look_yaw), deg_to_rad(max_head_look_yaw))
 	_head_look_yaw = _approach(_head_look_yaw, look_target, 6.0, delta)
 	_guard_weight = _approach(_guard_weight, 1.0 if _guard_target else 0.0, 12.0, delta)
+	var scrambling := player.movement_state == PlayerController.MovementState.SCRAMBLING
+	_scramble_weight = _approach(_scramble_weight, 1.0 if scrambling else 0.0, 7.0, delta)
 	_first_person_weight = _approach(_first_person_weight, 1.0 if hide_head else 0.0, 10.0, delta)
 	_update_planted_feet(delta, grounded, speed)
 	_update_acceleration(delta, grounded)
@@ -572,6 +577,10 @@ func _compose() -> void:
 				_sample_gait(&"crouch_walk", player.get_gait_phase(), _scratch)
 				_mix(_layer, _scratch, _move_weight)
 			_mix(_pose, _layer, crouch)
+		if _scramble_weight > 0.001:
+			# Escalando: base agachada, no ritmo da passada.
+			_sample_gait(&"crouch_walk", player.get_gait_phase(), _layer)
+			_mix(_pose, _layer, _scramble_weight)
 		if _turn_step >= 0.0:
 			# Passo de ajuste: meio ciclo de caminhada só nas pernas.
 			_sample_gait(&"walk", minf(_turn_step, 1.0) * 0.5, _scratch)
@@ -702,6 +711,8 @@ func _apply() -> void:
 				var axis := Vector3.UP.cross(local.normalized()).normalized()
 				for bone_name in LEAN_BONES:
 					_rotate_global(skeleton.find_bone(bone_name), axis, lean * LEAN_BONES[bone_name])
+		if _scramble_weight > 0.001 and not _overlays.has(SLOT_ACTION):
+			_apply_scramble_pose(_scramble_weight)
 		# Guarda em primeira pessoa: os punhos vão para diante dos olhos (IK de
 		# dois ossos), cotovelos para baixo. Em terceira pessoa vale a captura.
 		var fp_guard := _guard_weight * _first_person_weight
@@ -713,7 +724,8 @@ func _apply() -> void:
 				_rotate_global(skeleton.find_bone(bone_name), Vector3.UP, _head_look_yaw * HEAD_LOOK_BONES[bone_name])
 		# Tronco e pescoço dobram com o olhar. O personagem olha para +Z no
 		# espaço do esqueleto, então o eixo "direita" do corpo é -X.
-		var pitch := player.get_pitch()
+		# Escalando, o olhar para cima não joga o tronco para trás.
+		var pitch := player.get_pitch() * (1.0 - 0.75 * _scramble_weight)
 		if absf(pitch) > 0.001:
 			for bone_name in PITCH_BONES:
 				_rotate_global(skeleton.find_bone(bone_name), Vector3.LEFT, pitch * PITCH_BONES[bone_name])
@@ -811,6 +823,46 @@ func _apply_first_person_guard(weight: float) -> void:
 				- skeleton.get_bone_global_pose(hand).origin
 		var aim: Vector3 = to_skeleton.basis * (view * Vector3(-0.15 * float(side[2]), 0.55, -1.0).normalized())
 		_rotate_global_q(hand, _arc(knuckles.normalized(), aim.normalized()), weight)
+
+
+## Escalada: tronco dobrado para a encosta e as mãos apoiadas nela, uma de
+## cada vez, no ritmo dos passos (a mão que avança sobe um pouco da rocha e
+## é plantada adiante, a outra empurra para trás). Os alvos vêm de raios
+## contra o chão de verdade, então as mãos tocam a superfície em qualquer
+## inclinação.
+func _apply_scramble_pose(weight: float) -> void:
+	for bone_name: String in ["spine_01", "spine_02", "spine_03"]:
+		_rotate_global(skeleton.find_bone(bone_name), Vector3.LEFT, -0.2 * weight)
+	var normal := player.get_scramble_normal()
+	var uphill := (Vector3.UP - normal * normal.y).normalized()
+	var forward := -player.global_basis.z
+	var phase := player.get_gait_phase()
+	var to_skeleton := skeleton.global_transform.affine_inverse()
+	var space := skeleton.get_world_3d().direct_space_state
+	_hand_ray.collision_mask = 1
+	_hand_ray.exclude = [player.get_rid()]
+	for side in [["_l", 0.0, 1.0], ["_r", 0.5, -1.0]]:
+		var upper := skeleton.find_bone("upperarm" + side[0])
+		var shoulder := skeleton.global_transform * skeleton.get_bone_global_pose(upper).origin
+		var cycle := TAU * (phase + float(side[1]))
+		_hand_ray.from = shoulder + forward * 0.2 + normal * 0.3
+		_hand_ray.to = _hand_ray.from - normal * 1.6
+		var hit := space.intersect_ray(_hand_ray)
+		if hit.is_empty():
+			continue
+		var reach := sin(cycle)
+		var lift := maxf(cos(cycle), 0.0) * 0.07
+		var point: Vector3 = hit["position"] + uphill * (0.12 + 0.16 * reach) + normal * (0.04 + lift)
+		var outward := player.global_basis.x * -float(side[2])
+		var pole := shoulder + outward * 0.45 - forward * 0.25 + Vector3.DOWN * 0.2
+		var hand := skeleton.find_bone("hand" + side[0])
+		_solve_two_bone_ik(upper, skeleton.find_bone("lowerarm" + side[0]), hand,
+				to_skeleton * point, to_skeleton * pole, weight)
+		# Palma na rocha, dedos apontando morro acima.
+		var knuckles := skeleton.get_bone_global_pose(skeleton.find_bone("middle_01" + side[0])).origin \
+				- skeleton.get_bone_global_pose(hand).origin
+		var aim := (to_skeleton.basis * (uphill * 0.8 - normal * 0.35)).normalized()
+		_rotate_global_q(hand, _arc(knuckles.normalized(), aim), weight * 0.8)
 
 
 ## IK analítica de dois ossos (braço e antebraço) no espaço do esqueleto.

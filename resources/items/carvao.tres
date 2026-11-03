@@ -10,3 +10,4 @@ display_name = "Carvão"
 world_mesh = ExtResource("2_y08bc")
 mass = 0.8
 max_durability = 1.0
+description = "Combustível das tochas."

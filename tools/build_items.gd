@@ -11,15 +11,62 @@ extends SceneTree
 const ICONS := "res://resources/icons/"
 const ITEMS := "res://resources/items/"
 
-## id: [nome, tipo, malha ou arma, massa, durabilidade, material do som]
+## id: propriedades do ItemData. "source" = arma (.tres) ou malha (.res).
+const W := "res://resources/weapons/"
+const M := "res://resources/models/world/"
+const T := ItemData.Kind.TOOL
+const R := ItemData.Kind.RESOURCE
+const A := ItemData.Kind.ARMOR
 const LIST := {
-	"machado": ["Machado de bombeiro", ItemData.Kind.TOOL, "res://resources/weapons/machado.tres", 2.8, 140.0, &"metal"],
-	"picareta": ["Picareta", ItemData.Kind.TOOL, "res://resources/weapons/picareta.tres", 2.6, 140.0, &"metal"],
-	"taco": ["Taco com pregos", ItemData.Kind.TOOL, "res://resources/weapons/taco.tres", 1.2, 60.0, &"madeira"],
-	"madeira": ["Madeira", ItemData.Kind.RESOURCE, "res://resources/models/world/tora.res", 4.0, 0.0, &"madeira"],
-	"pedra": ["Pedra", ItemData.Kind.RESOURCE, "res://resources/models/world/pedaco_pedra.res", 1.5, 0.0, &"generico"],
-	"carvao": ["Carvão", ItemData.Kind.RESOURCE, "res://resources/models/world/pedaco_carvao.res", 0.8, 0.0, &"generico"],
-	"ferro": ["Minério de ferro", ItemData.Kind.RESOURCE, "res://resources/models/world/pedaco_ferro.res", 2.0, 0.0, &"metal"],
+	# Ferramentas e armas
+	"machado": {"name": "Machado de bombeiro", "kind": T, "source": W + "machado.tres", "mass": 2.8, "durability": 140.0,
+		"sound": &"metal", "tool_type": &"machado", "tier": 2, "power": 1.0,
+		"text": "Derruba árvores rápido. Arma pesada."},
+	"picareta": {"name": "Picareta", "kind": T, "source": W + "picareta.tres", "mass": 2.6, "durability": 140.0,
+		"sound": &"metal", "tool_type": &"picareta", "tier": 2, "power": 1.0,
+		"text": "Quebra pedra, carvão e minério de ferro."},
+	"taco": {"name": "Taco com pregos", "kind": T, "source": W + "taco.tres", "mass": 1.2, "durability": 60.0,
+		"sound": &"madeira", "text": "Arma rápida contra zumbis."},
+	"machado_pedra": {"name": "Machado de pedra", "kind": T, "source": W + "machado_pedra.tres", "mass": 1.3, "durability": 70.0,
+		"sound": &"madeira", "tool_type": &"machado", "tier": 1, "power": 0.7,
+		"text": "Corta árvores (mais devagar que o de bombeiro)."},
+	"picareta_pedra": {"name": "Picareta de pedra", "kind": T, "source": W + "picareta_pedra.tres", "mass": 1.5, "durability": 70.0,
+		"sound": &"madeira", "tool_type": &"picareta", "tier": 1, "power": 0.6,
+		"text": "Quebra pedra e carvão. Ferro pede picareta de metal."},
+	"faca_pedra": {"name": "Faca de pedra", "kind": T, "source": W + "faca_pedra.tres", "mass": 0.3, "durability": 50.0,
+		"sound": &"madeira", "text": "Golpes curtos e muito rápidos."},
+	"lanca": {"name": "Lança", "kind": T, "source": W + "lanca.tres", "mass": 1.4, "durability": 60.0,
+		"sound": &"madeira", "text": "Alcance longo: mantém o zumbi longe."},
+	"tocha": {"name": "Tocha", "kind": T, "source": W + "tocha.tres", "mass": 0.5, "durability": 240.0,
+		"sound": &"madeira", "tool_type": &"tocha", "light": 2.4,
+		"text": "Ilumina as cavernas. Queima com o tempo na mão."},
+	"facao": {"name": "Facão", "kind": T, "source": W + "facao.tres", "mass": 0.7, "durability": 110.0,
+		"sound": &"metal", "tool_type": &"facao", "tier": 1, "power": 0.45,
+		"text": "Arma rápida; também corta árvores, devagar."},
+	"pe_de_cabra": {"name": "Pé de cabra", "kind": T, "source": W + "pe_de_cabra.tres", "mass": 1.6, "durability": 200.0,
+		"sound": &"metal", "text": "Arma pesada e quase indestrutível."},
+	# Recursos
+	"madeira": {"name": "Madeira", "kind": R, "source": M + "tora.res", "mass": 4.0, "sound": &"madeira",
+		"text": "Tora. Vira tábuas na bancada."},
+	"tabua": {"name": "Tábua", "kind": R, "source": M + "tabua.res", "mass": 1.0, "sound": &"madeira",
+		"text": "Para gravetos e construção."},
+	"graveto": {"name": "Graveto", "kind": R, "source": M + "graveto.res", "mass": 0.2, "sound": &"madeira",
+		"text": "Cabo de ferramentas e tochas."},
+	"pedra": {"name": "Pedra", "kind": R, "source": M + "pedaco_pedra.res", "mass": 1.5, "sound": &"generico",
+		"text": "Lâminas e cabeças de ferramentas."},
+	"carvao": {"name": "Carvão", "kind": R, "source": M + "pedaco_carvao.res", "mass": 0.8, "sound": &"generico",
+		"text": "Combustível das tochas."},
+	"ferro": {"name": "Minério de ferro", "kind": R, "source": M + "pedaco_ferro.res", "mass": 2.0, "sound": &"metal",
+		"text": "Ferramentas de metal e armaduras."},
+	# Armaduras
+	"capacete": {"name": "Capacete de sucata", "kind": A, "source": M + "armadura_capacete.res", "mass": 1.2, "durability": 80.0,
+		"sound": &"metal", "slot": &"cabeca", "armor": 0.15, "text": "Cabeça: absorve 15% do dano."},
+	"colete": {"name": "Colete de chapas", "kind": A, "source": M + "armadura_colete.res", "mass": 4.0, "durability": 120.0,
+		"sound": &"metal", "slot": &"tronco", "armor": 0.25, "text": "Tronco: absorve 25% do dano."},
+	"joelheiras": {"name": "Joelheiras", "kind": A, "source": M + "armadura_joelheira.res", "mass": 0.8, "durability": 70.0,
+		"sound": &"metal", "slot": &"pernas", "armor": 0.08, "text": "Pernas: absorvem 8% do dano."},
+	"botas_reforcadas": {"name": "Botas reforçadas", "kind": A, "source": M + "armadura_bota.res", "mass": 1.0, "durability": 70.0,
+		"sound": &"metal", "slot": &"pes", "armor": 0.06, "text": "Pés: absorvem 6% do dano."},
 }
 
 var _viewport: SubViewport
@@ -67,20 +114,28 @@ func _stage() -> void:
 
 func _build() -> void:
 	for id: String in LIST:
-		var spec: Array = LIST[id]
+		var spec: Dictionary = LIST[id]
 		var item := ItemData.new()
 		item.id = StringName(id)
-		item.display_name = spec[0]
-		item.kind = spec[1]
-		item.mass = spec[3]
-		item.max_durability = maxf(spec[4], 1.0)
-		item.impact_material = spec[5]
+		item.display_name = spec["name"]
+		item.kind = spec["kind"]
+		item.mass = spec["mass"]
+		item.max_durability = maxf(spec.get("durability", 1.0), 1.0)
+		item.impact_material = spec["sound"]
+		item.description = spec.get("text", "")
+		item.stack_size = 64 if item.kind == ItemData.Kind.RESOURCE else 1
+		item.tool_type = spec.get("tool_type", &"arma")
+		item.tier = spec.get("tier", 0)
+		item.work_power = spec.get("power", 0.0)
+		item.armor_slot = spec.get("slot", &"")
+		item.armor_value = spec.get("armor", 0.0)
+		item.light_energy = spec.get("light", 0.0)
 		var mesh: Mesh
 		if item.kind == ItemData.Kind.TOOL:
-			item.weapon = load(spec[2])
+			item.weapon = load(spec["source"])
 			mesh = item.weapon.mesh
 		else:
-			mesh = load(spec[2])
+			mesh = load(spec["source"])
 		item.world_mesh = mesh
 		var image := await _render(mesh, item.kind == ItemData.Kind.TOOL)
 		image.resize(128, 128, Image.INTERPOLATE_LANCZOS)
@@ -89,7 +144,7 @@ func _build() -> void:
 		# O ícone fica em resources/icons/<id>.png (importado pelo projeto) e
 		# ItemData.get_icon() o carrega por esse caminho.
 		var error := ResourceSaver.save(item, ITEMS + id + ".tres")
-		print("%-9s %s" % [id, error_string(error)])
+		print("%-16s %s" % [id, error_string(error)])
 	quit()
 
 

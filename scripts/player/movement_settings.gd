@@ -59,6 +59,13 @@ extends Resource
 @export_range(1.0, 30.0, 0.1) var max_slide_speed: float = 10.0
 ## Aceleração lateral que o jogador consegue exercer escorregando (m/s²).
 @export_range(0.0, 10.0, 0.1) var slide_control_acceleration: float = 2.0
+## Escalada de encosta (mãos no chão): entre a inclinação caminhável e esta,
+## empurrando morro acima, o personagem sobe devagar apoiando as mãos.
+@export_range(46.0, 85.0, 0.5) var scramble_max_angle_degrees: float = 70.0
+## Velocidade ao escalar, ao longo da encosta (m/s).
+@export_range(0.2, 3.0, 0.05) var scramble_speed: float = 1.05
+## Quanto do comando precisa apontar morro acima para começar a escalar.
+@export_range(0.0, 1.0, 0.01) var scramble_min_push: float = 0.35
 ## Distância de "grudar" no chão ao descer degraus e rampas.
 @export_range(0.0, 1.0, 0.01) var floor_snap_length: float = 0.35
 ## Altura máxima de degrau que o personagem sobe sem saltar.

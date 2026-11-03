@@ -10,12 +10,33 @@ const BARK := "res://assets/polyhaven/textures/pine_bark/pine_bark_"
 const HEIGHTS := [9.0, 7.95, 6.02]
 
 
+## Árvores dos outros biomas (etapa 9, tools/bake_broadleaf_impostors.gd):
+## folhosa, a mesma seca e árvore-aljava. Quadros quadrados (lado em metros).
+const BROADLEAF_ATLAS := "res://resources/textures/trees/broadleaf_cards.png"
+const BROADLEAF_SIDES := [4.65, 4.65, 2.77]
+const BROADLEAF_TINTS := [Color(0.82, 0.88, 0.76), Color(0.85, 0.83, 0.8), Color(0.9, 0.92, 0.82)]
+
+
+## Copa das variantes 3, 4 e 5 (folhosa, seca, aljava).
+static func broadleaf_mesh(row: int) -> ArrayMesh:
+	var mesh := card_mesh(row, load(BROADLEAF_ATLAS), BROADLEAF_SIDES[row], 1.0)
+	var material := mesh.surface_get_material(0) as ShaderMaterial
+	var tint: Color = BROADLEAF_TINTS[row]
+	material.set_shader_parameter("tint", Vector3(tint.r, tint.g, tint.b))
+	if row == 1:
+		# Galhos secos: sem a luz atravessando folhas.
+		material.set_shader_parameter("translucency", Vector3(0.04, 0.035, 0.03))
+	return mesh
+
+
 ## Três planos cruzados (0°, 60°, 120°) com os quadros da variante no atlas.
-static func card_mesh(variant: int, atlas: Texture2D = null) -> ArrayMesh:
+## `frame_height` (m) e `aspect` (largura/altura do quadro) servem ao atlas
+## dos outros biomas; sem eles, o dos abetos.
+static func card_mesh(variant: int, atlas: Texture2D = null, frame_height: float = 0.0, aspect: float = 0.5) -> ArrayMesh:
 	if atlas == null:
 		atlas = load(ATLAS)
-	var height: float = HEIGHTS[variant]
-	var width := height * 0.5
+	var height: float = HEIGHTS[variant] if frame_height <= 0.0 else frame_height
+	var width := height * aspect
 	var bottom := -height * 0.01
 	var vertices := PackedVector3Array()
 	var uvs := PackedVector2Array()

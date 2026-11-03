@@ -18,6 +18,9 @@ uniform float fleck_metallic : hint_range(0.0, 1.0) = 0.2;
 uniform float fleck_scale = 6.0;
 // Umidade: as formações brilham um pouco (água escorrendo).
 uniform float wetness : hint_range(0.0, 1.0) = 0.25;
+// Rochedos da superfície: musgo e líquen no que fica virado para cima.
+uniform float moss_amount : hint_range(0.0, 1.0) = 0.0;
+uniform vec3 moss_color : source_color = vec3(0.2, 0.25, 0.12);
 
 varying vec3 object_position;
 varying vec3 object_normal;
@@ -62,6 +65,13 @@ void fragment() {
 		albedo = mix(albedo, fleck_color * mix(0.8, 1.2, stain), mask);
 		rough = mix(rough, fleck_roughness, mask);
 		metal = fleck_metallic * mask;
+	}
+	if (moss_amount > 0.0) {
+		float patch = value_noise(object_position * 1.3) * 0.6 + value_noise(object_position * 4.1) * 0.4;
+		float up = smoothstep(0.15, 0.75, object_normal.y);
+		float mask = smoothstep(0.45, 0.7, up * (0.55 + patch * 0.7));
+		albedo = mix(albedo, moss_color * mix(0.7, 1.2, patch), mask * moss_amount);
+		rough = mix(rough, 0.95, mask);
 	}
 	ALBEDO = albedo;
 	ROUGHNESS = rough;

@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="WeaponData" load_steps=3 format=3]
+
+[ext_resource type="ArrayMesh" path="res://resources/models/weapons/lanca.res" id="1_6bkg5"]
+[ext_resource type="Script" path="res://scripts/weapons/weapon_data.gd" id="2_03bem"]
+
+[resource]
+script = ExtResource("2_03bem")
+id = &"lanca"
+display_name = "Lança"
+mesh = ExtResource("1_6bkg5")
+mass = 1.4
+reach = 1.2
+hit_radius = 0.1
+light_damage = 24.0
+light_impulse = 16.0
+light_speed = 0.95
+light_recovery = 0.25
+heavy_min_damage = 34.0
+heavy_max_damage = 56.0
+heavy_max_impulse = 40.0
+heavy_recovery = 0.45
+impact_material = &"madeira"

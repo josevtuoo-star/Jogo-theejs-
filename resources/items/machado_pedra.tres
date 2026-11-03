@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="ItemData" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/inventory/item_data.gd" id="1_lx8vg"]
+[ext_resource type="Resource" path="res://resources/weapons/machado_pedra.tres" id="2_p0o8n"]
+[ext_resource type="ArrayMesh" path="res://resources/models/weapons/machado_pedra.res" id="3_caypl"]
+
+[resource]
+script = ExtResource("1_lx8vg")
+id = &"machado_pedra"
+display_name = "Machado de pedra"
+kind = 0
+world_mesh = ExtResource("3_caypl")
+mass = 1.3
+weapon = ExtResource("2_p0o8n")
+max_durability = 70.0
+impact_material = &"madeira"
+stack_size = 1
+tool_type = &"machado"
+tier = 1
+work_power = 0.7
+description = "Corta árvores (mais devagar que o de bombeiro)."

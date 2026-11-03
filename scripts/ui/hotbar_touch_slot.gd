@@ -22,6 +22,7 @@ func _follow() -> void:
 	var screen := get_viewport().get_visible_rect().size
 	var parent_rect := (get_parent() as Control).get_global_rect() if get_parent() is Control else Rect2(Vector2.ZERO, screen)
 	var center := InventoryHud.slot_center(slot_index, parent_rect.size)
+	radius = InventoryHud.slot_metrics(parent_rect.size).y * 0.5
 	size = Vector2.ONE * radius * 2.0
 	position = center - size * 0.5
 

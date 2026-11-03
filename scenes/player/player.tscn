@@ -1,4 +1,4 @@
-[gd_scene load_steps=16 format=3]
+[gd_scene load_steps=17 format=3]
 
 [ext_resource type="Script" path="res://scripts/player/player_controller.gd" id="1_controller"]
 [ext_resource type="Resource" path="res://resources/player/default_movement_settings.tres" id="2_settings"]
@@ -13,6 +13,7 @@
 [ext_resource type="Script" path="res://scripts/audio/player_sounds.gd" id="12_sounds"]
 [ext_resource type="Script" path="res://scripts/weapons/player_equipment.gd" id="13_equipment"]
 [ext_resource type="Script" path="res://scripts/inventory/inventory.gd" id="20_inventory"]
+[ext_resource type="Script" path="res://scripts/inventory/armor_visuals.gd" id="21_armor"]
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_body"]
 radius = 0.3
@@ -106,3 +107,8 @@ inventory = NodePath("../Inventory")
 script = ExtResource("20_inventory")
 player = NodePath("..")
 equipment = NodePath("../Equipment")
+
+[node name="ArmorVisuals" type="Node" parent="." node_paths=PackedStringArray("body", "inventory")]
+script = ExtResource("21_armor")
+body = NodePath("../Survivor")
+inventory = NodePath("../Inventory")

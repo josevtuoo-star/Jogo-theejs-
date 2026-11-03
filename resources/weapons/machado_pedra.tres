@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="WeaponData" load_steps=3 format=3]
+
+[ext_resource type="ArrayMesh" path="res://resources/models/weapons/machado_pedra.res" id="1_gcg04"]
+[ext_resource type="Script" path="res://scripts/weapons/weapon_data.gd" id="2_gwa0q"]
+
+[resource]
+script = ExtResource("2_gwa0q")
+id = &"machado_pedra"
+display_name = "Machado de pedra"
+mesh = ExtResource("1_gcg04")
+mass = 1.3
+hit_radius = 0.12
+light_damage = 18.0
+light_impulse = 12.0
+light_speed = 0.95
+light_recovery = 0.24
+heavy_min_damage = 26.0
+heavy_max_damage = 44.0
+heavy_min_impulse = 18.0
+heavy_max_impulse = 36.0
+heavy_recovery = 0.42
+impact_material = &"madeira"

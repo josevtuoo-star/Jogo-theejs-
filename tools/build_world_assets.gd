@@ -42,7 +42,16 @@ const PROPS := {"covered_car": 6000, "concrete_road_barrier_02": 1500, "old_tyre
 		"plastic_jerrycan": 1200, "metal_jerrycan_green": 1500, "Barrel_02": 1500,
 		"can_rusted": 400, "dry_branches_medium_01": 3000, "wooden_military_crate": 2000,
 		"fern_02": 3000, "shrub_03": 3000, "boulder_01": 4000, "rock_moss_set_01": 6000,
-		"tree_stump_01": 3000, "dead_tree_trunk": 4000, "rock_face_01": 6000}
+		"tree_stump_01": 3000, "dead_tree_trunk": 4000,
+		# Etapa 9: vegetação dos biomas e ruas das vilas e cidades.
+		"shrub_02": 2500, "shrub_04": 2500, "weed_plant_02": 2000,
+		"street_lamp_01": 2500, "metal_trash_can": 1500}
+
+## Pacotes com variantes lado a lado: quais nós usar (etapa 9).
+const PICK := {"shrub_02": ["shrub_02_b"], "weed_plant_02": ["weed_plant_02_a", "weed_plant_02_b"],
+		"metal_trash_can": ["metal_trash_can_rust"]}
+## Escala para o tamanho real (os modelos vêm em escala reduzida).
+const SCALE := {"weed_plant_02": 5.5, "shrub_04": 3.2}
 
 var _noise := FastNoiseLite.new()
 
@@ -51,16 +60,21 @@ func _initialize() -> void:
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(OUT))
 	_noise.seed = 404
 	_noise.frequency = 1.6
+	_procedural()
+	if "procedural" in OS.get_cmdline_user_args():
+		quit()
+		return
 	var materials := _wreck_materials()
 	for name in WRECKS:
 		var mesh := _wreck(name, WRECKS[name], materials)
 		_save(name, mesh)
-	_procedural()
 	for name in PROPS:
-		var parts := MeshTools.simplified(MeshTools.flatten(PH + "%s/%s_1k.gltf" % [name, name]), PROPS[name])
+		var parts := MeshTools.simplified(MeshTools.flatten(PH + "%s/%s_1k.gltf" % [name, name], PICK.get(name, [])), PROPS[name])
 		var box := MeshTools.bounds(parts)
 		var center := box.get_center()
-		var xform := Transform3D(Basis.IDENTITY, Vector3(-center.x, -box.position.y, -center.z))
+		var factor: float = SCALE.get(name, 1.0)
+		var xform := Transform3D(Basis.IDENTITY.scaled(Vector3.ONE * factor), Vector3.ZERO) \
+				* Transform3D(Basis.IDENTITY, Vector3(-center.x, -box.position.y, -center.z))
 		_save(name, MeshTools.build(parts, xform, true))
 	quit()
 
@@ -185,6 +199,118 @@ func _procedural() -> void:
 	_save("pedaco_carvao", _lump(0.09, Vector3(1.0, 0.8, 0.85), 0.3, 32, coal_piece))
 	_save("pedaco_ferro", _lump(0.1, Vector3(1.0, 0.8, 0.9), 0.3, 33, iron_piece))
 	_save("tora", _log(0.85, 0.13))
+	# Rochedos da superfície (substituem o scan "rock_face_01", uma fatia de
+	# penhasco com laterais cortadas retas que, nas encostas, ficava
+	# flutuando): blocos arredondados e irregulares, textura projetada nos
+	# três eixos (sem esticar), musgo no topo. Base plana em y = 0.
+	var boulder := _rock_material("rocha_superficie.tres", Color(0.8, 0.79, 0.75), Color.BLACK, 0.0, 0.0, 0.85, 0.05)
+	boulder.set_shader_parameter("moss_amount", 0.55)
+	boulder.set_shader_parameter("desaturate", 0.7)
+	boulder.set_shader_parameter("tile", 1.8)
+	ResourceSaver.save(boulder, OUT + "rocha_superficie.tres")
+	_save("rochedo_0", _lump(1.2, Vector3(1.35, 0.8, 1.0), 0.24, 41, boulder, 3))
+	_save("rochedo_1", _lump(1.1, Vector3(1.0, 1.0, 0.9), 0.3, 42, boulder, 3))
+	_save("rochedo_2", _lump(1.3, Vector3(1.6, 0.6, 1.1), 0.2, 43, boulder, 3))
+	_items_and_armor()
+	_town_material()
+
+
+## Material das fachadas das vilas e cidades (resources/materials/building.gdshader).
+func _town_material() -> void:
+	var material := ShaderMaterial.new()
+	material.shader = load("res://resources/materials/building.gdshader")
+	var textures := {"brick_albedo": "brick_wall_02", "plaster_albedo": "worn_plaster_wall", "concrete_albedo": "concrete_wall_004",
+			"planks_albedo": "weathered_planks", "roof_albedo": "grey_roof_01", "tin_albedo": "rusty_corrugated_iron"}
+	for parameter: String in textures:
+		var folder: String = textures[parameter]
+		material.set_shader_parameter(parameter, load("res://assets/polyhaven/textures/%s/%s_albedo_1k.jpg" % [folder, folder]))
+	ResourceSaver.save(material, "res://resources/materials/building.tres")
+
+
+# --- Itens feitos na bancada e armaduras (etapa 9) -------------------------------
+
+func _pbr(folder: String, scale: float = 1.0) -> ORMMaterial3D:
+	var base := "res://assets/polyhaven/textures/%s/%s_" % [folder, folder]
+	var material := ORMMaterial3D.new()
+	material.albedo_texture = load(base + "albedo_1k.jpg")
+	material.normal_enabled = true
+	material.normal_texture = load(base + "normal_1k.jpg")
+	material.orm_texture = load(base + "arm_1k.jpg")
+	material.uv1_scale = Vector3.ONE * scale
+	return material
+
+
+func _box_arrays(size: Vector3, at: Vector3 = Vector3.ZERO, rotation: Basis = Basis.IDENTITY) -> Array:
+	var box := BoxMesh.new()
+	box.size = size
+	return MeshTools.transformed(box.get_mesh_arrays(), Transform3D(rotation, at))
+
+
+func _items_and_armor() -> void:
+	var planks := _pbr("weathered_planks", 0.5)
+	ResourceSaver.save(planks, OUT + "tabua_material.tres")
+	planks = load(OUT + "tabua_material.tres")
+	# Tábua serrada (60 × 11 × 2,5 cm), base em y = 0.
+	_save("tabua", MeshTools.build([[_box_arrays(Vector3(0.11, 0.025, 0.6), Vector3(0.0, 0.0125, 0.0)), planks]]))
+	# Graveto: galho fino com casca.
+	var bark := StandardMaterial3D.new()
+	bark.albedo_texture = load("res://assets/polyhaven/textures/pine_bark/pine_bark_albedo_1k.jpg")
+	bark.albedo_color = Color(0.85, 0.78, 0.68)
+	bark.roughness = 0.9
+	var stick := CylinderMesh.new()
+	stick.top_radius = 0.011
+	stick.bottom_radius = 0.014
+	stick.height = 0.5
+	stick.radial_segments = 7
+	stick.rings = 1
+	_save("graveto", MeshTools.build([[MeshTools.transformed(stick.get_mesh_arrays(),
+			Transform3D(Basis(Vector3.FORWARD, PI * 0.5), Vector3(0.0, 0.014, 0.0))), bark]]))
+	# Armaduras de sucata: chapa pintada e enferrujada presa por tiras de
+	# couro. Malhas no espaço do esqueleto (metros, personagem olhando para
+	# +Z), centradas na origem; ArmorVisuals as prende aos ossos.
+	var plate := _pbr("rusty_painted_metal", 0.6)
+	plate.metallic_specular = 0.6
+	# Chapa pintada de verde-oliva, gasta (a foto é de tinta descascada).
+	plate.albedo_color = Color(0.5, 0.56, 0.46)
+	ResourceSaver.save(plate, OUT + "armadura_material.tres")
+	plate = load(OUT + "armadura_material.tres")
+	var strap := StandardMaterial3D.new()
+	strap.albedo_color = Color(0.2, 0.15, 0.1)
+	strap.roughness = 0.85
+	var dome := SphereMesh.new()
+	dome.radius = 0.14
+	dome.height = 0.14
+	dome.is_hemisphere = true
+	dome.radial_segments = 20
+	dome.rings = 8
+	var brim := CylinderMesh.new()
+	brim.top_radius = 0.15
+	brim.bottom_radius = 0.165
+	brim.height = 0.014
+	brim.radial_segments = 20
+	brim.rings = 1
+	_save("armadura_capacete", MeshTools.build([
+		[MeshTools.transformed(dome.get_mesh_arrays(), Transform3D(Basis.from_scale(Vector3(1.0, 0.95, 1.12)), Vector3.ZERO)), plate],
+		[MeshTools.transformed(brim.get_mesh_arrays(), Transform3D(Basis.from_scale(Vector3(1.0, 1.0, 1.12)), Vector3(0.0, 0.004, 0.0))), plate],
+		[_box_arrays(Vector3(0.012, 0.11, 0.02), Vector3(0.128, -0.05, 0.02)), strap],
+		[_box_arrays(Vector3(0.012, 0.11, 0.02), Vector3(-0.128, -0.05, 0.02)), strap],
+	]))
+	_save("armadura_colete", MeshTools.build([
+		[_box_arrays(Vector3(0.34, 0.36, 0.028), Vector3(0.0, 0.0, 0.135), Basis(Vector3.RIGHT, -0.12)), plate],
+		[_box_arrays(Vector3(0.34, 0.38, 0.028), Vector3(0.0, 0.0, -0.125), Basis(Vector3.RIGHT, 0.08)), plate],
+		[_box_arrays(Vector3(0.06, 0.02, 0.28), Vector3(0.11, 0.2, 0.0)), strap],
+		[_box_arrays(Vector3(0.06, 0.02, 0.28), Vector3(-0.11, 0.2, 0.0)), strap],
+		[_box_arrays(Vector3(0.025, 0.05, 0.26), Vector3(0.19, -0.1, 0.0)), strap],
+		[_box_arrays(Vector3(0.025, 0.05, 0.26), Vector3(-0.19, -0.1, 0.0)), strap],
+	]))
+	_save("armadura_joelheira", MeshTools.build([
+		[_box_arrays(Vector3(0.1, 0.13, 0.03), Vector3(0.0, 0.0, 0.0), Basis(Vector3.RIGHT, 0.1)), plate],
+		[_box_arrays(Vector3(0.13, 0.025, 0.12), Vector3(0.0, -0.035, -0.04)), strap],
+	]))
+	_save("armadura_bota", MeshTools.build([
+		[_box_arrays(Vector3(0.105, 0.06, 0.1), Vector3(0.0, 0.0, 0.0), Basis(Vector3.RIGHT, -0.25)), plate],
+		[_box_arrays(Vector3(0.12, 0.03, 0.05), Vector3(0.0, 0.03, -0.06)), strap],
+	]))
 
 
 ## Estalagmite (direction 1, base em y = 0, ponta para cima) ou estalactite

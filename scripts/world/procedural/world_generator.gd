@@ -28,7 +28,8 @@ const ROAD_BLEND := 11.0
 const ROAD_BLEND_MAX := 34.0
 
 ## Tipos de objeto espalhados (índices usados pelo ProceduralWorld).
-const TREE_HEIGHTS := [9.0, 7.95, 6.02]
+## Altura do quadro de cada variante: abetos (3), folhosa, seca, aljava.
+const TREE_HEIGHTS := [9.0, 7.95, 6.02, 4.65, 4.65, 2.77]
 
 var world_seed: int
 
@@ -49,6 +50,9 @@ var _entrance_cache: Dictionary = {}
 var _spawn_region := Vector2i(1 << 30, 0)
 var _road_warp := FastNoiseLite.new()
 var _jams := FastNoiseLite.new()
+var _temperature := FastNoiseLite.new()
+var _humidity := FastNoiseLite.new()
+var _town_cache: Dictionary = {}
 
 
 func _init(seed_value: int = 1) -> void:
@@ -67,6 +71,8 @@ func _init(seed_value: int = 1) -> void:
 	_setup(_rough, 18, 0.16, 2, FastNoiseLite.TYPE_SIMPLEX)
 	_setup(_road_warp, 12, 0.0011, 2, FastNoiseLite.TYPE_SIMPLEX_SMOOTH)
 	_setup(_jams, 13, 0.006, 1, FastNoiseLite.TYPE_SIMPLEX)
+	_setup(_temperature, 21, 0.0012, 2, FastNoiseLite.TYPE_SIMPLEX_SMOOTH)
+	_setup(_humidity, 22, 0.0014, 2, FastNoiseLite.TYPE_SIMPLEX_SMOOTH)
 	_spawn_region = region_of(spawn_point())
 
 
@@ -126,7 +132,211 @@ func surface_height(x: float, z: float) -> float:
 	var d2 := absf(z - bz)
 	if d2 < BYROAD_HALF_WIDTH + ROAD_BLEND_MAX:
 		h = _embank(h, _road_bed(x, bz), d2, BYROAD_HALF_WIDTH)
+	# Vilas e cidades ficam num platô (corte e aterro em volta).
+	var town := town_at(x, z)
+	if not town.is_empty():
+		var d := Vector2(x, z).distance_to(town["center"])
+		h = lerpf(h, town["base"], 1.0 - smoothstep(town["radius"], town["radius"] + TOWN_BLEND, d))
 	return h
+
+
+# --- Biomas (etapa 9) --------------------------------------------------------------
+#
+# Temperatura e umidade variam devagar pelo mundo (ruídos de baixa frequência)
+# e a altitude esfria: cada lugar mistura a floresta de coníferas (a mata da
+# partida) com outros quatro biomas, com transição suave entre eles:
+# - FOLHOSAS: bosque de árvores de folhas largas, chão de folhas secas;
+# - CAMPO: campo aberto de capim, arbustos e poucas árvores;
+# - SECO: terra seca e pedregosa, árvores mortas e árvores-aljava;
+# - NEVE: topos de serra e regiões frias, neve no chão e nas encostas.
+
+enum Biome { CONIFERAS, FOLHOSAS, CAMPO, SECO, NEVE }
+
+
+## Pesos dos biomas além das coníferas: x folhosas, y campo, z seco, w neve
+## (coníferas = 1 - soma). `surface` = altura do chão (NAN = calcula).
+func biome_weights(x: float, z: float, surface: float = NAN) -> Vector4:
+	var t := _temperature.get_noise_2d(x, z)
+	var h := _humidity.get_noise_2d(x, z)
+	var s := surface if not is_nan(surface) else surface_height(x, z)
+	var snow := clampf(smoothstep(-0.38, -0.55, t) + smoothstep(27.0, 35.0, s), 0.0, 1.0)
+	var dry := smoothstep(0.1, 0.32, t) * smoothstep(0.04, -0.24, h) * (1.0 - snow)
+	var plains := smoothstep(-0.04, -0.3, h) * (1.0 - dry) * (1.0 - snow)
+	var broad := smoothstep(0.0, 0.22, t) * smoothstep(-0.08, 0.14, h) * (1.0 - snow) * (1.0 - dry) * (1.0 - plains)
+	return Vector4(broad, plains, dry, snow)
+
+
+func biome_at(x: float, z: float) -> Biome:
+	var w := biome_weights(x, z)
+	var best := Biome.CONIFERAS
+	var value := 1.0 - (w.x + w.y + w.z + w.w)
+	for k in 4:
+		if w[k] > value:
+			value = w[k]
+			best = (k + 1) as Biome
+	return best
+
+
+# --- Vilas e cidades (etapa 9) ------------------------------------------------------
+#
+# Uma região de 448 m pode ter uma vila (casas de um ou dois andares em volta
+# da estrada) ou uma cidade (quarteirões de prédios de 3 a 7 andares numa
+# grade de ruas). Ficam junto da rodovia quando ela passa pela região, num
+# platô aplainado (o relevo em volta é cortado ou aterrado), nunca perto da
+# partida e nunca em relevo acidentado demais. Tudo determinístico pela semente.
+
+const TOWN_REGION := 448.0
+const TOWN_BLEND := 36.0
+const BLOCK := 46.0
+const STREET_HALF := 4.4
+const FLOOR_HEIGHT := 3.2
+
+
+func town_region_of(x: float, z: float) -> Vector2i:
+	return Vector2i(floori(x / TOWN_REGION), floori(z / TOWN_REGION))
+
+
+func town(region: Vector2i) -> Dictionary:
+	if _town_cache.has(region):
+		return _town_cache[region]
+	var data := _make_town(region)
+	_town_cache[region] = data
+	return data
+
+
+## Povoado cujo platô alcança este ponto ({} = nenhum).
+func town_at(x: float, z: float) -> Dictionary:
+	var region := town_region_of(x, z)
+	for dz in range(-1, 2):
+		for dx in range(-1, 2):
+			var t := town(region + Vector2i(dx, dz))
+			if not t.is_empty() and Vector2(x, z).distance_to(t["center"]) < float(t["radius"]) + TOWN_BLEND:
+				return t
+	return {}
+
+
+## Povoados até `radius` metros de um ponto.
+func towns_near(point: Vector3, radius: float) -> Array:
+	var list := []
+	var region := town_region_of(point.x, point.z)
+	var span := int(ceil(radius / TOWN_REGION)) + 1
+	for dz in range(-span, span + 1):
+		for dx in range(-span, span + 1):
+			var t := town(region + Vector2i(dx, dz))
+			if not t.is_empty() and Vector2(point.x, point.z).distance_to(t["center"]) <= radius:
+				list.append(t)
+	return list
+
+
+func _make_town(region: Vector2i) -> Dictionary:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash(Vector3i(region.x, region.y, world_seed * 17 + 3))
+	var roll := rng.randf()
+	var kind := "cidade" if roll < 0.15 else ("vila" if roll < 0.5 else "")
+	if kind == "":
+		return {}
+	var radius := 112.0 if kind == "cidade" else 50.0
+	var cx := (region.x + 0.5) * TOWN_REGION + rng.randf_range(-100.0, 100.0)
+	var cz := (region.y + 0.5) * TOWN_REGION + rng.randf_range(-100.0, 100.0)
+	var hx := highway_center_x(cx, cz)
+	var on_highway := absf(hx - cx) < TOWN_REGION * 0.45
+	if on_highway:
+		cx = hx if kind == "cidade" else hx + (1.0 if rng.randf() < 0.5 else -1.0) * (HIGHWAY_HALF_WIDTH + 30.0)
+	var center := Vector2(cx, cz)
+	# Longe da partida (a mata e a caverna do começo ficam como estão).
+	if center.distance_to(Vector2(highway_center_x(0.0, 0.0), 0.0)) < radius + 230.0:
+		return {}
+	var base := _road_bed(hx, cz) if on_highway else natural_height(cx, cz)
+	var worst := 0.0
+	for k in 8:
+		var p := center + Vector2.from_angle(TAU * k / 8.0) * radius * 0.85
+		worst = maxf(worst, absf(natural_height(p.x, p.y) - base))
+	if worst > 22.0:
+		return {}
+	var data := {"kind": kind, "center": center, "radius": radius, "base": base, "seed": rng.randi(),
+			"highway": hx if on_highway else INF, "name": _town_name(rng, kind)}
+	data["buildings"] = _town_buildings(data, rng)
+	return data
+
+
+const TOWN_NAMES := ["São Bento", "Santa Luzia", "Ouro Fino", "Três Pinheiros", "Ponte Alta", "Bom Retiro",
+		"Rio Claro", "Serra Azul", "Campo Belo", "Água Fria", "Boa Vista", "Pedra Branca", "Vale Verde",
+		"São Jorge", "Nova Esperança", "Monte Alegre", "Barro Preto", "Cachoeira Seca"]
+
+
+func _town_name(rng: RandomNumberGenerator, kind: String) -> String:
+	return ("Vila " if kind == "vila" else "") + TOWN_NAMES[rng.randi() % TOWN_NAMES.size()]
+
+
+## Distância à rua mais próxima da grade da cidade (INF fora dela).
+func town_street_distance(x: float, z: float, t: Dictionary) -> float:
+	if t.is_empty() or t["kind"] != "cidade":
+		return INF
+	var c: Vector2 = t["center"]
+	var lx := x - c.x
+	var lz := z - c.y
+	if Vector2(lx, lz).length() > float(t["radius"]) - 2.0:
+		return INF
+	return minf(absf(lx - roundf(lx / BLOCK) * BLOCK), absf(lz - roundf(lz / BLOCK) * BLOCK))
+
+
+## Prédios e casas do povoado: [{pos, size, style, roof, seed}]. Estilos:
+## 0 tijolo, 1 reboco, 2 concreto, 3 tábuas. Telhado: 0 laje, 1 duas águas.
+func _town_buildings(t: Dictionary, rng: RandomNumberGenerator) -> Array:
+	var list := []
+	var c: Vector2 = t["center"]
+	var base: float = t["base"]
+	var radius: float = t["radius"]
+	var hx: float = t["highway"]
+	if t["kind"] == "cidade":
+		var lot := BLOCK - 2.0 * STREET_HALF - 3.0
+		for i in range(-3, 3):
+			for j in range(-3, 3):
+				var block := c + Vector2((i + 0.5) * BLOCK, (j + 0.5) * BLOCK)
+				if block.distance_to(c) > radius - lot * 0.6:
+					continue
+				var central := 1.0 - block.distance_to(c) / radius
+				var split := rng.randf() < 0.6
+				for k in (4 if split else 1):
+					if rng.randf() < 0.12:
+						continue # terreno baldio
+					var cell := lot * (0.5 if split else 1.0)
+					var offset := Vector2(((k % 2) - 0.5) * cell, ((k / 2) - 0.5) * cell) if split else Vector2.ZERO
+					var w := cell - rng.randf_range(1.0, 3.5)
+					var d := cell - rng.randf_range(1.0, 3.5)
+					var at := block + offset
+					if absf(at.x - hx) < HIGHWAY_HALF_WIDTH + 3.0 + w * 0.5:
+						continue
+					var floors := clampi(int(round(rng.randf_range(2.0, 4.5) + central * 4.0)), 2, 8)
+					list.append({"pos": Vector3(at.x, base, at.y), "size": Vector3(w, floors * FLOOR_HEIGHT + 0.5, d),
+							"style": [0, 0, 1, 2][rng.randi() % 4], "roof": 0, "seed": rng.randi()})
+	else:
+		var count := rng.randi_range(5, 9)
+		var tries := 0
+		while list.size() < count and tries < 60:
+			tries += 1
+			var at := c + Vector2.from_angle(rng.randf() * TAU) * rng.randf_range(10.0, radius - 9.0)
+			var w := rng.randf_range(7.0, 10.0)
+			var d := rng.randf_range(8.0, 11.5)
+			if rng.randf() < 0.5:
+				var swap := w
+				w = d
+				d = swap
+			if absf(at.x - hx) < HIGHWAY_HALF_WIDTH + 5.0 + maxf(w, d) * 0.5:
+				continue
+			var free := true
+			for other: Dictionary in list:
+				var op: Vector3 = other["pos"]
+				var os: Vector3 = other["size"]
+				if absf(op.x - at.x) < (os.x + w) * 0.5 + 4.0 and absf(op.z - at.y) < (os.z + d) * 0.5 + 4.0:
+					free = false
+					break
+			if not free:
+				continue
+			var floors := 1 if rng.randf() < 0.65 else 2
+			list.append({"pos": Vector3(at.x, base, at.y), "size": Vector3(w, floors * FLOOR_HEIGHT + 0.3, d),
+					"style": [0, 1, 1, 3][rng.randi() % 4], "roof": 1, "seed": rng.randi()})
+	return list
 
 
 ## Aterro/corte da estrada: a largura da rampa cresce com o desnível (como
@@ -321,6 +531,8 @@ func _find_entrance(region: Vector2i) -> Dictionary:
 ## A rampa não passa sob estradas com pouca rocha por cima (abriria buraco)
 ## nem atravessa outra galeria no caminho (o chão afundaria nela).
 func _ramp_clear(top: Vector2, top_y: float, bottom: Vector2, bottom_y: float) -> bool:
+	if not town_at(top.x, top.y).is_empty():
+		return false
 	for i in range(1, 21):
 		var t := i / 20.0
 		var p := top.lerp(bottom, t)
@@ -515,6 +727,8 @@ func _surface_nets(origin: Vector2, field: PackedFloat32Array, points: int, laye
 	var colors := PackedColorArray()
 	var uvs := PackedVector2Array()
 	var uv2s := PackedVector2Array()
+	# Pesos dos biomas por vértice (x folhosas, y campo, z seco, w neve).
+	var customs := PackedFloat32Array()
 	var corner := PackedFloat32Array()
 	corner.resize(8)
 	var stride_z := points * layers
@@ -570,6 +784,8 @@ func _surface_nets(origin: Vector2, field: PackedFloat32Array, points: int, laye
 				var marking := _road_frame(position, weights.g)
 				uvs.append(Vector2(marking.x, marking.y))
 				uv2s.append(Vector2(marking.z, marking.w))
+				var biome := biome_weights(position.x, position.z, position.y) if weights.a > 0.5 else Vector4.ZERO
+				customs.append_array([biome.x, biome.y, biome.z, biome.w])
 	# Quadriláteros: arestas com ponto inicial dentro do pedaço (1..CELLS nas
 	# amostras), ligando os vértices das 4 células em volta da aresta.
 	var indices := PackedInt32Array()
@@ -598,7 +814,8 @@ func _surface_nets(origin: Vector2, field: PackedFloat32Array, points: int, laye
 						_quad(indices, vertex_of, cells, cell_layers,
 								Vector3i(px - 1, py - 1, pz), Vector3i(px, py - 1, pz),
 								Vector3i(px, py, pz), Vector3i(px - 1, py, pz), solid)
-	return {"vertices": vertices, "normals": normals, "colors": colors, "uvs": uvs, "uv2s": uv2s, "indices": indices}
+	return {"vertices": vertices, "normals": normals, "colors": colors, "uvs": uvs, "uv2s": uv2s, "customs": customs,
+			"indices": indices}
 
 
 ## Luz das cavernas por vértice: para cada vértice abaixo da superfície,
@@ -731,6 +948,15 @@ func _vertex_weights(position: Vector3, normal: Vector3, cx: int, cz: int, local
 			1.0 - smoothstep(BYROAD_HALF_WIDTH - 0.6, BYROAD_HALF_WIDTH + 0.3, r.y)) * on_top
 	var shoulder := maxf(1.0 - smoothstep(HIGHWAY_HALF_WIDTH + 0.5, HIGHWAY_HALF_WIDTH + 3.0, r.x),
 			1.0 - smoothstep(BYROAD_HALF_WIDTH + 0.5, BYROAD_HALF_WIDTH + 2.5, r.y))
+	# Ruas da cidade (asfalto sem faixas) e calçadas (cascalho de concreto).
+	var t := town_at(position.x, position.z)
+	if not t.is_empty() and sky > 0.5:
+		var street := town_street_distance(position.x, position.z, t)
+		asphalt = maxf(asphalt, (1.0 - smoothstep(STREET_HALF - 0.6, STREET_HALF + 0.2, street)) * on_top)
+		shoulder = maxf(shoulder, 1.0 - smoothstep(STREET_HALF + 1.5, STREET_HALF + 2.6, street))
+		# Terra batida em volta das casas da vila.
+		if t["kind"] == "vila":
+			shoulder = maxf(shoulder, 0.55 * (1.0 - smoothstep(float(t["radius"]) * 0.55, float(t["radius"]), Vector2(position.x, position.z).distance_to(t["center"]))))
 	var gravel := clampf(maxf(shoulder - asphalt, (1.0 - sky) * 0.8), 0.0, 1.0)
 	var grass := clampf(_grass.get_noise_2d(position.x, position.z) * 0.9 + 0.35 - _forest_density(position.x, position.z) * 0.6, 0.0, 1.0)
 	grass *= on_top * (1.0 - asphalt) * (1.0 - gravel)
@@ -744,6 +970,15 @@ func _forest_density(x: float, z: float) -> float:
 	return smoothstep(-0.35, 0.25, _forest.get_noise_2d(x, z))
 
 
+## Altura para assentar um objeto de raio `radius`: o ponto mais baixo do
+## chão sob ele (centro e quatro bordas), para nenhum lado ficar no ar.
+func seat_height(x: float, z: float, radius: float) -> float:
+	var low := surface_height(x, z)
+	for offset: Vector2 in [Vector2(radius, 0.0), Vector2(-radius, 0.0), Vector2(0.0, radius), Vector2(0.0, -radius)]:
+		low = minf(low, surface_height(x + offset.x, z + offset.y))
+	return low
+
+
 ## Chão firme aqui (não é boca de caverna nem barranco)?
 func _solid_ground(x: float, z: float, surface: float) -> bool:
 	return density(x, surface - 1.2, z) > 0.0 and density(x, surface - 3.0, z) > 0.0
@@ -754,11 +989,11 @@ func _solid_ground(x: float, z: float, surface: float) -> bool:
 func _scatter(coord: Vector2i, origin: Vector2, result: Dictionary) -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash(Vector3i(coord.x, coord.y, world_seed))
-	var trees: Array = [[], [], []]
+	var trees: Array = [[], [], [], [], [], []]
 	var trunks: Array[Transform3D] = []
 	var trunk_colliders: Array = [] # [posição, raio]
 	# Cada árvore com o que é preciso para cortá-la:
-	# [variante, escala, transformação da copa, do tronco, altura].
+	# [variante, escala, transformação da copa, do tronco (só abetos), altura, raio].
 	var tree_list: Array = []
 	result["tree_list"] = tree_list
 	var props := {} # nome -> Array[Transform3D] (visual)
@@ -769,46 +1004,73 @@ func _scatter(coord: Vector2i, origin: Vector2, result: Dictionary) -> void:
 	result["deposits"] = deposits
 	var zombies: Array = [] # posições
 	result["zombies"] = zombies
-	# Árvores: grade de 4 m com posição sorteada dentro da célula.
+	var items: Array = [] # [id, Transform3D, quantidade] (soltos no chão)
+	result["items"] = items
+	# Árvores: grade de 4 m com posição sorteada dentro da célula. O bioma
+	# decide a densidade e a espécie.
 	for gz in 8:
 		for gx in 8:
 			var x := origin.x + (gx + rng.randf()) * 4.0
 			var z := origin.y + (gz + rng.randf()) * 4.0
 			var chance := _forest_density(x, z) * 0.75 + 0.02
 			var roll := rng.randf()
-			var variant := rng.randi_range(0, 2)
-			var scale := rng.randf_range(1.3, 2.1)
+			var pick := rng.randf()
+			var pick2 := rng.randf()
+			var size_roll := rng.randf()
 			var yaw := rng.randf() * TAU
-			if roll > chance:
-				continue
 			var r := road_distances(x, z)
 			if r.x < HIGHWAY_HALF_WIDTH + 3.5 or r.y < BYROAD_HALF_WIDTH + 3.0:
 				continue
 			var s := surface_height(x, z)
-			if slope_at(x, z) > 0.75 or not _solid_ground(x, z, s):
+			var bw := biome_weights(x, z, s)
+			var conifer := maxf(1.0 - (bw.x + bw.y + bw.z + bw.w), 0.0)
+			var factor := conifer + bw.x * 0.95 + bw.y * 0.12 + bw.z * 0.22 + bw.w * 0.45
+			if roll > chance * factor:
 				continue
+			if slope_at(x, z) > 0.75 or not _solid_ground(x, z, s) or not town_at(x, z).is_empty():
+				continue
+			var variant := _tree_species(bw, conifer, pick, pick2)
+			var scale: float = [lerpf(1.3, 2.1, size_roll), lerpf(1.3, 2.1, size_roll), lerpf(1.3, 2.1, size_roll),
+					lerpf(1.7, 2.5, size_roll), lerpf(1.5, 2.3, size_roll), lerpf(1.4, 2.0, size_roll)][variant]
 			var ground := s - 0.25
 			trees[variant].append(Transform3D(Basis(Vector3.UP, yaw).scaled(Vector3.ONE * scale), Vector3(x, ground, z)))
 			var height: float = TREE_HEIGHTS[variant] * scale
-			var trunk_scale := Vector3(scale * 0.9, height * 0.42, scale * 0.9)
-			trunks.append(Transform3D(Basis.IDENTITY.scaled(trunk_scale), Vector3(x, ground + trunk_scale.y * 0.5, z)))
-			trunk_colliders.append([Vector3(x, ground + 2.0, z), 0.16 * scale])
-			tree_list.append([variant, scale, trees[variant].back(), trunks.back(), height])
-	# Vegetação baixa e chão da mata (sem colisão).
-	for i in 26:
+			var radius: float = [0.16, 0.16, 0.16, 0.11, 0.11, 0.15][variant] * scale
+			var trunk: Variant = null
+			if variant <= 2:
+				var trunk_scale := Vector3(scale * 0.9, height * 0.42, scale * 0.9)
+				trunks.append(Transform3D(Basis.IDENTITY.scaled(trunk_scale), Vector3(x, ground + trunk_scale.y * 0.5, z)))
+				trunk = trunks.back()
+			trunk_colliders.append([Vector3(x, ground + 2.0, z), radius])
+			tree_list.append([variant, scale, trees[variant].back(), trunk, height, radius])
+	# Vegetação baixa (sem colisão), conforme o bioma.
+	for i in 30:
 		var x := origin.x + rng.randf() * CHUNK_SIZE
 		var z := origin.y + rng.randf() * CHUNK_SIZE
 		var forest := _forest_density(x, z)
-		var kind := "fern_02" if rng.randf() < 0.65 else ("shrub_03" if rng.randf() < 0.7 else "dry_branches_medium_01")
+		var pick := rng.randf()
 		var size := rng.randf_range(0.7, 1.35)
 		var yaw := rng.randf() * TAU
-		if rng.randf() > 0.25 + forest * 0.7:
-			continue
+		var keep := rng.randf()
 		var r := road_distances(x, z)
 		if r.x < HIGHWAY_HALF_WIDTH + 1.0 or r.y < BYROAD_HALF_WIDTH + 1.0:
 			continue
 		var s := surface_height(x, z)
+		var bw := biome_weights(x, z, s)
+		var kind := _undergrowth(bw, pick)
+		var density := 0.25 + forest * 0.7
+		if bw.y > 0.5:
+			density = 0.75 # campo: capim e arbustos por toda parte
+		elif bw.w > 0.6:
+			density = 0.08
+		elif bw.z > 0.5:
+			density = 0.3
+		if kind == "" or keep > density:
+			continue
 		if slope_at(x, z) > 0.9 or not _solid_ground(x, z, s):
+			continue
+		var t := town_at(x, z)
+		if not t.is_empty() and (t["kind"] == "cidade" or Vector2(x, z).distance_to(t["center"]) < float(t["radius"]) * 0.8):
 			continue
 		_add(props, kind, Transform3D(Basis(Vector3.UP, yaw).scaled(Vector3.ONE * size), Vector3(x, s - 0.04, z)))
 	# Pedras, tocos e troncos caídos (com colisão).
@@ -822,13 +1084,20 @@ func _scatter(coord: Vector2i, origin: Vector2, result: Dictionary) -> void:
 		if r.x < HIGHWAY_HALF_WIDTH + 4.0 or r.y < BYROAD_HALF_WIDTH + 4.0:
 			continue
 		var s := surface_height(x, z)
-		if not _solid_ground(x, z, s):
+		if not _solid_ground(x, z, s) or not town_at(x, z).is_empty():
 			continue
 		var steep := slope_at(x, z)
 		var kind := "boulder_01"
-		if steep > 0.5:
-			kind = "rock_face_01" if pick < 0.5 else "boulder_01"
-			size *= 1.3
+		if steep > 0.5 or pick > 0.92:
+			# Rochedo assentado no ponto mais baixo do chão sob ele (numa
+			# encosta, o lado de cima fica enterrado e nada flutua).
+			var rock := "rochedo_%d" % rng.randi_range(0, 2)
+			var big := rng.randf_range(0.55, 1.05)
+			var t_rock := Transform3D(Basis(Vector3.UP, yaw).scaled(Vector3.ONE * big),
+					Vector3(x, seat_height(x, z, 1.6 * big) - 0.3 * big, z))
+			_add(props, rock, t_rock)
+			colliders.append([rock, t_rock])
+			continue
 		elif pick < 0.35:
 			kind = "tree_stump_01"
 		elif pick < 0.6:
@@ -836,13 +1105,14 @@ func _scatter(coord: Vector2i, origin: Vector2, result: Dictionary) -> void:
 		elif pick < 0.8:
 			kind = "rock_moss_set_01"
 			size *= 0.6
-		var t := Transform3D(Basis(Vector3.UP, yaw).scaled(Vector3.ONE * size), Vector3(x, s - 0.15 * size, z))
+		var t := Transform3D(Basis(Vector3.UP, yaw).scaled(Vector3.ONE * size), Vector3(x, seat_height(x, z, 0.6 * size) - 0.15 * size, z))
 		if kind == "boulder_01":
 			# Rocha solta: depósito de pedra (minerável com a picareta).
 			deposits.append(["pedra", t, "boulder_01"])
 			continue
 		_add(props, kind, t)
 		colliders.append([kind, t])
+	_town_contents(coord, origin, rng, result, props, colliders, wrecks, weapons, zombies, items)
 	_entrance_rocks(origin, rng, props, colliders)
 	_cave_contents(origin, rng, props, colliders, deposits)
 	_road_debris(coord, origin, rng, props, colliders, wrecks, weapons)
@@ -873,6 +1143,268 @@ func _scatter(coord: Vector2i, origin: Vector2, result: Dictionary) -> void:
 	result["colliders"] = colliders
 	result["wrecks"] = wrecks
 	result["weapons"] = weapons
+
+
+## Espécie da árvore pelos pesos dos biomas (sorteio ponderado).
+func _tree_species(weights: Vector4, conifer_weight: float, pick: float, pick2: float) -> int:
+	# Pesos ao quadrado: o bioma dominante decide (a transição fica estreita).
+	var bw := weights * weights
+	var conifer := conifer_weight * conifer_weight
+	var total := conifer + bw.x + bw.y + bw.z + bw.w
+	var at := pick * total
+	var fir := int(pick2 * 2.999)
+	if at < conifer:
+		return fir
+	at -= conifer
+	if at < bw.x:
+		return 3 if pick2 < 0.85 else fir
+	at -= bw.x
+	if at < bw.y:
+		return 3 if pick2 < 0.6 else fir
+	at -= bw.y
+	if at < bw.z:
+		return 4 if pick2 < 0.55 else 5
+	return fir if pick2 < 0.72 else 4
+
+
+## Planta baixa do bioma ("" = nenhuma).
+func _undergrowth(bw: Vector4, pick: float) -> String:
+	if bw.w > 0.6:
+		return "dry_branches_medium_01" if pick < 0.5 else ""
+	if bw.z > 0.5:
+		return "dry_branches_medium_01" if pick < 0.45 else ("shrub_03" if pick < 0.7 else "")
+	if bw.y > 0.5:
+		return "weed_plant_02" if pick < 0.55 else ("shrub_04" if pick < 0.85 else "shrub_02")
+	if bw.x > 0.5:
+		return "shrub_02" if pick < 0.3 else ("fern_02" if pick < 0.6 else ("shrub_04" if pick < 0.85 else "weed_plant_02"))
+	return "fern_02" if pick < 0.65 else ("shrub_03" if pick < 0.88 else "dry_branches_medium_01")
+
+
+# --- Conteúdo das vilas e cidades ----------------------------------------------------
+
+## Prédios cujo centro cai neste pedaço (malha e caixas de colisão), postes,
+## carcaças nas ruas, lixeiras, barris, mato junto às paredes, zumbis e o que
+## dá para achar (armas, ferro de sucata, tábuas).
+func _town_contents(coord: Vector2i, origin: Vector2, rng: RandomNumberGenerator, result: Dictionary, props: Dictionary,
+		colliders: Array, wrecks: Array, weapons: Array, zombies: Array, items: Array) -> void:
+	var rect := Rect2(origin, Vector2.ONE * CHUNK_SIZE)
+	var center := Vector3(origin.x + CHUNK_SIZE * 0.5, 0.0, origin.y + CHUNK_SIZE * 0.5)
+	var mine: Array = []
+	var touching: Array = []
+	for t: Dictionary in towns_near(center, 180.0):
+		if Vector2(center.x, center.z).distance_to(t["center"]) < float(t["radius"]) + CHUNK_SIZE:
+			touching.append(t)
+		for b: Dictionary in t["buildings"]:
+			var p: Vector3 = b["pos"]
+			if rect.has_point(Vector2(p.x, p.z)):
+				mine.append(b)
+	result["buildings"] = mine
+	if not mine.is_empty():
+		result["building_mesh"] = _building_mesh(mine)
+	if touching.is_empty():
+		return
+	var spawn := spawn_point()
+	var t: Dictionary = touching[0]
+	var city: bool = t["kind"] == "cidade"
+	# Ruas: postes de luz apagados nas calçadas e carcaças abandonadas.
+	for i in (10 if city else 4):
+		var x := origin.x + rng.randf() * CHUNK_SIZE
+		var z := origin.y + rng.randf() * CHUNK_SIZE
+		var roll := rng.randf()
+		var yaw := (PI * 0.5) * rng.randi_range(0, 3) + rng.randf_range(-0.25, 0.25)
+		if Vector2(x, z).distance_to(t["center"]) > float(t["radius"]) - 4.0 or _inside_building(x, z, t, 1.5):
+			continue
+		var street := town_street_distance(x, z, t)
+		var s := surface_height(x, z)
+		if city and absf(street - (STREET_HALF + 1.6)) < 0.8 and roll < 0.35:
+			var lamp := Transform3D(Basis(Vector3.UP, yaw), Vector3(x, s - 0.05, z))
+			_add(props, "street_lamp_01", lamp)
+			colliders.append(["street_lamp_01", lamp])
+		elif city and street < STREET_HALF - 1.0 and roll < 0.55:
+			var kind: String = WRECK_KINDS[rng.randi() % 10]
+			var paint: Color = PAINTS[rng.randi() % PAINTS.size()]
+			paint.a = rng.randf_range(0.2, 0.75)
+			wrecks.append([kind, Transform3D(Basis(Vector3.UP, yaw), Vector3(x, s, z)), paint])
+		elif roll < 0.8:
+			var kind: String = ["metal_trash_can", "Barrel_02", "wooden_military_crate", "trashbag", "old_tyre"][rng.randi() % 5]
+			var thing := Transform3D(Basis(Vector3.UP, rng.randf() * TAU), Vector3(x, s - 0.02, z))
+			_add(props, kind, thing)
+			if kind != "trashbag":
+				colliders.append([kind, thing])
+		else:
+			# Mato tomando conta.
+			_add(props, "weed_plant_02" if rng.randf() < 0.6 else "shrub_04",
+					Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * rng.randf_range(0.8, 1.4)), Vector3(x, s - 0.04, z)))
+	# Mato junto às paredes dos prédios deste pedaço.
+	for b: Dictionary in mine:
+		var p: Vector3 = b["pos"]
+		var size: Vector3 = b["size"]
+		for k in 3:
+			var side := rng.randi() % 4
+			var along := rng.randf_range(-0.45, 0.45)
+			var offset := Vector2(along * size.x, (0.5 * size.z + 0.4) * (1.0 if side == 0 else -1.0)) if side < 2 \
+					else Vector2((0.5 * size.x + 0.4) * (1.0 if side == 2 else -1.0), along * size.z)
+			var at := Vector2(p.x, p.z) + offset
+			_add(props, ["weed_plant_02", "shrub_02", "shrub_04"][rng.randi() % 3],
+					Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * rng.randf_range(0.7, 1.3)),
+					Vector3(at.x, surface_height(at.x, at.y) - 0.04, at.y)))
+	# Zumbis: mais nas cidades.
+	for i in (rng.randi_range(2, 4) if city else rng.randi_range(0, 2)):
+		var x := origin.x + rng.randf() * CHUNK_SIZE
+		var z := origin.y + rng.randf() * CHUNK_SIZE
+		if Vector2(x, z).distance_to(t["center"]) < float(t["radius"]) and not _inside_building(x, z, t, 1.0):
+			_add_zombie(zombies, Vector3(x, 0.0, z), spawn)
+	# O que sobrou: armas, sucata de ferro e tábuas pelas ruas e quintais.
+	if rng.randf() < (0.3 if city else 0.22):
+		var x := origin.x + rng.randf() * CHUNK_SIZE
+		var z := origin.y + rng.randf() * CHUNK_SIZE
+		if not _inside_building(x, z, t, 1.0):
+			weapons.append([_weapon_pick(rng), _lying(rng, Vector3(x, surface_height(x, z) + 0.15, z))])
+	for i in 2:
+		if rng.randf() < 0.35:
+			var x := origin.x + rng.randf() * CHUNK_SIZE
+			var z := origin.y + rng.randf() * CHUNK_SIZE
+			if Vector2(x, z).distance_to(t["center"]) < float(t["radius"]) and not _inside_building(x, z, t, 1.0):
+				var id := "ferro" if (city and rng.randf() < 0.6) else "tabua"
+				items.append([id, Transform3D(Basis(Vector3.UP, rng.randf() * TAU), Vector3(x, surface_height(x, z) + 0.3, z)),
+						rng.randi_range(1, 3)])
+
+
+func _inside_building(x: float, z: float, t: Dictionary, margin: float) -> bool:
+	for b: Dictionary in t["buildings"]:
+		var p: Vector3 = b["pos"]
+		var size: Vector3 = b["size"]
+		if absf(x - p.x) < size.x * 0.5 + margin and absf(z - p.z) < size.z * 0.5 + margin:
+			return true
+	return false
+
+
+## Malha dos prédios (uma superfície, material de fachada): paredes com UV em
+## metros (u ao longo da parede, v da base para cima), telhado de duas águas
+## ou laje com mureta. Cor do vértice: r = estilo/7, g = variação de tom,
+## b = 1 se a face tem janelas, a = semente do prédio.
+func _building_mesh(list: Array) -> Dictionary:
+	var vertices := PackedVector3Array()
+	var normals := PackedVector3Array()
+	var uvs := PackedVector2Array()
+	var colors := PackedColorArray()
+	for b: Dictionary in list:
+		var p: Vector3 = b["pos"]
+		var size: Vector3 = b["size"]
+		var seed_value := float(int(b["seed"]) % 997) / 997.0
+		var tone := fposmod(seed_value * 7.31, 1.0)
+		var style := float(b["style"]) / 7.0
+		var hx := size.x * 0.5
+		var hz := size.z * 0.5
+		var bottom := p.y - 1.5 # afunda no chão (o platô tem pequenas ondulações)
+		var top := p.y + size.y
+		var corners := [Vector3(-hx, 0, -hz), Vector3(hx, 0, -hz), Vector3(hx, 0, hz), Vector3(-hx, 0, hz)]
+		for k in 4:
+			var a: Vector3 = corners[k]
+			var c: Vector3 = corners[(k + 1) % 4]
+			var length := a.distance_to(c)
+			var normal := (a + c).normalized() * Vector3(1, 0, 1)
+			normal = Vector3(signf(normal.x), 0, 0) if absf(a.x - c.x) < 0.01 else Vector3(0, 0, signf(normal.z))
+			var color := Color(style, tone, 1.0, seed_value + k * 0.1)
+			_wall_quad(vertices, normals, uvs, colors, p + a, p + c, bottom, top, p.y, length, normal, color)
+		if int(b["roof"]) == 1:
+			_gable(vertices, normals, uvs, colors, p, size, top, tone, seed_value, style)
+		else:
+			# Laje (concreto) com mureta.
+			var roof := Color(2.0 / 7.0, tone, 0.0, seed_value)
+			_face(vertices, normals, uvs, colors, [p + Vector3(-hx, size.y, -hz), p + Vector3(hx, size.y, -hz), p + Vector3(hx, size.y, hz), p + Vector3(-hx, size.y, hz)],
+					Vector3.UP, [Vector2(0, 0), Vector2(size.x, 0), Vector2(size.x, size.z), Vector2(0, size.z)], roof)
+	var indices := PackedInt32Array()
+	for i in vertices.size():
+		indices.append(i)
+	return {"vertices": vertices, "normals": normals, "uvs": uvs, "colors": colors, "indices": indices}
+
+
+func _face(vertices: PackedVector3Array, normals: PackedVector3Array, uvs: PackedVector2Array, colors: PackedColorArray,
+		corners: Array, normal: Vector3, uv: Array, color: Color) -> void:
+	# Dois triângulos com a face da frente para `normal` (sentido horário no Godot).
+	var order := [0, 1, 2, 0, 2, 3]
+	var face := ((corners[1] as Vector3) - (corners[0] as Vector3)).cross((corners[2] as Vector3) - (corners[0] as Vector3))
+	if face.dot(normal) > 0.0:
+		order = [0, 2, 1, 0, 3, 2]
+	for i: int in order:
+		vertices.append(corners[i])
+		normals.append(normal)
+		uvs.append(uv[i])
+		colors.append(color)
+
+
+func _wall_quad(vertices: PackedVector3Array, normals: PackedVector3Array, uvs: PackedVector2Array, colors: PackedColorArray,
+		a: Vector3, c: Vector3, bottom: float, top: float, ground: float, wall_length: float, normal: Vector3, color: Color) -> void:
+	# Número inteiro de vãos de janela de 3 m (as janelas não cortam a quina).
+	var length := maxf(1.0, roundf(wall_length / 3.0)) * 3.0
+	_face(vertices, normals, uvs, colors,
+			[Vector3(a.x, bottom, a.z), Vector3(c.x, bottom, c.z), Vector3(c.x, top, c.z), Vector3(a.x, top, a.z)], normal,
+			[Vector2(0.0, bottom - ground), Vector2(length, bottom - ground), Vector2(length, top - ground), Vector2(0.0, top - ground)], color)
+
+
+## Telhado de duas águas ao longo do lado maior, com oitões (triângulos) de parede.
+func _gable(vertices: PackedVector3Array, normals: PackedVector3Array, uvs: PackedVector2Array, colors: PackedColorArray,
+		p: Vector3, size: Vector3, top: float, tone: float, seed_value: float, style: float) -> void:
+	var along_x := size.x >= size.z
+	var half_long := (size.x if along_x else size.z) * 0.5 + 0.35
+	var half_short := (size.z if along_x else size.x) * 0.5 + 0.45
+	var rise := half_short * 0.7
+	var roof_color := Color((5.0 if seed_value > 0.7 else 4.0) / 7.0, tone, 0.0, seed_value)
+	var wall_color := Color(style, tone, 0.0, seed_value)
+	for side: float in [-1.0, 1.0]:
+		var e0: Vector3
+		var e1: Vector3
+		var r0: Vector3
+		var r1: Vector3
+		if along_x:
+			e0 = p + Vector3(-half_long, top - p.y, side * half_short)
+			e1 = p + Vector3(half_long, top - p.y, side * half_short)
+			r0 = p + Vector3(-half_long, top - p.y + rise, 0.0)
+			r1 = p + Vector3(half_long, top - p.y + rise, 0.0)
+		else:
+			e0 = p + Vector3(side * half_short, top - p.y, -half_long)
+			e1 = p + Vector3(side * half_short, top - p.y, half_long)
+			r0 = p + Vector3(0.0, top - p.y + rise, -half_long)
+			r1 = p + Vector3(0.0, top - p.y + rise, half_long)
+		var slope_length := Vector2(half_short, rise).length()
+		var normal := ((e1 - e0).cross(r0 - e0)).normalized()
+		if normal.y < 0.0:
+			normal = -normal
+		_face(vertices, normals, uvs, colors, [e0, e1, r1, r0], normal,
+				[Vector2(0, 0), Vector2(half_long * 2.0, 0), Vector2(half_long * 2.0, slope_length), Vector2(0, slope_length)], roof_color)
+		# Por baixo do beiral (a casa vista de baixo não fica oca).
+		_face(vertices, normals, uvs, colors, [e0, e1, r1, r0], -normal,
+				[Vector2(0, 0), Vector2(half_long * 2.0, 0), Vector2(half_long * 2.0, slope_length), Vector2(0, slope_length)], roof_color)
+	# Oitões.
+	for end: float in [-1.0, 1.0]:
+		var a: Vector3
+		var b: Vector3
+		var apex: Vector3
+		var normal: Vector3
+		if along_x:
+			var x := end * size.x * 0.5
+			a = p + Vector3(x, top - p.y, -size.z * 0.5)
+			b = p + Vector3(x, top - p.y, size.z * 0.5)
+			apex = p + Vector3(x, top - p.y + rise * (size.z * 0.5) / half_short, 0.0)
+			normal = Vector3(end, 0, 0)
+		else:
+			var z := end * size.z * 0.5
+			a = p + Vector3(-size.x * 0.5, top - p.y, z)
+			b = p + Vector3(size.x * 0.5, top - p.y, z)
+			apex = p + Vector3(0.0, top - p.y + rise * (size.x * 0.5) / half_short, z)
+			normal = Vector3(0, 0, end)
+		var span := a.distance_to(b)
+		var tri := [a, b, apex]
+		var tri_uv := [Vector2(0, top - p.y), Vector2(span, top - p.y), Vector2(span * 0.5, apex.y - p.y)]
+		var order := [0, 1, 2]
+		if (b - a).cross(apex - a).dot(normal) > 0.0:
+			order = [0, 2, 1]
+		for i: int in order:
+			vertices.append(tri[i])
+			normals.append(normal)
+			uvs.append(tri_uv[i])
+			colors.append(wall_color)
 
 
 const WRECK_KINDS := ["car_01", "car_02", "car_03", "car_04", "jeep_01", "jeep_02", "pickup",
@@ -977,12 +1509,12 @@ func _entrance_rocks(origin: Vector2, _rng: RandomNumberGenerator, props: Dictio
 		for k: float in [-1.0, 1.0]:
 			for j in 2:
 				var at := Vector2(top.x, top.z) + side * k * (half * 1.35 + 2.2 + j * 1.5) + down * (2.0 + j * 5.0)
-				var y := surface_height(at.x, at.y)
-				var size := rng.randf_range(0.9, 1.35)
+				var size := rng.randf_range(0.6, 0.95)
+				var rock := "rochedo_%d" % rng.randi_range(0, 2)
 				var t := Transform3D(Basis(Vector3.UP, heading + k * PI * 0.5 + rng.randf_range(-0.4, 0.4)).scaled(Vector3.ONE * size),
-						Vector3(at.x, y - 0.9 * size, at.y))
-				_add(props, "rock_face_01", t)
-				colliders.append(["rock_face_01", t])
+						Vector3(at.x, seat_height(at.x, at.y, 1.6 * size) - 0.35 * size, at.y))
+				_add(props, rock, t)
+				colliders.append([rock, t])
 		for j in 3:
 			var at := Vector2(top.x, top.z) + side * rng.randf_range(-half * 2.0, half * 2.0) - down * rng.randf_range(1.0, 5.0)
 			var t := Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * rng.randf_range(0.4, 0.8)),

@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="WeaponData" load_steps=3 format=3]
+
+[ext_resource type="ArrayMesh" path="res://resources/models/weapons/pe_de_cabra.res" id="1_n8n6c"]
+[ext_resource type="Script" path="res://scripts/weapons/weapon_data.gd" id="2_lk40j"]
+
+[resource]
+script = ExtResource("2_lk40j")
+id = &"pe_de_cabra"
+display_name = "Pé de cabra"
+mesh = ExtResource("1_n8n6c")
+mass = 1.6
+reach = 0.62
+hit_radius = 0.12
+light_damage = 25.0
+light_impulse = 16.0
+light_speed = 0.9
+light_recovery = 0.24
+heavy_min_damage = 38.0
+heavy_max_damage = 64.0
+heavy_min_impulse = 26.0
+heavy_max_impulse = 48.0
+heavy_recovery = 0.45

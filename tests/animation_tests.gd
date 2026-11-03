@@ -107,9 +107,20 @@ func _ready() -> void:
 		_test_cave_exploration,
 		_test_cave_geometry,
 		_test_headlamp,
+		_test_crafting,
+		_test_armor,
+		_test_tool_power,
+		_test_hand_chop,
+		_test_torch,
+		_test_save_and_seed,
+		_test_scramble_pose,
+		_test_biomes,
+		_test_towns,
+		_test_zombie_variety,
 		_test_ragdoll_death_and_respawn,
 		_test_touch_attack_button,
 		_test_animator_performance,
+		_test_main_menu,
 	]
 	var only := ""
 	for argument in OS.get_cmdline_user_args():
@@ -1480,9 +1491,9 @@ const WEAPONS := ["res://resources/weapons/taco.tres", "res://resources/weapons/
 func _clear_inventory() -> void:
 	var inventory: Inventory = _player.get_node("Inventory")
 	inventory.unequip()
-	for i in Inventory.TOOL_SLOTS:
-		inventory.tools[i] = {}
-	inventory.resources.clear()
+	for i in Inventory.TOTAL:
+		inventory.slots[i] = {}
+	inventory._armor_changed()
 	inventory.changed.emit()
 
 
@@ -1855,7 +1866,8 @@ func _test_world_walk_and_headlamp() -> void:
 
 func _test_world_main_scene() -> void:
 	_begin("Mundo: cena principal começa na rodovia, em chão firme")
-	_check(ProjectSettings.get_setting("application/run/main_scene") == "res://scenes/world/mundo.tscn", "mundo procedural é a cena principal")
+	_check(ProjectSettings.get_setting("application/run/main_scene") == "res://scenes/menu/menu_principal.tscn"
+			and MainMenu.WORLD_SCENE == "res://scenes/world/mundo.tscn", "o jogo abre no menu inicial, que inicia o mundo procedural")
 	var scene: Node3D = (load("res://scenes/world/mundo.tscn") as PackedScene).instantiate()
 	add_child(scene)
 	var world: ProceduralWorld = scene.get_node("ProceduralWorld")
@@ -1969,17 +1981,24 @@ func _test_inventory_ui_and_touch() -> void:
 	await _hold(&"inventory_toggle", 2)
 	await _frames(5)
 	_check(hud.is_open and not _player.input_enabled, "I abre a mochila e o personagem para")
-	_check(hud._tool_list.get_child_count() == 2 and hud._resource_list.get_child_count() == 1, "lista 2 ferramentas e 1 recurso")
+	_check(hud._views.size() == Inventory.TOTAL and hud._views[0].get_child_count() > 0
+			and (hud._views[0] as InventorySlotView)._icon.texture == ItemData.find(&"taco").get_icon()
+			and (hud._views[Inventory.HOTBAR] as InventorySlotView)._count.text == "4",
+			"grade: taco na barra, 4 madeiras na mochila (%d casas)" % hud._views.size())
+	_check(hud._recipes.get_child_count() == Crafting.RECIPES.size(), "lista as %d receitas" % hud._recipes.get_child_count())
 	var start := _player.global_position
 	await _hold(&"move_forward", 30)
 	_check(_player.global_position.distance_to(start) < 0.05, "com a mochila aberta não anda")
 	hud.close()
 	await _frames(5)
 	_check(not hud.is_open and _player.input_enabled, "fecha e volta a controlar")
-	# Organizar: picareta antes de taco.
+	# Organizar: junta pilhas espalhadas na mochila (a barra fica como está).
+	inventory.slots[Inventory.HOTBAR + 5] = {"item": ItemData.find(&"madeira"), "count": 3, "durability": 0.0}
 	inventory.sort()
-	_check((inventory.tool_at(0)["item"] as ItemData).id == &"picareta", "ORGANIZAR ordena as ferramentas")
-	# Toque: tocar na casa 2 da barra empunha o taco; não ataca.
+	_check(inventory.count(&"madeira") == 7 and int(inventory.tool_at(Inventory.HOTBAR)["count"]) == 7
+			and inventory.tool_at(Inventory.HOTBAR + 5).is_empty() and (inventory.item_at(0) as ItemData).id == &"taco",
+			"ORGANIZAR junta as pilhas da mochila e não mexe na barra")
+	# Toque: tocar na casa 2 da barra empunha a picareta; não ataca.
 	var controls := _touch_setup()
 	var attacks := [0]
 	var on_attack := func(_kind: StringName) -> void: attacks[0] += 1
@@ -1991,7 +2010,7 @@ func _test_inventory_ui_and_touch() -> void:
 	await _frames(3)
 	_android_touch(0, slot, false)
 	await _frames(10)
-	_check(inventory.selected == 1 and (inventory.equipped_item() as ItemData).id == &"taco", "toque na casa 2 empunha o taco")
+	_check(inventory.selected == 1 and (inventory.equipped_item() as ItemData).id == &"picareta", "toque na casa 2 empunha a picareta")
 	_check(attacks[0] == 0, "tocar na barra não golpeia")
 	var bag := (controls.get_node("InventoryButton") as Control).get_global_rect().get_center()
 	_android_touch(0, bag, true)
@@ -2018,7 +2037,7 @@ func _find_tree(world: ProceduralWorld) -> Array:
 				for i in trees.size():
 					var base: Vector3 = (trees[i][2] as Transform3D).origin
 					var stand := base + Vector3(1.25, 0.0, 0.0)
-					if g.slope_at(stand.x, stand.z) < 0.2 and g.slope_at(base.x, base.z) < 0.2:
+					if g.slope_at(stand.x, stand.z) < 0.2 and g.slope_at(base.x, base.z) < 0.2 and _clear_spot(g, data, -1, stand, i):
 						var crowded := false
 						for j in trees.size():
 							if j != i and ((trees[j][2] as Transform3D).origin - stand).length() < 1.6:
@@ -2101,19 +2120,29 @@ func _test_chop_tree() -> void:
 		if (node as ItemPickup).item.id == &"madeira":
 			logs.append(node.get_parent())
 	_check(logs.size() >= 3, "o tronco virou %d toras de madeira" % logs.size())
-	# Coleta: anda até as toras e pega com PEGAR.
+	# Coleta: anda até as toras e pega com PEGAR. As toras rolam: espera
+	# assentarem; pegar uma pode recolher a vizinha sob a mira.
 	var collected := 0
-	for candidate: Variant in logs.slice(0, 2):
-		if not is_instance_valid(candidate):
-			continue
-		var log_body := candidate as Node3D
+	for attempt in 6:
+		if inventory.count(&"madeira") >= 2:
+			break
+		var log_body: RigidBody3D = null
+		for candidate: Variant in logs:
+			if is_instance_valid(candidate):
+				log_body = candidate as RigidBody3D
+				break
+		if log_body == null:
+			break
+		for wait in 12:
+			if log_body.linear_velocity.length() < 0.05:
+				break
+			await _frames(10)
 		var near := log_body.global_position + Vector3(0.9, 0.0, 0.0)
 		near.y = g.surface_height(near.x, near.z)
 		_player.teleport(near + Vector3.UP * 0.1)
 		await _frames(30)
 		await _aim_and_take(log_body)
-		if not is_instance_valid(log_body):
-			collected += 1
+	collected = inventory.count(&"madeira")
 	_check(collected == 2 and inventory.count(&"madeira") == 2, "coletou madeira com PEGAR (%d na mochila)" % inventory.count(&"madeira"))
 	inventory.message.disconnect(on_message)
 	_clear_inventory()
@@ -2128,11 +2157,33 @@ func _find_deposit(world: ProceduralWorld, type: StringName, near: Vector3, radi
 		for dz in range(-r, r + 1):
 			for dx in range(-r, r + 1):
 				var coord := center + Vector2i(dx, dz)
-				var deposits: Array = g.build_chunk(coord)["deposits"]
+				var data := g.build_chunk(coord)
+				var deposits: Array = data["deposits"]
 				for i in deposits.size():
-					if deposits[i][0] == type:
-						return [coord, i, (deposits[i][1] as Transform3D).origin]
+					var at := (deposits[i][1] as Transform3D).origin
+					if deposits[i][0] == type and (type != &"pedra" or _clear_spot(g, data, i, at + Vector3(1.6, 0.0, 0.0))):
+						return [coord, i, at]
 	return []
+
+
+## Lugar livre para o teste ficar em pé e soltar a ferramenta: chão quase
+## plano e nada sólido (rochedos, tocos, outras rochas, árvores) por perto.
+func _clear_spot(g: WorldGenerator, data: Dictionary, own: int, stand: Vector3, own_tree: int = -1) -> bool:
+	if g.slope_at(stand.x, stand.z) > 0.25 or g.slope_at(stand.x, stand.z + 0.9) > 0.25:
+		return false
+	var points: Array[Vector3] = []
+	for entry: Array in data["colliders"]:
+		points.append((entry[1] as Transform3D).origin)
+	for i in (data["deposits"] as Array).size():
+		if i != own:
+			points.append((data["deposits"][i][1] as Transform3D).origin)
+	for i in (data["tree_list"] as Array).size():
+		if i != own_tree:
+			points.append((data["tree_list"][i][2] as Transform3D).origin)
+	for p in points:
+		if Vector2(p.x - stand.x, p.z - stand.z).length() < 3.0:
+			return false
+	return true
 
 
 ## Fica ao lado de um depósito e o quebra com a picareta; retorna o que caiu.
@@ -2716,3 +2767,395 @@ func _send_drag(index: int, viewport_position: Vector2) -> void:
 	event.position = get_viewport().get_final_transform() * viewport_position
 	event.relative = Vector2(0.0, -60.0)
 	get_viewport().push_input(event)
+
+# --- Etapa 9 ---------------------------------------------------------------------
+
+func _test_crafting() -> void:
+	_begin("Bancada: tábuas na grade 2×2, receitas com um toque, devolve ao fechar")
+	var inventory: Inventory = _player.get_node("Inventory")
+	var hud: InventoryHud = _gym.get_node("InventoryHud")
+	_clear_inventory()
+	await _reset(OPEN_LANE, YAW_TOWARD_POSITIVE_Z)
+	var complete := true
+	var combos := {}
+	for result: String in Crafting.RECIPES:
+		var item := ItemData.find(StringName(result))
+		complete = complete and item != null and item.get_icon() != null
+		for id: String in Crafting.ingredients(result):
+			complete = complete and ItemData.find(StringName(id)) != null
+		var needed := Crafting.ingredients(result)
+		var keys := needed.keys()
+		keys.sort()
+		var key := ""
+		for id: String in keys:
+			key += "%s%d," % [id, needed[id]]
+		combos[key] = true
+	_check(complete, "todas as %d receitas: resultado e ingredientes com nome e ícone" % Crafting.RECIPES.size())
+	_check(combos.size() == Crafting.RECIPES.size(), "cada receita tem uma combinação própria (sem ambiguidade)")
+	inventory.add(ItemData.find(&"madeira"), 2)
+	hud.open()
+	hud._on_slot_pressed(inventory.find_item(&"madeira"))
+	hud._on_slot_pressed(Inventory.CRAFT_START)
+	_check(inventory.craft_result() == "tabua" and hud._result.preview_count == 4 and inventory.count(&"madeira") == 1,
+			"1 madeira na bancada: o resultado mostra 4 tábuas")
+	hud._result.pressed.emit()
+	_check(inventory.count(&"tabua") == 4 and inventory.tool_at(Inventory.CRAFT_START).is_empty(), "tocar no resultado fabrica 4 tábuas")
+	hud._on_slot_pressed(inventory.find_item(&"madeira"))
+	hud._on_slot_pressed(Inventory.CRAFT_START + 1)
+	hud._on_slot_pressed(inventory.find_item(&"tabua"))
+	hud._on_slot_pressed(Inventory.CRAFT_START + 2)
+	_check(inventory.craft_result() == "" and hud._result.disabled, "madeira + tábua não forma nada")
+	hud.close()
+	_check(inventory.count(&"madeira") == 1 and inventory.count(&"tabua") == 4 and inventory.tool_at(Inventory.CRAFT_START + 1).is_empty(),
+			"fechar a mochila devolve o que ficou na bancada")
+	_check(Crafting.craft_from_inventory(inventory, "graveto") and inventory.count(&"graveto") == 4 and inventory.count(&"tabua") == 2,
+			"lista de receitas: 2 tábuas viram 4 gravetos")
+	inventory.add(ItemData.find(&"pedra"), 2)
+	_check(Crafting.craft_from_inventory(inventory, "machado_pedra") and inventory.has_tool(&"machado_pedra")
+			and inventory.count(&"pedra") == 0 and inventory.count(&"graveto") == 3, "machado de pedra: 2 pedras + 1 graveto")
+	_check(not Crafting.craft_from_inventory(inventory, "picareta") and not inventory.has_tool(&"picareta"), "sem ferro não fabrica a picareta")
+	_clear_inventory()
+
+
+func _test_armor() -> void:
+	_begin("Armadura: vestir, absorver dano, desgastar, aparecer no corpo e tirar")
+	var inventory: Inventory = _player.get_node("Inventory")
+	var health := _player.health
+	_clear_inventory()
+	await _reset(OPEN_LANE, YAW_TOWARD_POSITIVE_Z)
+	health.heal(health.max_health)
+	inventory.add(ItemData.find(&"capacete"))
+	inventory.add(ItemData.find(&"colete"))
+	await _frames(2)
+	_check(inventory.armor_item(&"cabeca") != null and inventory.armor_item(&"tronco") != null, "capacete e colete vestidos ao pegar")
+	_check(is_equal_approx(health.armor, 0.4), "absorvem 40%% do dano (%.2f)" % health.armor)
+	var helmet := _skeleton.find_child("Armadura_cabeca_Head", true, false) as Node3D
+	var vest := _skeleton.find_child("Armadura_tronco_spine_03", true, false) as Node3D
+	_check(helmet != null and vest != null, "capacete e colete aparecem presos aos ossos")
+	if helmet != null:
+		var head := _bone("Head")
+		var mesh := helmet.get_child(0) as Node3D
+		_check(mesh.global_position.y > head.y and mesh.global_position.distance_to(head) < 0.2,
+				"capacete sobre a cabeça (%.2f m acima do osso)" % (mesh.global_position.y - head.y))
+	var before := health.current
+	var durability: float = inventory.tool_at(Inventory.ARMOR_START)["durability"]
+	health.apply_damage(20.0, &"mordida", Vector3.FORWARD)
+	_check(is_equal_approx(before - health.current, 12.0), "mordida de 20 tira %.1f" % (before - health.current))
+	_check(float(inventory.tool_at(Inventory.ARMOR_START)["durability"]) < durability, "o capacete se gasta ao absorver")
+	before = health.current
+	health.apply_damage(10.0, &"queda", Vector3.DOWN)
+	_check(is_equal_approx(before - health.current, 10.0), "queda não é absorvida pela armadura")
+	inventory.quick_move(Inventory.ARMOR_START)
+	await _frames(3)
+	_check(inventory.armor_item(&"cabeca") == null and inventory.has_tool(&"capacete") and is_equal_approx(health.armor, 0.25),
+			"tirar o capacete: volta à mochila (armadura %.2f)" % health.armor)
+	_check(_skeleton.find_child("Armadura_cabeca_Head", true, false) == null, "e some da cabeça")
+	health.heal(health.max_health)
+	_clear_inventory()
+
+
+func _test_tool_power() -> void:
+	_begin("Ferramentas: rendimento por tipo e nível (mãos, pedra, metal)")
+	var tree := {"kind": &"arvore"}
+	_check(ChunkResources.work_power(tree, &"") > 0.0 and ChunkResources.work_power(tree, &"") < ChunkResources.work_power(tree, &"machado_pedra")
+			and ChunkResources.work_power(tree, &"machado_pedra") < ChunkResources.work_power(tree, &"machado"),
+			"árvore: mãos < machado de pedra < machado de bombeiro")
+	_check(ChunkResources.work_power(tree, &"facao") > 0.0 and ChunkResources.work_power(tree, &"taco") == 0.0
+			and ChunkResources.work_power(tree, &"picareta") == 0.0, "facão corta; taco e picareta não")
+	var coal := {"kind": &"deposito", "type": &"carvao"}
+	var iron := {"kind": &"deposito", "type": &"ferro"}
+	_check(ChunkResources.work_power(coal, &"picareta_pedra") > 0.0 and ChunkResources.work_power(coal, &"") == 0.0,
+			"carvão: picareta de pedra serve, mãos não")
+	_check(ChunkResources.work_power(iron, &"picareta_pedra") < 0.0 and ChunkResources.work_power(iron, &"picareta") > 0.0,
+			"ferro pede picareta de metal")
+	var ids := ["machado_pedra", "picareta_pedra", "faca_pedra", "lanca", "tocha", "facao", "pe_de_cabra"]
+	var ok := true
+	for id: String in ids:
+		var item := ItemData.find(StringName(id))
+		ok = ok and item != null and item.is_tool() and item.weapon != null and item.weapon.mesh != null and item.get_icon() != null
+	_check(ok, "%d ferramentas novas com malha, golpes e ícone" % ids.size())
+	var spear: WeaponData = ItemData.find(&"lanca").weapon
+	var knife: WeaponData = ItemData.find(&"faca_pedra").weapon
+	_check(spear.reach > 1.0 and knife.light_speed > 1.2, "lança alcança mais longe (%.2f m); faca é a mais rápida" % spear.reach)
+
+
+func _test_hand_chop() -> void:
+	_begin("Mãos nuas: derrubam a árvore (bem mais devagar que o machado)")
+	var world := _world_node(1)
+	world.target = _player
+	add_child(world)
+	await _frames(1)
+	var found := _find_tree(world)
+	_check(not found.is_empty(), "árvore achada para o teste")
+	if found.is_empty():
+		world.queue_free()
+		return
+	var base: Vector3 = found[2]
+	world.generate_now(base, 1)
+	var g := world.generator
+	var stand := base + Vector3(0.62, 0.0, 0.0)
+	stand.y = g.surface_height(stand.x, stand.z)
+	_clear_inventory()
+	await _reset(stand + Vector3.UP * 0.1, 0.0)
+	var resources := world.resources_of(found[0])
+	var entry: Dictionary = {}
+	for e in resources.entries():
+		if e["key"] == "a_%d_%d_%d" % [found[0].x, found[0].y, found[1]]:
+			entry = e
+	var start: float = entry.get("health", 0.0)
+	var axe_swings := ceili(start / (load(WEAPONS[1]) as WeaponData).light_damage)
+	var punches := 0
+	while entry["health"] > 0.0 and punches < 80:
+		_look_at_point(Vector3(base.x, stand.y + 1.3, base.z))
+		await _hold(&"attack", 2)
+		await _frames(45)
+		punches += 1
+	_check(entry["health"] <= 0.0, "a árvore cai a socos (%d socos)" % punches)
+	_check(punches >= axe_swings * 3, "demora mais: %d socos contra ~%d golpes do machado de bombeiro" % [punches, axe_swings])
+	world.queue_free()
+	await _frames(5)
+
+
+func _test_torch() -> void:
+	_begin("Tocha: luz quente na mão, chama e queima com o tempo")
+	var inventory: Inventory = _player.get_node("Inventory")
+	_clear_inventory()
+	await _reset(OPEN_LANE, YAW_TOWARD_POSITIVE_Z)
+	inventory.add(ItemData.find(&"tocha"))
+	await _frames(2)
+	var light := _skeleton.find_child("Chama", true, false)
+	var omni: OmniLight3D = light.get_child(0) if light != null else null
+	_check(inventory.equipped_item() != null and inventory.equipped_item().id == &"tocha" and omni != null and omni.light_energy > 1.0,
+			"empunhada, a tocha acende uma luz (%.1f)" % (omni.light_energy if omni != null else 0.0))
+	_check(omni != null and (omni.light_cull_mask & CaveAtmosphere.PLAYER_RENDER_LAYER) == 0, "a luz não ilumina o próprio corpo por dentro")
+	var durability: float = inventory.equipped()["durability"]
+	await _frames(130)
+	_check(float(inventory.equipped()["durability"]) <= durability - 2.0, "queima com o tempo (%.0f → %.0f)" % [durability, inventory.equipped()["durability"]])
+	inventory.unequip()
+	await _frames(2)
+	_check(_skeleton.find_child("Chama", true, false) == null, "guardada, apaga")
+	_clear_inventory()
+
+
+func _test_save_and_seed() -> void:
+	_begin("Mundos: semente, salvar e carregar (mochila, posição, árvores cortadas)")
+	_check(GameSession.seed_from_text("12345") == 12345 and GameSession.seed_from_text("floresta") == GameSession.seed_from_text("floresta")
+			and GameSession.seed_from_text("floresta") != GameSession.seed_from_text("deserto"), "semente por número ou por palavra, sempre a mesma")
+	var a := WorldGenerator.new(111)
+	var b := WorldGenerator.new(222)
+	var a2 := WorldGenerator.new(111)
+	var differ := 0
+	var same := true
+	for i in 20:
+		var x := i * 37.0
+		var z := i * -23.0
+		if absf(a.surface_height(x, z) - b.surface_height(x, z)) > 0.5:
+			differ += 1
+		same = same and is_equal_approx(a.surface_height(x, z), a2.surface_height(x, z))
+	_check(same and differ > 10, "a mesma semente repete o mundo; outra semente muda o relevo (%d de 20 pontos)" % differ)
+	var inventory: Inventory = _player.get_node("Inventory")
+	var allowed := GameSession.storage_allowed
+	GameSession.storage_allowed = true
+	GameSession.new_world("Teste automático", 4242)
+	_clear_inventory()
+	inventory.add(ItemData.find(&"machado"))
+	inventory.add(ItemData.find(&"madeira"), 5)
+	inventory.add(ItemData.find(&"capacete"))
+	var state := {"jogador": {"posicao": [1.0, 2.0, 3.0], "guinada": 0.5, "arfagem": 0.0, "vida": 77.0},
+			"mochila": inventory.to_data(), "removidos": ["a_1_2_3"], "pegos": [], "kit": true}
+	_check(GameSession.save_world(state), "grava o mundo na memória interna (user://mundos)")
+	var id := GameSession.world_id
+	var listed := false
+	for w in GameSession.list_worlds():
+		listed = listed or w["id"] == id
+	_check(listed, "aparece na lista de mundos salvos")
+	GameSession.active = false
+	_check(GameSession.load_world(id) and GameSession.world_seed == 4242 and GameSession.world_name == "Teste automático",
+			"carrega com o nome e a semente")
+	_clear_inventory()
+	inventory.from_data(GameSession.world_state["mochila"])
+	_check(inventory.count(&"madeira") == 5 and inventory.has_tool(&"machado") and inventory.armor_item(&"cabeca") != null,
+			"a mochila volta igual (madeira, machado, capacete vestido)")
+	_check((GameSession.world_state["removidos"] as Array).has("a_1_2_3"), "o que foi colhido continua colhido")
+	var world := ProceduralWorld.new()
+	world.use_session_seed = true
+	add_child(world)
+	await _frames(1)
+	_check(world.world_seed == 4242, "o mundo gerado usa a semente do mundo aberto")
+	world.queue_free()
+	GameSession.delete_world(id)
+	listed = false
+	for w in GameSession.list_worlds():
+		listed = listed or w["id"] == id
+	_check(not listed, "APAGAR remove o mundo da memória")
+	GameSession.active = false
+	GameSession.storage_allowed = allowed
+	_clear_inventory()
+	await _frames(5)
+
+
+func _test_scramble_pose() -> void:
+	_begin("Escalada: tronco inclinado e mãos apoiadas na encosta de 55°")
+	_clear_inventory()
+	await _reset(Vector3(18.0, 0.0, 1.0), 0.0)
+	Input.action_press(&"move_forward")
+	var scrambled := false
+	var best := [INF, INF]
+	for i in 200:
+		await _frames(1)
+		if _player.movement_state == PlayerController.MovementState.SCRAMBLING and i > 40:
+			scrambled = true
+			# Plano da rampa: passa por z = -1 (y = 0) e sobe para -z a 55°.
+			var normal := Vector3(0.0, cos(deg_to_rad(55.0)), sin(deg_to_rad(55.0)))
+			for k in 2:
+				var hand := _bone("hand_l" if k == 0 else "hand_r")
+				best[k] = minf(best[k], absf((hand - Vector3(hand.x, 0.0, -1.0)).dot(normal)))
+	Input.action_release(&"move_forward")
+	_check(scrambled, "entra no estado de escalada")
+	_check(best[0] < 0.2 and best[1] < 0.2, "as duas mãos tocam a encosta (%.2f e %.2f m)" % [best[0], best[1]])
+	await _reset(OPEN_LANE, YAW_TOWARD_POSITIVE_Z)
+
+
+func _test_main_menu() -> void:
+	_begin("Menu inicial: botões, permissão para salvar, novo mundo e personagem")
+	var menu: MainMenu = (load("res://scenes/menu/menu_principal.tscn") as PackedScene).instantiate()
+	add_child(menu)
+	await _frames(5)
+	var texts := []
+	for child in menu._side.get_children():
+		if child is Button:
+			texts.append((child as Button).text.split("  ")[0])
+	_check(texts.has("NOVO MUNDO") and texts.has("CARREGAR MUNDO") and texts.has("PERSONAGEM") and texts.has("SAIR") and texts.has("CONTINUAR"),
+			"botões CONTINUAR, NOVO MUNDO, CARREGAR, PERSONAGEM e SAIR")
+	_check(menu._permission.visible == not GameSession.storage_asked, "pede permissão para salvar na primeira vez")
+	menu._show_panel("novo")
+	_check((menu._panels["novo"] as Control).visible and menu._seed_field.placeholder_text == "aleatória", "NOVO MUNDO: nome e semente (vazia = aleatória)")
+	menu._show_panel("personagem")
+	var jacket := ((menu._panels["personagem"] as Control).find_children("*", "Button", true, false)).filter(
+			func(button: Node) -> bool: return button.get_meta(&"part", "") == "jaqueta")
+	(jacket[2] as Button).pressed.emit()
+	var body := menu._preview.survivor.find_child("Body", true, false) as MeshInstance3D
+	var override := body.get_surface_override_material(2) as BaseMaterial3D
+	_check(menu._look["jaqueta"] == 2 and override != null and override.albedo_color.is_equal_approx(CharacterLook.COLORS["jaqueta"][2]),
+			"PERSONAGEM: escolher a cor da jaqueta pinta o modelo")
+	menu.queue_free()
+	await _frames(5)
+	_camera.make_current()
+
+
+func _test_biomes() -> void:
+	_begin("Biomas: coníferas, folhosas, campo, seco e neve, cada um com chão e árvores próprios")
+	var g := WorldGenerator.new(WORLD_SEED)
+	var counts := [0, 0, 0, 0, 0]
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 9
+	for i in 2000:
+		counts[g.biome_at(rng.randf_range(-2000.0, 2000.0), rng.randf_range(-2000.0, 2000.0))] += 1
+	_check(counts.min() > 60, "os 5 biomas aparecem em 4 × 4 km (%s)" % str(counts))
+	# Árvores por bioma: folhosas no bosque, mortas e aljavas no seco.
+	var species := {WorldGenerator.Biome.FOLHOSAS: [], WorldGenerator.Biome.SECO: [], WorldGenerator.Biome.CONIFERAS: []}
+	rng.seed = 11
+	var tries := 0
+	while tries < 400 and (species.values().any(func(list: Array) -> bool: return list.size() < 8)):
+		tries += 1
+		var x := rng.randf_range(-1500.0, 1500.0)
+		var z := rng.randf_range(-1500.0, 1500.0)
+		var biome := g.biome_at(x, z)
+		if not species.has(biome) or (species[biome] as Array).size() >= 8:
+			continue
+		var data := g.build_chunk(ProceduralWorld.chunk_of(Vector3(x, 0.0, z)))
+		for tree: Array in data["tree_list"]:
+			(species[biome] as Array).append(tree[0])
+	var broad: Array = species[WorldGenerator.Biome.FOLHOSAS]
+	var dry: Array = species[WorldGenerator.Biome.SECO]
+	var fir: Array = species[WorldGenerator.Biome.CONIFERAS]
+	_check(broad.count(3) > broad.size() * 0.5, "bosque de folhosas: maioria de árvores de folhas largas (%d de %d)" % [broad.count(3), broad.size()])
+	_check(dry.all(func(v: int) -> bool: return v == 4 or v == 5) and not dry.is_empty(), "terra seca: só árvores mortas e aljavas (%d)" % dry.size())
+	_check(fir.count(0) + fir.count(1) + fir.count(2) > fir.size() * 0.8, "floresta de coníferas: abetos (%d de %d)" % [fir.size(), fir.size()])
+	var chunk := g.build_chunk(Vector2i(3, 3))
+	_check((chunk["mesh"]["customs"] as PackedFloat32Array).size() == (chunk["mesh"]["vertices"] as PackedVector3Array).size() * 4,
+			"o terreno leva os pesos dos biomas por vértice (chão próprio no shader)")
+
+
+func _test_towns() -> void:
+	_begin("Vilas e cidades: platô aplainado, prédios com colisão, ruas e o que achar")
+	var g := WorldGenerator.new(WORLD_SEED)
+	var spawn := g.spawn_point()
+	var towns := g.towns_near(spawn, 1600.0)
+	var city: Dictionary = {}
+	var village: Dictionary = {}
+	for t: Dictionary in towns:
+		if t["kind"] == "cidade" and city.is_empty():
+			city = t
+		elif t["kind"] == "vila" and village.is_empty():
+			village = t
+	_check(not city.is_empty() and not village.is_empty(), "há cidade e vila perto da partida (%d povoados em 1,6 km)" % towns.size())
+	if city.is_empty() or village.is_empty():
+		return
+	var far := true
+	for t: Dictionary in towns:
+		far = far and Vector2(spawn.x, spawn.z).distance_to(t["center"]) > float(t["radius"]) + 200.0
+	_check(far, "nenhum povoado em cima da partida")
+	var flat := true
+	var overlap := false
+	for b: Dictionary in city["buildings"]:
+		var p: Vector3 = b["pos"]
+		flat = flat and absf(g.surface_height(p.x, p.z) - float(city["base"])) < 0.6
+		overlap = overlap or g.town_street_distance(p.x, p.z, city) < 1.0
+	_check(flat, "prédios assentados no platô da cidade")
+	_check(not overlap and (city["buildings"] as Array).size() >= 8, "%d prédios fora das ruas" % (city["buildings"] as Array).size())
+	var tall := (city["buildings"] as Array).any(func(b: Dictionary) -> bool: return (b["size"] as Vector3).y > 12.0)
+	var houses := (village["buildings"] as Array).all(func(b: Dictionary) -> bool: return int(b["roof"]) == 1 and (b["size"] as Vector3).y < 7.0)
+	_check(tall and houses, "cidade com prédios altos; vila com casas de telhado de duas águas")
+	# O pedaço com um prédio monta a malha e a caixa de colisão.
+	var first: Dictionary = city["buildings"][0]
+	var world := _world_node(1)
+	add_child(world)
+	await _frames(1)
+	var coord := ProceduralWorld.chunk_of(first["pos"])
+	world.generate_now(first["pos"], 0)
+	var node := world.chunk_node(coord)
+	_check(node != null and node.get_node_or_null("Predios") is MeshInstance3D, "o pedaço mostra os prédios")
+	var space := get_viewport().world_3d.direct_space_state
+	await _frames(2)
+	var p: Vector3 = first["pos"]
+	var size: Vector3 = first["size"]
+	var ray := PhysicsRayQueryParameters3D.create(p + Vector3(size.x * 0.5 + 3.0, 1.5, 0.0), p + Vector3(0.0, 1.5, 0.0), 1)
+	_check(not space.intersect_ray(ray).is_empty(), "a parede do prédio é sólida (colisão)")
+	var street := Vector2(city["center"]) + Vector2(WorldGenerator.BLOCK, 7.0)
+	var weights := g._vertex_weights(Vector3(street.x, float(city["base"]), street.y), Vector3.UP, 0, 0, Vector3.ZERO, 2,
+			PackedFloat32Array([city["base"], city["base"], city["base"], city["base"]]), PackedVector2Array([Vector2(99, 99), Vector2(99, 99), Vector2(99, 99), Vector2(99, 99)]))
+	_check(weights.g > 0.9, "rua da cidade é asfalto (%.2f)" % weights.g)
+	world.queue_free()
+	await _frames(5)
+
+
+func _test_zombie_variety() -> void:
+	_begin("Zumbis variados: roupa, pele apodrecida, sangue, altura e postura")
+	var colors := {}
+	var heights := []
+	var zombies: Array[Zombie] = []
+	for i in ZombieLook.OUTFITS.size():
+		var z := Zombie.new()
+		z.variant = i
+		_gym.add_child(z)
+		z.global_position = OPEN_LANE + Vector3(i * 2.0, 0.0, 6.0)
+		zombies.append(z)
+	await _frames(10)
+	var decayed := true
+	var posture := true
+	for z in zombies:
+		var body := z.find_child("Body", true, false) as MeshInstance3D
+		var jacket := body.get_surface_override_material(2) as ShaderMaterial
+		decayed = decayed and jacket != null and (body.mesh as ArrayMesh).surface_get_format(0) & Mesh.ARRAY_FORMAT_COLOR != 0
+		if jacket != null:
+			var c: Color = jacket.get_shader_parameter("base_color")
+			colors[str(Color(snappedf(c.r, 0.1), snappedf(c.g, 0.1), snappedf(c.b, 0.1)))] = true
+		heights.append(z.get_child(1).scale.y if z.get_child_count() > 1 else 1.0)
+		posture = posture and z.find_child("Postura", true, false) is ZombiePosture
+	_check(decayed, "pele e roupa com sangue e encardido (cores de vértice e shader próprio)")
+	_check(colors.size() >= 4, "%d roupas diferentes (policial, operário, civil, esfarrapado, sem camisa)" % colors.size())
+	_check(posture, "cada um com postura própria (cabeça caída, tronco curvado)")
+	for z in zombies:
+		z.queue_free()
+	await _frames(3)

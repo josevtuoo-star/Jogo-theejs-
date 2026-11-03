@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="ItemData" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/inventory/item_data.gd" id="1_kx4o2"]
+[ext_resource type="ArrayMesh" path="res://resources/models/world/armadura_joelheira.res" id="2_0i43h"]
+
+[resource]
+script = ExtResource("1_kx4o2")
+id = &"joelheiras"
+display_name = "Joelheiras"
+kind = 2
+world_mesh = ExtResource("2_0i43h")
+mass = 0.8
+max_durability = 70.0
+impact_material = &"metal"
+stack_size = 1
+armor_slot = &"pernas"
+armor_value = 0.08
+description = "Pernas: absorvem 8% do dano."

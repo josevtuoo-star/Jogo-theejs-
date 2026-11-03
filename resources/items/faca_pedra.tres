@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="ItemData" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/inventory/item_data.gd" id="1_o67fj"]
+[ext_resource type="Resource" path="res://resources/weapons/faca_pedra.tres" id="2_mimiv"]
+[ext_resource type="ArrayMesh" path="res://resources/models/weapons/faca_pedra.res" id="3_swreu"]
+
+[resource]
+script = ExtResource("1_o67fj")
+id = &"faca_pedra"
+display_name = "Faca de pedra"
+kind = 0
+world_mesh = ExtResource("3_swreu")
+mass = 0.3
+weapon = ExtResource("2_mimiv")
+max_durability = 50.0
+impact_material = &"madeira"
+stack_size = 1
+description = "Golpes curtos e muito rápidos."

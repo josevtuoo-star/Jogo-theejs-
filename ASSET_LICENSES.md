@@ -67,7 +67,7 @@ Licença conferida no campo "License(s)" da página de cada pacote e nos arquivo
 | Vintage Suitcase | Maximilian Schuster | malas abandonadas |
 | Trashbag | Benny Weimer | sacos de lixo |
 | Plastic Jerrycan | Ulan Cabanilla | galões |
-| Rock Face 01 | Dario Barresi | paredões e bocas de caverna |
+| ~~Rock Face 01~~ | Dario Barresi | removido na etapa 9 (fatia de penhasco com laterais retas; nas encostas ficava flutuando). Substituído por rochedos procedurais |
 | Dry Branches Medium 01 | Rico Cilliers | galhos secos no chão da mata |
 | Rusty Painted Metal (textura) | Amal Kumar | escorridos da pintura das carcaças |
 | Rust Coarse 01 (textura) | Dimitrios Savva, Rico Cilliers | ferrugem das carcaças e dos pregos |
@@ -75,6 +75,22 @@ Licença conferida no campo "License(s)" da página de cada pacote e nos arquivo
 | Mossy Rock (textura) | Rob Tuytel | rocha dos barrancos e, sem o verde do musgo, das cavernas |
 | Cliff Side (textura) | James Ray Cock, Jenelle van Heerden, Dario Barresi | estratos alaranjados da rocha das cavernas; estalagmites, estalactites e minérios |
 | Brown Mud Rocks 01 (textura) | Rob Tuytel | chão de cascalho das galerias |
+| Weathered Planks (textura) | Dario Barresi, Dimitrios Savva | tábuas (item), casas de madeira, portas e janelas tapadas |
+| Snow 02 (textura) | Rob Tuytel | chão do bioma de neve e neve nas encostas |
+| Dry Ground Rocks (textura) | Rob Tuytel | chão do bioma seco |
+| Forest Leaves 02 (textura) | Rob Tuytel | chão de folhas do bosque de folhosas |
+| Sparse Grass (textura) | Amal Kumar | capim do campo aberto |
+| Brick Wall 02 (textura) | Dimitrios Savva | prédios e casas de tijolo |
+| Worn Plaster Wall (textura) | Dimitrios Savva | casas de reboco |
+| Concrete Wall 004 (textura) | Dario Barresi, Charlotte Baglioni | prédios de concreto e lajes |
+| Grey Roof 01 (textura) | Rob Tuytel | telhados das casas |
+| Rusty Corrugated Iron (textura) | Charlotte Baglioni | telhados de zinco |
+| Shrub 02 / Shrub 04 | Rico Cilliers | arbustos dos biomas de folhosas e campo |
+| Weed Plant 02 | Rob Tuytel, Rico Cilliers | mato do campo e das vilas abandonadas |
+| Street Lamp 01 | Josh Dean | postes de luz das cidades |
+| Metal Trash Can | GurJas Studios | lixeiras nas ruas |
+| Tree Small 02 (modelo, só como fonte) | Rico Cilliers | renderizado por `tools/bake_broadleaf_impostors.gd` no atlas `resources/textures/trees/broadleaf_cards.png` (árvore de folhas largas e a mesma seca); o modelo de 2 M polígonos fica em `assets/_source` |
+| Quiver Tree 01 (modelo, só como fonte) | James Ray Cock, Dario Barresi, Rico Cilliers | árvore-aljava do bioma seco (no mesmo atlas) |
 
 Baixados pela API oficial com `tools/download_polyhaven.py` (1k, glTF). Cada pasta tem `SOURCE.txt` com nome, autores, licença e link. Os modelos do mundo procedural são reduzidos (malha simplificada pelo próprio motor) por `tools/build_world_assets.gd`; os arquivos originais que só servem de fonte ficam fora do APK (`exclude_filter` em `export_presets.cfg`).
 

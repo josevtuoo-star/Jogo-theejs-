@@ -51,7 +51,6 @@ ASSETS = [
     ("vintage_suitcase", "models", "1k"),
     ("trashbag", "models", "1k"),
     ("plastic_jerrycan", "models", "1k"),
-    ("rock_face_01", "models", "1k"),
     ("dry_branches_medium_01", "models", "1k"),
     ("rusty_painted_metal", "textures", "1k"),
     ("rust_coarse_01", "textures", "1k"),
@@ -60,6 +59,32 @@ ASSETS = [
     # Cavernas (etapa 8): estratos da rocha e chão de cascalho
     ("cliff_side", "textures", "1k"),
     ("brown_mud_rocks_01", "textures", "1k"),
+    # Etapa 9: tábuas (itens e construções)
+    ("weathered_planks", "textures", "1k"),
+    # Etapa 9: biomas (chão)
+    ("snow_02", "textures", "1k"),
+    ("dry_ground_rocks", "textures", "1k"),
+    ("forest_leaves_02", "textures", "1k"),
+    ("sparse_grass", "textures", "1k"),
+    # Etapa 9: vilas e cidades
+    ("brick_wall_02", "textures", "1k"),
+    ("worn_plaster_wall", "textures", "1k"),
+    ("concrete_wall_004", "textures", "1k"),
+    ("grey_roof_01", "textures", "1k"),
+    ("rusty_corrugated_iron", "textures", "1k"),
+    # Etapa 9: vegetação dos biomas (malhas reduzidas por build_world_assets)
+    ("shrub_02", "models", "1k"),
+    ("shrub_04", "models", "1k"),
+    ("weed_plant_02", "models", "1k"),
+    ("street_lamp_01", "models", "1k"),
+    ("metal_trash_can", "models", "1k"),
+]
+
+# Fontes grandes só para gerar impostores (ficam em assets/_source, fora do
+# Git e do APK): python3 tools/download_polyhaven.py --fontes
+SOURCES = [
+    ("tree_small_02", "models", "1k"),
+    ("quiver_tree_01", "models", "1k"),
 ]
 
 # Mapas usados de cada textura (formato jpg; normal no padrão OpenGL usado pelo Godot).
@@ -79,10 +104,16 @@ def download(url, path):
 
 
 def main():
-    for asset_id, kind, res in ASSETS:
+    sources = "--fontes" in sys.argv
+    only = set(a for a in sys.argv[1:] if not a.startswith("--"))
+    for asset_id, kind, res in (SOURCES if sources else ASSETS):
+        if only and asset_id not in only:
+            continue
         info = fetch_json(f"https://api.polyhaven.com/info/{asset_id}")
         files = fetch_json(f"https://api.polyhaven.com/files/{asset_id}")
         folder = os.path.join(ROOT, kind, asset_id)
+        if sources:
+            folder = os.path.join(ROOT, "..", "_source", asset_id)
         if kind == "hdris":
             entry = files["hdri"][res]["hdr"]
             download(entry["url"], os.path.join(folder, f"{asset_id}_{res}.hdr"))

@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="ItemData" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/inventory/item_data.gd" id="1_7fwg7"]
+[ext_resource type="ArrayMesh" path="res://resources/models/world/armadura_colete.res" id="2_3qrri"]
+
+[resource]
+script = ExtResource("1_7fwg7")
+id = &"colete"
+display_name = "Colete de chapas"
+kind = 2
+world_mesh = ExtResource("2_3qrri")
+mass = 4.0
+max_durability = 120.0
+impact_material = &"metal"
+stack_size = 1
+armor_slot = &"tronco"
+armor_value = 0.25
+description = "Tronco: absorve 25% do dano."

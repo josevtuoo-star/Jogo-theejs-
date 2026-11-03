@@ -19,23 +19,26 @@ docs/                      Arquitetura e documentação de cada etapa
 scenes/
   player/player.tscn       Personagem jogável (cápsula física + corpo + câmera)
   characters/survivor.tscn Corpo do sobrevivente (gerado por tools/build_survivor.gd)
-  world/mundo.tscn         Cena principal: mundo procedural por pedaços (tools/build_world_scene.gd)
+  menu/menu_principal.tscn Cena inicial: menu (novo mundo com semente, carregar, personagem)
+  world/mundo.tscn         Mundo procedural por pedaços (tools/build_world_scene.gd), aberto pelo menu
   demo/demo_forest.tscn    Mapa fixo da clareira na floresta (tools/build_demo_map.gd)
   ui/touch_controls.tscn   Controles de toque
   test/                    Cenas de calibração (não são o mapa do jogo)
 scripts/
-  autoload/                Singletons (GameInput; Wind fica em world/)
+  autoload/                Singletons (GameInput, GameSession: mundo aberto, semente, salvamento; Wind fica em world/)
   components/              Componentes reutilizáveis (StaminaComponent; depois Health, Hunger, Thirst…)
   player/                  Controlador, interação, combate, morte (ragdoll)
   camera/                  Câmera em 1ª/3ª pessoa com transição (PlayerCameraRig)
   animation/               Animador do corpo inteiro (BodyAnimator)
   audio/                   Sons: SoundSet, SoundEmitter, PlayerSounds, ImpactSound
   weapons/                 Armas brancas: WeaponData, PlayerEquipment, WeaponPickup, WeaponSpawn
-  inventory/               Mochila: ItemData, Inventory (barra rápida, recursos, durabilidade), ItemPickup
-  npc/                     Zumbis (Zombie)
+  inventory/               Mochila: ItemData, Inventory (casas: barra, mochila, armadura, bancada), Crafting
+                           (receitas), ItemPickup, ArmorVisuals
+  npc/                     Zumbis (Zombie, ZombieLook: roupas e pele; ZombiePosture: postura)
   interaction/             Interactable e objetos interagíveis
   world/                   Vento (singleton Wind), perigos, alvos, fogueira, instâncias (ScatterInstances), impostores (TreeCards)
-    procedural/            Mundo infinito: WorldGenerator (relevo, estradas, cavernas, surface nets, objetos),
+    procedural/            Mundo infinito: WorldGenerator (relevo, estradas, cavernas, biomas, vilas e
+                           cidades, surface nets, objetos),
                            ProceduralWorld (pedaços em segundo plano), ChunkResources (árvores e minério
                            coletáveis), CaveAtmosphere (luz nas cavernas, lanterna de testa)
   physics/                 SurfaceProfile e utilidades físicas
@@ -102,13 +105,14 @@ Cada etapa só começa depois que a anterior passa nos testes e é validada no a
 | 6 | **Sobrevivente, sons e mapa ampliado** | personagem do `Sobrevivente.fbx` com animações retargetadas, resistência desligada, defesa por toque, pés no terreno (IK), câmera e toque ajustados, 95 sons CC0, mapa de 400 m preservando a clareira | **concluída** (`ETAPA_06_SOBREVIVENTE_SONS_MAPA.md`) |
 | 7 | **Armas brancas e mundo procedural** | picareta, machado de bombeiro e taco com pregos (pegar, trocar, soltar, golpes próprios); mundo infinito por pedaços com cavernas, rodovias abandonadas, floresta e lanterna de cabeça; ambiente só com vento variável | **concluída** (`ETAPA_07_ARMAS_MUNDO_PROCEDURAL.md`) |
 | 8 | **Coleta, mochila e cavernas** | lanterna na testa sem sombra do próprio corpo; cavernas em galerias caminháveis com rampas de entrada e luz pelas aberturas; mochila com PEGAR, ícones, barra rápida e durabilidade; corte de árvores e mineração; zumbis | **concluída** (`ETAPA_08_COLETA_CAVERNAS.md`) |
-| 8b | Construção e portas | usar madeira, pedra e ferro (receitas), portas, peso na mochila (define `carried_mass`) | próxima |
-| 9 | Status vitais | fome, sede, sangramento, cura; a vida e as lesões já existem | — |
-| 10 | Armas de fogo | recuo, dispersão, munição, sobre o combate e o equipamento da etapa 7 | — |
-| 11 | Zumbis avançados | os zumbis básicos existem (etapa 8); falta navegação por caminhos (`NavigationAgent3D` sobre o mundo gerado), hordas, entrar nas cavernas, ouvir os passos pela superfície | — |
-| 12 | Ragdoll parcial e reações | o ragdoll de morte já existe (etapa 4); falta mistura física parcial em golpes fortes e zumbis | — |
-| 13 | Otimização Android | perfis de qualidade, LOD, testes em aparelhos reais | — |
-| 14 | PC | configurações gráficas e de controle | — |
+| 9 | **Menu, mundos, bancada, biomas e cidades** | menu inicial com fundo 3D; mundos com semente, salvos na memória do aparelho com permissão; personalização do sobrevivente; mochila em grade (barra de 9, mochila de 27, armadura) com bancada 2 × 2 e receitas; ferramentas de pedra, lança, faca, tocha, facão e pé de cabra; armaduras; árvore derrubada a socos; escalada de encostas com as mãos; biomas (coníferas, folhosas, campo, seco, neve); vilas e cidades abandonadas; zumbis com roupas, pele e postura variadas | **concluída** (`ETAPA_09_MUNDO_VIVO.md`) |
+| 10 | Construção e portas | construir com tábuas, pedra e ferro (a bancada já fabrica ferramentas e armaduras), portas, entrar nos prédios, peso na mochila (define `carried_mass`) | próxima |
+| 11 | Status vitais | fome, sede, sangramento, cura; a vida e as lesões já existem | — |
+| 12 | Armas de fogo | recuo, dispersão, munição, sobre o combate e o equipamento da etapa 7 | — |
+| 13 | Zumbis avançados | os zumbis variados existem (etapas 8 e 9); falta navegação por caminhos (`NavigationAgent3D` sobre o mundo gerado), hordas, entrar nas cavernas, ouvir os passos pela superfície | — |
+| 14 | Ragdoll parcial e reações | o ragdoll de morte já existe (etapa 4); falta mistura física parcial em golpes fortes e zumbis | — |
+| 15 | Otimização Android | perfis de qualidade, LOD, testes em aparelhos reais | — |
+| 16 | PC | configurações gráficas e de controle | — |
 
 O mundo aberto entrou na etapa 7, a pedido do dono do projeto: procedural e infinito, carregado por pedaços.
 

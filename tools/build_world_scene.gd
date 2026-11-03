@@ -25,6 +25,20 @@ func _initialize() -> void:
 	_own(world)
 	var player := _player_and_ui()
 	world.set("target", player)
+	world.set("use_session_seed", true)
+	# Menu de pausa e a indicação da caverna mais próxima (etapa 9).
+	var pause := CanvasLayer.new()
+	pause.name = "PauseMenu"
+	pause.set_script(load("res://scripts/ui/pause_menu.gd"))
+	_own(pause)
+	pause.set("world_scene", _root)
+	pause.set("player", player)
+	var compass := CanvasLayer.new()
+	compass.name = "CaveCompass"
+	compass.set_script(load("res://scripts/ui/cave_compass.gd"))
+	_own(compass)
+	compass.set("world", world)
+	compass.set("camera", player.get_node("CameraRig/Camera3D"))
 	var caves := Node.new()
 	caves.name = "CaveAtmosphere"
 	caves.set_script(load("res://scripts/world/procedural/cave_atmosphere.gd"))

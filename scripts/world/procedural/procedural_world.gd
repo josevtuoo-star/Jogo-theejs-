@@ -12,6 +12,8 @@ extends Node3D
 signal chunk_loaded(coord: Vector2i)
 
 @export var world_seed: int = 20261102
+## Usa a semente do mundo aberto no menu (GameSession), se houver.
+@export var use_session_seed: bool = false
 ## Nó seguido (o jogador). Sem alvo, o mundo fica em volta da origem.
 @export var target: Node3D
 ## Raio de pedaços carregados em volta do alvo (4 = 9 × 9 pedaços, 144 m).
@@ -32,6 +34,8 @@ var _tree_cards: Array[Mesh] = []
 var _trunk_mesh: Mesh
 var _meshes: Dictionary = {}
 var _boxes: Dictionary = {} # nome -> AABB da malha (colisão)
+var _hulls: Dictionary = {} # nome -> pontos do casco convexo (rochedos)
+var _building_material: Material
 var _weapons: Dictionary = {}
 ## Armas já pegas (não reaparecem): "x_z_i".
 var _taken: Dictionary = {}
@@ -42,14 +46,21 @@ var _generation_usec: Array[int] = []
 
 
 func _ready() -> void:
+	# Mundo aberto pelo menu: a semente é a dele.
+	if use_session_seed and GameSession.active:
+		world_seed = GameSession.world_seed
 	generator = WorldGenerator.new(world_seed)
 	# No celular, um anel a menos (a neblina já esconde a borda): ~40% menos
 	# pedaços para desenhar e manter na memória.
 	if OS.has_feature("mobile") and view_distance > 3:
 		view_distance = 3
 	_terrain_material = load("res://resources/materials/world_terrain.tres")
+	_building_material = load("res://resources/materials/building.tres")
 	for variant in 3:
 		_tree_cards.append(TreeCards.card_mesh(variant))
+	# Variantes 3–5: folhosa, árvore seca e árvore-aljava (outros biomas).
+	for row in 3:
+		_tree_cards.append(TreeCards.broadleaf_mesh(row))
 	_trunk_mesh = TreeCards.trunk_mesh()
 	for id in ["taco", "machado", "picareta"]:
 		_weapons[id] = load("res://resources/weapons/%s.tres" % id)
@@ -91,6 +102,19 @@ func chunk_node(coord: Vector2i) -> Node3D:
 
 func mark_removed(key: String) -> void:
 	_removed[key] = true
+
+
+## Arma largada no mundo que o jogador já pegou (não reaparece).
+func mark_taken(key: String) -> void:
+	_taken[key] = true
+
+
+func removed_keys() -> Array:
+	return _removed.keys()
+
+
+func taken_keys() -> Array:
+	return _taken.keys()
 
 
 func is_removed(key: String) -> bool:
@@ -244,8 +268,13 @@ func _build_chunk_node(data: Dictionary) -> Node3D:
 		arrays[Mesh.ARRAY_TEX_UV] = mesh_data["uvs"]
 		arrays[Mesh.ARRAY_TEX_UV2] = mesh_data["uv2s"]
 		arrays[Mesh.ARRAY_INDEX] = mesh_data["indices"]
+		var flags := 0
+		if mesh_data.has("customs"):
+			# Pesos dos biomas (CUSTOM0 no shader do terreno).
+			arrays[Mesh.ARRAY_CUSTOM0] = mesh_data["customs"]
+			flags = Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT
 		var mesh := ArrayMesh.new()
-		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays, [], {}, flags)
 		mesh.surface_set_material(0, _terrain_material)
 		var terrain := MeshInstance3D.new()
 		terrain.name = "Terreno"
@@ -275,7 +304,7 @@ func _build_chunk_node(data: Dictionary) -> Node3D:
 	resources.world = self
 	resources.coord = coord
 	chunk.add_child(resources)
-	var cards: Array = [[], [], []]
+	var cards: Array = [[], [], [], [], [], []]
 	var trunks: Array = []
 	var standing: Array = [] # [chave, dados da árvore, índice na copa, índice no tronco]
 	var tree_list: Array = data.get("tree_list", [])
@@ -285,18 +314,24 @@ func _build_chunk_node(data: Dictionary) -> Node3D:
 		if is_removed(key):
 			resources._stump((tree[2] as Transform3D).origin, tree[1])
 			continue
-		standing.append([key, tree, (cards[tree[0]] as Array).size(), trunks.size()])
+		# Só os abetos têm tronco à parte (as outras árvores já o trazem no quadro).
+		var has_trunk: bool = tree[3] != null
+		standing.append([key, tree, (cards[tree[0]] as Array).size(), trunks.size() if has_trunk else -1])
 		(cards[tree[0]] as Array).append(tree[2])
-		trunks.append(tree[3])
+		if has_trunk:
+			trunks.append(tree[3])
 	var card_scatters: Array = []
-	for variant in 3:
+	for variant in cards.size():
 		card_scatters.append(_scatter(chunk, "Arvores%d" % variant, _tree_cards[variant], cards[variant], 170.0, true))
 	var trunk_scatter := _scatter(chunk, "Troncos", _trunk_mesh, trunks, 70.0, true)
 	for entry in standing:
 		var tree: Array = entry[1]
 		var base: Transform3D = tree[2]
-		resources.add_tree(entry[0], tree[0], tree[1], tree[4], Transform3D(Basis.IDENTITY, base.origin), 0.16 * tree[1],
-				[[card_scatters[tree[0]], entry[2]], [trunk_scatter, entry[3]]])
+		var parts := [[card_scatters[tree[0]], entry[2]]]
+		if entry[3] >= 0:
+			parts.append([trunk_scatter, entry[3]])
+		var radius: float = tree[5] if tree.size() > 5 else 0.16 * tree[1]
+		resources.add_tree(entry[0], tree[0], tree[1], tree[4], Transform3D(Basis.IDENTITY, base.origin), radius, parts)
 	var deposits: Array = data.get("deposits", [])
 	var deposit_lists := {}
 	var deposit_entries: Array = []
@@ -320,10 +355,38 @@ func _build_chunk_node(data: Dictionary) -> Node3D:
 	# Objetos espalhados (uma instância múltipla por tipo).
 	var props: Dictionary = data["props"]
 	for kind in props:
-		var small: bool = kind in ["can_rusted", "plastic_jerrycan", "rusted_wheel_rim_01", "trashbag", "fern_02", "shrub_03", "dry_branches_medium_01"]
+		var small: bool = kind in ["can_rusted", "plastic_jerrycan", "rusted_wheel_rim_01", "trashbag", "fern_02", "shrub_03",
+				"dry_branches_medium_01", "shrub_02", "shrub_04", "weed_plant_02"]
 		_scatter(chunk, kind, _mesh(kind), props[kind], 45.0 if small else 110.0, not small)
 	for entry in data["colliders"]:
 		_box_collider(solids, entry[0], entry[1])
+	# Prédios e casas das vilas e cidades: uma malha por pedaço e uma caixa
+	# de colisão por prédio (do chão afundado até o teto).
+	var building_mesh: Dictionary = data.get("building_mesh", {})
+	if not building_mesh.is_empty():
+		var arrays := []
+		arrays.resize(Mesh.ARRAY_MAX)
+		arrays[Mesh.ARRAY_VERTEX] = building_mesh["vertices"]
+		arrays[Mesh.ARRAY_NORMAL] = building_mesh["normals"]
+		arrays[Mesh.ARRAY_TEX_UV] = building_mesh["uvs"]
+		arrays[Mesh.ARRAY_COLOR] = building_mesh["colors"]
+		arrays[Mesh.ARRAY_INDEX] = building_mesh["indices"]
+		var mesh := ArrayMesh.new()
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+		mesh.surface_set_material(0, _building_material)
+		var buildings := MeshInstance3D.new()
+		buildings.name = "Predios"
+		buildings.mesh = mesh
+		buildings.visibility_range_end = 260.0
+		chunk.add_child(buildings)
+		for b: Dictionary in data.get("buildings", []):
+			var size: Vector3 = b["size"]
+			var box := BoxShape3D.new()
+			box.size = Vector3(size.x, size.y + 1.5, size.z)
+			var shape := CollisionShape3D.new()
+			shape.shape = box
+			shape.position = (b["pos"] as Vector3) + Vector3(0.0, (size.y - 1.5) * 0.5, 0.0)
+			solids.add_child(shape)
 	# Carcaças: agrupadas por modelo, com a cor de cada uma.
 	var by_kind := {}
 	for entry in data["wrecks"]:
@@ -344,6 +407,8 @@ func _build_chunk_node(data: Dictionary) -> Node3D:
 		var zombie := Zombie.new()
 		zombie.name = "Zumbi%d" % i
 		zombie.target = target
+		# A roupa sai da chave: o mesmo zumbi volta igual ao recarregar.
+		zombie.variant = absi(hash(key + "roupa")) % ZombieLook.OUTFITS.size()
 		chunk.add_child(zombie)
 		zombie.global_position = zombies[i]
 		zombie.rotation.y = hash(key) % 628 / 100.0
@@ -356,6 +421,16 @@ func _build_chunk_node(data: Dictionary) -> Node3D:
 			continue
 		var body := WeaponPickup.spawn(_weapons[weapons[i][0]], weapons[i][1], chunk)
 		var pickup: WeaponPickup = body.get_node("WeaponPickup")
+		pickup.interacted.connect(func(_by: Node) -> void: _taken[key] = true)
+	# Recursos soltos (sucata de ferro, tábuas) nas vilas e cidades.
+	var items: Array = data.get("items", [])
+	for i in items.size():
+		var key := "i_%d_%d_%d" % [coord.x, coord.y, i]
+		var item := ItemData.find(StringName(items[i][0]))
+		if _taken.has(key) or item == null:
+			continue
+		var body := ItemPickup.spawn(item, items[i][1], chunk, items[i][2])
+		var pickup: ItemPickup = body.get_node("ItemPickup")
 		pickup.interacted.connect(func(_by: Node) -> void: _taken[key] = true)
 	return chunk
 
@@ -389,6 +464,17 @@ func _mesh(kind: String) -> Mesh:
 func _box_collider(body: StaticBody3D, kind: String, t: Transform3D) -> void:
 	_mesh(kind)
 	var box: AABB = _boxes[kind]
+	if kind == "street_lamp_01":
+		# Poste: só a coluna (o braço da luminária fica no alto, fora do alcance).
+		var scale := t.basis.get_scale()
+		var pole := CylinderShape3D.new()
+		pole.radius = 0.14
+		pole.height = box.size.y * scale.y
+		var column := CollisionShape3D.new()
+		column.shape = pole
+		column.transform = Transform3D(Basis.IDENTITY, t.origin + Vector3.UP * pole.height * 0.5)
+		body.add_child(column)
+		return
 	if kind == "estalagmite":
 		var scale := t.basis.get_scale()
 		var cylinder := CylinderShape3D.new()
@@ -398,6 +484,22 @@ func _box_collider(body: StaticBody3D, kind: String, t: Transform3D) -> void:
 		spire.shape = cylinder
 		spire.transform = Transform3D(Basis.IDENTITY, t.origin + Vector3.UP * cylinder.height * 0.5)
 		body.add_child(spire)
+		return
+	if kind.begins_with("rochedo"):
+		# Rochedo: casco convexo da própria malha (uma caixa deixaria quinas
+		# invisíveis), com a escala aplicada aos pontos.
+		if not _hulls.has(kind):
+			_hulls[kind] = (_mesh(kind).create_convex_shape(true, true) as ConvexPolygonShape3D).points
+		var points: PackedVector3Array = (_hulls[kind] as PackedVector3Array).duplicate()
+		var scale_basis := Basis.from_scale(t.basis.get_scale())
+		for i in points.size():
+			points[i] = scale_basis * points[i]
+		var hull := ConvexPolygonShape3D.new()
+		hull.points = points
+		var rock := CollisionShape3D.new()
+		rock.shape = hull
+		rock.transform = Transform3D(t.basis.orthonormalized(), t.origin)
+		body.add_child(rock)
 		return
 	# A física não aceita forma escalada: a escala vai para o tamanho da caixa.
 	var scale := t.basis.get_scale()

@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="ItemData" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/inventory/item_data.gd" id="1_xyqwc"]
+[ext_resource type="Resource" path="res://resources/weapons/lanca.tres" id="2_r13w2"]
+[ext_resource type="ArrayMesh" path="res://resources/models/weapons/lanca.res" id="3_288pc"]
+
+[resource]
+script = ExtResource("1_xyqwc")
+id = &"lanca"
+display_name = "Lança"
+kind = 0
+world_mesh = ExtResource("3_288pc")
+mass = 1.4
+weapon = ExtResource("2_r13w2")
+max_durability = 60.0
+impact_material = &"madeira"
+stack_size = 1
+description = "Alcance longo: mantém o zumbi longe."

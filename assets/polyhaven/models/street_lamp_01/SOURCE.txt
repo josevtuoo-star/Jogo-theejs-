@@ -1,0 +1,6 @@
+Nome: Street Lamp 01
+Autores: Josh Dean
+Licença: CC0 1.0 (Poly Haven)
+Origem: https://polyhaven.com/a/street_lamp_01
+Resolução: 1k
+Polígonos: 30610
