@@ -162,7 +162,7 @@ export class GLTF {
 
 // "assa" (bake) uma subárvore estática: aplica as matrizes dos nós nos vértices e funde por material.
 // Retorna [{mesh, material}]. `xf` (mat4 opcional) é aplicada por último (escala/orientação/origem).
-GLTF.prototype.bake = function (gl, rootName = null, xf = null, ignoreRoot = true) {
+GLTF.prototype.bake = function (gl, rootName = null, xf = null, ignoreRoot = true, withBend = false) {
   const groups = new Map();
   const parts = this.partsPrim(rootName, ignoreRoot);
   for (const pt of parts) {
@@ -187,7 +187,13 @@ GLTF.prototype.bake = function (gl, rootName = null, xf = null, ignoreRoot = tru
   const out = [];
   for (const [material, g] of groups) {
     const idx = g.base > 65535 ? new Uint32Array(g.i) : new Uint16Array(g.i);
-    out.push({ mesh: new Mesh(gl, { positions: new Float32Array(g.p), normals: new Float32Array(g.n), uvs: new Float32Array(g.uv), indices: idx }), material });
+    let colors;
+    if (withBend) {
+      let mn = 1e9, mx = -1e9; for (let k = 1; k < g.p.length; k += 3) { mn = Math.min(mn, g.p[k]); mx = Math.max(mx, g.p[k]); }
+      colors = new Uint8Array(g.base * 4);
+      for (let k = 0; k < g.base; k++) { colors[k * 4] = 255; colors[k * 4 + 3] = Math.max(0, Math.min(1, (g.p[k * 3 + 1] - mn) / Math.max(mx - mn, 0.05))) * 255; }
+    }
+    out.push({ mesh: new Mesh(gl, { positions: new Float32Array(g.p), normals: new Float32Array(g.n), uvs: new Float32Array(g.uv), indices: idx, colors }), material });
   }
   return out;
 };

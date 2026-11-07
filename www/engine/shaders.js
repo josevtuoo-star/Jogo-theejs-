@@ -177,6 +177,7 @@ layout(location=7) in vec4 aI1;
 uniform mat4 uModel;
 #endif
 uniform float uWindAmp;
+uniform float uInstNear;
 out vec3 vWP; out vec3 vN; out vec2 vUV; out vec4 vCol; out float vVZ; out vec4 vInst;
 void main() {
   vec3 lp = aPos; vec3 ln = aNrm;
@@ -194,6 +195,7 @@ void main() {
   vec3 rp = vec3(c * sp.x + s * sp.z, sp.y, -s * sp.x + c * sp.z);
   wp = aI0.xyz + rp; wn = vec3(c * ln.x + s * ln.z, ln.y, -s * ln.x + c * ln.z);
   vInst = vec4(aI1.y, aI0.w, aI1.z, aI1.w);
+  if (uInstNear > 0.0 && distance(wp.xz, uCamPos.xz) < uInstNear) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); vWP = wp; vN = vec3(0, 1, 0); vUV = aUV; vCol = aCol; vVZ = 0.0; return; }
 #else
   wp = (uModel * vec4(lp, 1.0)).xyz; wn = mat3(uModel) * ln;
 #endif
@@ -272,8 +274,19 @@ void main() {
 #ifdef VCOLOR_AO
   ao *= mix(1.0, vCol.r, 0.9);
 #endif
+#if INST_TINT == 1
+  base.rgb *= vec3(0.78, 0.94, 0.78) * (0.78 + 0.45 * vInst.x);
+#elif INST_TINT == 3
+  { float rr = vInst.x; vec3 cn = vec3(0.78, 0.94, 0.78) * (0.78 + 0.45 * rr);
+    vec3 g = vec3(0.68, 0.9, 0.38), y = vec3(1.3, 1.1, 0.38), o = vec3(1.5, 0.62, 0.2);
+    vec3 cb = mix(mix(g, y, smoothstep(0.28, 0.6, rr)), o, smoothstep(0.72, 0.95, rr)) * (0.85 + 0.3 * fract(rr * 7.3));
+    base.rgb *= mix(cn, cb, vInst.z); }
+#elif INST_TINT == 2
+  { float rr = vInst.x; vec3 g = vec3(0.68, 0.9, 0.38), y = vec3(1.3, 1.1, 0.38), o = vec3(1.5, 0.62, 0.2);
+    base.rgb *= mix(mix(g, y, smoothstep(0.28, 0.6, rr)), o, smoothstep(0.72, 0.95, rr)) * (0.85 + 0.3 * fract(rr * 7.3)); }
+#endif
 #ifdef TINT
-  { int r = int(vCol.g * 255.0 + 0.5); base.rgb *= uRegion[r & 7]; }
+  { int r = int(vCol.g * 255.0 + 0.5); vec3 tr = uRegion[r & 7]; if (tr != vec3(1.0)) { float lu = dot(base.rgb, vec3(0.3, 0.55, 0.15)); base.rgb = tr * (0.28 + 2.2 * lu); } }
 #endif
   if (hasN) N = perturbNormal(N, vWP, vUV, normalize(tn));
 #ifdef FOLIAGE
@@ -688,15 +701,17 @@ layout(location=0) in vec2 aCorner;
 layout(location=1) in vec4 aP;     // pos, tamanho
 layout(location=2) in vec4 aN;     // normal, rot
 layout(location=3) in vec4 aC;     // cor, frame no alfa? (cor rgb + alpha)
-out vec2 vUV; out vec4 vC; out vec3 vWP; out float vVZ; out float vFrame;
+out vec2 vUV; out vec4 vC; out vec3 vWP; out float vFrame; out float vLit; out float vVZ;
 void main() {
+  vLit = 1.0;
   vec3 n = normalize(aN.xyz);
   vec3 t = abs(n.y) > 0.95 ? vec3(1, 0, 0) : normalize(cross(vec3(0, 1, 0), n));
   vec3 b = cross(n, t);
-  float c = cos(aN.w), s = sin(aN.w);
+  float fr = floor(aN.w / 10.0), rt = aN.w - fr * 10.0;
+  float c = cos(rt), s = sin(rt);
   vec2 q = vec2(c * aCorner.x - s * aCorner.y, s * aCorner.x + c * aCorner.y);
   vec3 wp = aP.xyz + n * 0.012 + (t * q.x + b * q.y) * aP.w;
-  vWP = wp; vUV = aCorner * 0.5 + 0.5; vC = aC; vFrame = aP.w > 0.0 ? 8.0 : 8.0;
+  vWP = wp; vUV = aCorner * 0.5 + 0.5; vC = aC; vFrame = fr;
   vVZ = -(uView * vec4(wp, 1.0)).z;
   gl_Position = uViewProj * vec4(wp, 1.0);
 }`;

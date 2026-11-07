@@ -24,15 +24,19 @@ export class Material {
     this.wind = o.wind ?? 0;                // amplitude do vento
     this.foliage = !!o.foliage;
     this.tint = !!o.tint;                   // regiões do personagem
+    this.instTint = o.instTint || 0;        // variação de cor por instância (1 conífera, 2 folhosa)
     this.regionTints = o.regionTints || new Float32Array(24).fill(1);
     this.normalScale = o.normalScale ?? 1;
     this.vcolorAO = o.vcolorAO ?? true;
     this.noShadow = !!o.noShadow;
     this.depthWrite = o.depthWrite ?? !o.blend;
     this.name = o.name || '';
+    this.refreshKey();
+  }
+  refreshKey() {
     this.flagKey = [
       this.albedo ? 'A' : '', this.normal ? 'N' : '', this.orm ? 'O' : '', this.alphaTest > 0 ? 'T' : '', this.layered ? 'L' : '',
-      this.wind > 0 ? 'W' : '', this.foliage ? 'F' : '', this.tint ? 'R' : '', this.vcolorAO ? 'V' : '',
+      this.wind > 0 ? 'W' : '', this.foliage ? 'F' : '', this.tint ? 'R' : '', this.vcolorAO ? 'V' : '', this.instTint ? 'I' + this.instTint : '',
     ].join('');
   }
 }
@@ -110,7 +114,7 @@ export class Renderer {
     if (p) return p;
     const d = this._defs({
       INST: inst, SKINNED: skinned, HAS_ALBEDO: !!mat.albedo, HAS_NORMAL: !!mat.normal, HAS_ORM: !!mat.orm,
-      ALPHA_TEST: mat.alphaTest > 0, LAYERED: mat.layered, WIND: mat.wind > 0, FOLIAGE: mat.foliage, TINT: mat.tint, VCOLOR_AO: mat.vcolorAO,
+      ALPHA_TEST: mat.alphaTest > 0, LAYERED: mat.layered, WIND: mat.wind > 0, FOLIAGE: mat.foliage, TINT: mat.tint, VCOLOR_AO: mat.vcolorAO, INST_TINT: mat.instTint || 0,
     });
     return this._prog(key, SH.uberVS(d), SH.uberFS(d));
   }
@@ -256,13 +260,17 @@ export class Renderer {
     const skinned = !!mesh.skinned && o.skinRow !== undefined;
     const p = this.use(shadow ? this._shadowP(mat, im, skinned) : this._uber(mat, im, skinned));
     if (shadow) { p.m4('uLightVP', this.lightVP); }
+    // texturas são estado global: sempre (re)vincula (o cache interno evita chamadas repetidas)
+    if (mat.albedo && (!shadow || mat.alphaTest > 0)) this.tex(0, mat.albedo);
+    if (!shadow) {
+      if (mat.normal) this.tex(1, mat.normal);
+      if (mat.orm) this.tex(2, mat.orm);
+      if (mat.layered) { this.tex(5, this.matAlb, gl.TEXTURE_2D_ARRAY); this.tex(6, this.matNor, gl.TEXTURE_2D_ARRAY); }
+    }
+    // uniformes são por programa: só reenvia se o material mudou
     if (p._mat !== mat || p._pass !== this.pass) {
       p._mat = mat; p._pass = this.pass;
-      if (mat.albedo && (!shadow || mat.alphaTest > 0)) this.tex(0, mat.albedo);
       if (!shadow) {
-        if (mat.normal) this.tex(1, mat.normal);
-        if (mat.orm) this.tex(2, mat.orm);
-        if (mat.layered) { this.tex(5, this.matAlb, gl.TEXTURE_2D_ARRAY); this.tex(6, this.matNor, gl.TEXTURE_2D_ARRAY); }
         p.f4('uColor', mat.color[0], mat.color[1], mat.color[2], mat.color[3]);
         p.f3('uEmis', mat.emissive[0], mat.emissive[1], mat.emissive[2]);
         if (mat.tint) { const l = p.loc('uRegion[0]'); if (l) gl.uniform3fv(l, mat.regionTints); }
@@ -275,8 +283,11 @@ export class Renderer {
       this._cull(!mat.doubleSided);
       this._blend(mat.blend);
       this._depthWrite(mat.depthWrite);
+      const dc = !!mat.decal;
+      if (dc !== this._state.decal) { this._state.decal = dc; if (dc) { gl.enable(gl.POLYGON_OFFSET_FILL); gl.polygonOffset(-2, -6); } else gl.disable(gl.POLYGON_OFFSET_FILL); }
     } else this._cull(!mat.doubleSided);
     if (!inst) p.m4('uModel', o.model || this._identity || (this._identity = m4.create()));
+    else if (im === 2) p.f1('uInstNear', o.instNear || 0);
     if (inst) {
       gl.bindVertexArray(inst.vaoFor(mesh));
       const n = o.count ?? inst.count;
@@ -291,6 +302,7 @@ export class Renderer {
 
   setBones(row, data) {
     const gl = this.gl;
+    gl.activeTexture(gl.TEXTURE0 + 3);
     gl.bindTexture(gl.TEXTURE_2D, this.boneTex);
     gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, row, data.length / 4, 1, gl.RGBA, gl.FLOAT, data);
     this._boundTex[3] = null;
@@ -336,6 +348,7 @@ export class Renderer {
     }
     // --- principal
     this.pass = 'main';
+    this._state.decal = false; gl.disable(gl.POLYGON_OFFSET_FILL);
     gl.viewport(0, 0, this.width, this.height);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     this._curProg = null;

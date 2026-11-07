@@ -16,8 +16,10 @@ page.on('pageerror', (e) => logs.push('PAGEERROR: ' + e.message + '\n' + (e.stac
 await page.goto(url);
 const ev = opt('eval', '');
 const steps = ev ? ev.split(';;') : [];
-await page.waitForTimeout(wait);
+const wf = opt('waitfor', '');
+if (wf) { try { await page.waitForFunction(wf, null, { timeout: +opt('timeout', 240000), polling: 500 }); } catch (e) { logs.push('WAITFOR TIMEOUT'); } }
+else await page.waitForTimeout(wait);
 for (const s of steps) { const r = await page.evaluate(s); if (r !== undefined) logs.push('eval -> ' + JSON.stringify(r)); await page.waitForTimeout(+opt('after', 1500)); }
-await page.screenshot({ path: out });
+await page.screenshot({ path: out, timeout: 170000 });
 if (args.includes('--logs') || logs.some((l) => /error/i.test(l))) console.log(logs.slice(-40).join('\n'));
 await browser.close();
