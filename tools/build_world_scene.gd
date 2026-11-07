@@ -26,19 +26,13 @@ func _initialize() -> void:
 	var player := _player_and_ui()
 	world.set("target", player)
 	world.set("use_session_seed", true)
-	# Menu de pausa e a indicação da caverna mais próxima (etapa 9).
+	# Menu de pausa (etapa 9).
 	var pause := CanvasLayer.new()
 	pause.name = "PauseMenu"
 	pause.set_script(load("res://scripts/ui/pause_menu.gd"))
 	_own(pause)
 	pause.set("world_scene", _root)
 	pause.set("player", player)
-	var compass := CanvasLayer.new()
-	compass.name = "CaveCompass"
-	compass.set_script(load("res://scripts/ui/cave_compass.gd"))
-	_own(compass)
-	compass.set("world", world)
-	compass.set("camera", player.get_node("CameraRig/Camera3D"))
 	var caves := Node.new()
 	caves.name = "CaveAtmosphere"
 	caves.set_script(load("res://scripts/world/procedural/cave_atmosphere.gd"))
@@ -49,6 +43,17 @@ func _initialize() -> void:
 	caves.set("body", player.get_node("Survivor"))
 	caves.set("environment", environment)
 	caves.set("sun", sun)
+	# Dia e noite e clima (etapa 10).
+	var cycle := Node.new()
+	cycle.name = "SkyCycle"
+	cycle.set_script(load("res://scripts/world/sky_cycle.gd"))
+	_own(cycle)
+	cycle.set("environment", environment)
+	cycle.set("sun", sun)
+	cycle.set("world", world)
+	cycle.set("camera", player.get_node("CameraRig/Camera3D"))
+	caves.set("sky_cycle", cycle)
+	_root.set("sky_cycle", cycle)
 	_root.set("world", world)
 	_root.set("player", player)
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path("res://scenes/world"))

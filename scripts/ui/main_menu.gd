@@ -158,6 +158,7 @@ func _build_ui() -> void:
 	_load_button = MenuStyle.button("CARREGAR MUNDO", func() -> void: _show_panel("carregar"))
 	_side.add_child(_load_button)
 	_side.add_child(MenuStyle.button("PERSONAGEM", func() -> void: _show_panel("personagem")))
+	_side.add_child(MenuStyle.button("CONFIGURAÇÕES", func() -> void: _show_panel("configuracoes")))
 	_side.add_child(MenuStyle.button("SAIR", func() -> void: get_tree().quit()))
 	_storage_note = MenuStyle.label("", 13)
 	_storage_note.modulate = Color(1, 0.85, 0.6, 0.9)
@@ -166,6 +167,7 @@ func _build_ui() -> void:
 	_build_new_world_panel()
 	_build_load_panel()
 	_build_character_panel()
+	_panel("configuracoes", "CONFIGURAÇÕES", 640.0).add_child(SettingsPanel.new())
 	_build_permission()
 	_build_loading()
 

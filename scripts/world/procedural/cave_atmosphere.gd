@@ -36,6 +36,12 @@ const ALL_RENDER_LAYERS := 0xFFFFF
 @export var body: Node3D
 @export var environment: WorldEnvironment
 @export var sun: DirectionalLight3D
+## Ciclo de dia e noite (opcional): dá a base da luz e acende a lanterna à noite.
+@export var sky_cycle: SkyCycle:
+	set(value):
+		sky_cycle = value
+		if value != null:
+			value.apply_light = false
 @export_range(0.0, 16.0, 0.1) var headlamp_energy: float = 6.0
 ## Segundos para os olhos "se acostumarem" (entrar/sair).
 @export_range(0.1, 10.0, 0.1) var adapt_time: float = 1.6
@@ -137,6 +143,11 @@ func _process(delta: float) -> void:
 	underground = move_toward(underground, target, delta / adapt_time)
 	var u := underground
 	var env := environment.environment
+	# Com o ciclo de dia e noite, a base (luz difusa, exposição, sol) é a da hora.
+	if sky_cycle != null:
+		_ambient = sky_cycle.ambient_energy
+		_exposure = sky_cycle.exposure
+		_sun_energy = sky_cycle.sun_energy
 	# O céu e a neblina não escurecem: a boca da caverna, vista de dentro,
 	# continua clara. Quem escurece o fundo é o fator de céu de cada vértice
 	# do terreno (luz difusa só onde o céu se vê). Aqui só baixam a luz
@@ -148,7 +159,9 @@ func _process(delta: float) -> void:
 		# As sombras do sol continuam ligadas: são elas que impedem a luz de
 		# atravessar a rocha.
 		sun.light_energy = lerpf(_sun_energy, _sun_energy * 0.25, u)
-	var lamp := headlamp_energy * smoothstep(0.1, 0.45, u)
+	# Acende na caverna e também à noite, ao ar livre.
+	var night := smoothstep(0.55, 0.85, sky_cycle.darkness) if sky_cycle != null else 0.0
+	var lamp := headlamp_energy * maxf(smoothstep(0.1, 0.45, u), night)
 	headlamp.light_energy = lamp
 	headlamp.visible = lamp > 0.01
 	spill.light_energy = lamp * 0.22

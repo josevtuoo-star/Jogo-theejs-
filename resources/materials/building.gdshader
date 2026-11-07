@@ -5,7 +5,8 @@ render_mode diffuse_burley, specular_schlick_ggx;
 // malha por pedaço. As paredes têm UV em metros (u ao longo da parede, v a
 // partir do chão) e a cor do vértice diz o que desenhar:
 //   r = estilo/7 (0 tijolo, 1 reboco, 2 concreto, 3 tábuas, 4 telha, 5 zinco)
-//   g = variação de tom, b = 1 se a face tem janelas, a = semente do prédio.
+//   g = variação de tom, b = 1 janelas pintadas / 0,5 face interna / 0 fachada
+//   lisa, a = semente do prédio.
 // Janelas e portas são desenhadas aqui (sem geometria): vidro escuro, vidro
 // quebrado (buraco preto) ou tábuas pregadas; porta ou vitrine no térreo.
 // Abandono: encardido escorrendo das janelas, base suja e trepadeiras subindo
@@ -60,7 +61,9 @@ void fragment() {
 	base *= mix(0.82, 1.08, info.g);
 	float rough = 0.9;
 	float spec = 0.3;
-	float wall = step(0.5, info.b);
+	// b: 1 = fachada com janelas pintadas, 0,5 = face interna, 0 = fachada lisa.
+	float wall = step(0.75, info.b);
+	float interior = step(0.25, info.b) * (1.0 - wall);
 	if (wall > 0.5 && uv.y > 0.0) {
 		float level = floor(uv.y / floor_height);
 		float fy = mod(uv.y, floor_height);
@@ -123,6 +126,10 @@ void fragment() {
 	float reach = 1.2 + vnoise(vec2(uv.x * 0.35, info.a * 40.0)) * 6.5 * info.g;
 	float leaves = smoothstep(0.42, 0.62, vnoise(uv * 2.3 + info.a * 17.0)) * (1.0 - smoothstep(reach - 1.2, reach, uv.y));
 	float green = wall > 0.5 ? leaves : smoothstep(0.62, 0.8, vnoise(uv * 0.8 + info.a * 9.0)) * 0.7;
+	if (info.b < 0.25 && abs(NORMAL.y) < 0.5) {
+		green = leaves; // fachada lisa (casa com vãos de verdade): trepadeiras também
+	}
+	green *= 1.0 - interior;
 	base = mix(base, vine_color * (0.65 + 0.7 * vnoise(uv * 11.0)), green * 0.9);
 	rough = mix(rough, 0.95, green);
 	ALBEDO = base;

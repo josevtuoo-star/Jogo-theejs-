@@ -34,6 +34,21 @@ func _initialize() -> void:
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(OUT_DATA))
 	var results := [_pickaxe(), _fire_axe(), _nail_bat(), _stone_axe(), _stone_pickaxe(), _stone_knife(),
 			_spear(), _torch(), _machete(), _crowbar()]
+	# Empunhadura e golpe próprios (etapa 10): machados, picaretas e pé de
+	# cabra descem de cima para baixo com as duas mãos; a lança é estocada;
+	# taco com as duas mãos juntas; faca, facão e tocha numa mão só.
+	# [golpe, duas mãos, mão esquerda em relação à direita, direita sobe no cabo]
+	var style := {"machado": [&"mine", true, -0.16, 0.2], "picareta": [&"mine", true, -0.16, 0.2],
+			"machado_pedra": [&"mine", true, -0.13, 0.15], "picareta_pedra": [&"mine", true, -0.13, 0.15],
+			"pe_de_cabra": [&"mine", true, -0.14, 0.16], "taco": [&"weapon_swing_a", true, -0.1, 0.12],
+			"lanca": [&"punch_cross", true, -0.42, 0.0]}
+	for data: WeaponData in results:
+		if style.has(String(data.id)):
+			var spec: Array = style[String(data.id)]
+			data.light_clip = spec[0]
+			data.two_handed = spec[1]
+			data.offhand_offset = spec[2]
+			data.grip_shift = spec[3]
 	for data: WeaponData in results:
 		var mesh_path := OUT_MESH + String(data.id) + ".res"
 		ResourceSaver.save(data.mesh, mesh_path)

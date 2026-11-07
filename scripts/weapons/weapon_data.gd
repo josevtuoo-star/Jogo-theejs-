@@ -29,6 +29,17 @@ extends Resource
 @export_range(0.0, 300.0, 0.5) var heavy_max_impulse: float = 45.0
 @export_range(0.0, 2.0, 0.01) var heavy_recovery: float = 0.35
 
+@export_group("Empunhadura e golpe")
+## Golpe rápido: "weapon_swing_a" (golpe lateral), "mine" (de cima para
+## baixo, machados e picaretas) ou "punch_cross" (estocada, lança).
+@export var light_clip: StringName = &"weapon_swing_a"
+## Duas mãos: a esquerda segura o cabo a `offhand_offset` m da pegada da
+## direita, ao longo do cabo (negativo = atrás da direita, como na lança).
+@export var two_handed: bool = false
+@export_range(-1.0, 1.0, 0.01) var offhand_offset: float = 0.3
+## A mão direita sobe esta distância pelo cabo (a esquerda fica na ponta).
+@export_range(0.0, 0.6, 0.01) var grip_shift: float = 0.0
+
 @export_group("Som")
 ## Material de quem golpeia ("metal" ou "madeira"): muda o som do acerto.
 @export var impact_material: StringName = &"metal"

@@ -35,11 +35,15 @@ func show_weapon(data: WeaponData, item: ItemData = null) -> void:
 	if data != null:
 		_ensure_attachment()
 		_model.mesh = data.mesh
+		# Ferramenta de duas mãos: a direita fica mais acima no cabo.
+		_model.transform = grip_offset(body.skeleton) * Transform3D(Basis.IDENTITY, Vector3(0.0, -data.grip_shift, 0.0))
 		_model.visible = true
 	elif _model != null:
 		_model.visible = false
 	_set_flame(light, data)
 	if body != null:
+		body.two_hand_weapon = data if data != null and data.two_handed else null
+		body.held_weapon = data
 		body.guard_clip = &"weapon_idle" if data != null else BodyAnimator.GUARD_CLIP
 	_show_drop_button(data != null)
 	weapon_changed.emit(weapon)
@@ -189,7 +193,10 @@ static func grip_offset(skeleton: Skeleton3D) -> Transform3D:
 	var across := (index - pinky).normalized() # cabo: do mínimo para o indicador
 	var palm := fingers.cross(across).normalized()
 	var y := (across - fingers * across.dot(fingers)).normalized()
-	var z := (palm - y * palm.dot(y)).normalized()
+	# O lado que golpeia aponta para onde apontam os nós dos dedos (a frente
+	# do punho fechado), como ao segurar um martelo: a lâmina do machado e a
+	# ponta da picareta vão para a frente, não para o lado da palma.
+	var z := (fingers - y * fingers.dot(y)).normalized()
 	var x := y.cross(z).normalized()
 	# Centro do punho fechado: um pouco além da base dos dedos, junto à palma.
 	var grip := hand.origin + fingers * (middle - hand.origin).length() * 0.85 + palm * 0.025

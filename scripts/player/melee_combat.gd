@@ -225,9 +225,12 @@ func _start_light() -> void:
 		# golpe é o de trabalho (corte de lenhador, picareta de cima para
 		# baixo); senão, o golpe de arma.
 		_active_kind = _work_clip(weapon)
+		var working := _active_kind != &"weapon_swing_a"
+		if not working:
+			_active_kind = weapon.light_clip
 		charge = 0.0
 		player.face_view_for(0.7)
-		var speed := weapon.light_speed if _active_kind == &"weapon_swing_a" else 1.05
+		var speed := weapon.light_speed if not working else 1.05
 		animator.play(BodyAnimator.SLOT_ACTION, _active_kind, speed, 0.08, 0.2, 1.0, false, true)
 		_recovery_clip = _active_kind
 		_recovery_timer = weapon.light_recovery
@@ -378,6 +381,14 @@ func _apply_hit(target: Node, point: Vector3, direction: Vector3, shape: int = -
 	# O alvo pode recusar o golpe (ferramenta errada numa árvore ou rocha):
 	# aí é superfície rígida, o golpe rebate.
 	var accepted: Variant = receiver.call(&"receive_hit", hit) if receiver != null else false
+	# Terreno: cava (picareta rende mais; outras ferramentas e as mãos, pouco).
+	if receiver == null and target != null and target.has_meta(&"world"):
+		var item := ItemData.find(weapon.id) if weapon != null else null
+		var power := 1.0 if item != null and item.tool_type == &"picareta" else (0.35 if item != null else 0.25)
+		if (target.get_meta(&"world") as ProceduralWorld).dig_hit(point, -direction, damage * power):
+			hit_landed.emit(target, damage, _active_kind)
+			_wear()
+			return
 	if receiver != null and accepted != false:
 		hit_landed.emit(receiver, damage, _active_kind)
 		_wear()
@@ -407,11 +418,17 @@ func _work_clip(weapon: WeaponData) -> StringName:
 	_ray.to = eye - view_origin.global_basis.z * 2.6
 	_ray.exclude = [player.get_rid()]
 	var hit := space.intersect_ray(_ray)
+	if not hit.is_empty() and (hit["collider"] as Object).has_meta(&"world"):
+		# Chão mirado com a picareta: golpe de cavar.
+		var digging := ItemData.find(weapon.id)
+		return &"mine" if digging != null and digging.tool_type == &"picareta" else &"weapon_swing_a"
 	if hit.is_empty() or not (hit["collider"] is ChunkResources):
 		return &"weapon_swing_a"
 	var entry := (hit["collider"] as ChunkResources).entry_for_shape(hit.get("shape", -1))
 	if entry.is_empty() or ChunkResources.work_power(entry, weapon.id) <= 0.0:
 		return &"weapon_swing_a"
+	if entry["kind"] == &"objeto":
+		return &"chop" if entry["material"] == &"madeira" else &"mine"
 	return &"chop" if entry["kind"] == &"arvore" else &"mine"
 
 

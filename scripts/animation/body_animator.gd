@@ -189,6 +189,17 @@ var _pelvis_offset: float = 0.0
 var _foot_ik_weight: float = 0.0
 ## Escalada de encosta: corpo dobrado e mãos apoiadas na rampa.
 var _scramble_weight: float = 0.0
+## Ferramenta de duas mãos (PlayerEquipment): a esquerda vai ao cabo.
+var two_hand_weapon: WeaponData = null
+## Ferramenta na mão (qualquer): em primeira pessoa fica à vista, embaixo à
+## direita, inclinada para cima, enquanto não há golpe.
+var held_weapon: WeaponData = null
+var _fp_hold_weight: float = 0.0
+## Posição da mão direita em primeira pessoa (espaço da visão).
+const FP_HOLD := Vector3(0.3, -0.3, -0.42)
+var _offhand_weight: float = 0.0
+var _grip: Transform3D
+var _grip_ready: bool = false
 var _hand_ray := PhysicsRayQueryParameters3D.new()
 var _delta: float = 0.016
 ## Tempo da última atualização, em microssegundos (diagnóstico de desempenho).
@@ -465,6 +476,14 @@ func _update_weights(delta: float) -> void:
 				-deg_to_rad(max_head_look_yaw), deg_to_rad(max_head_look_yaw))
 	_head_look_yaw = _approach(_head_look_yaw, look_target, 6.0, delta)
 	_guard_weight = _approach(_guard_weight, 1.0 if _guard_target else 0.0, 12.0, delta)
+	# A mão esquerda solta o cabo para pegar coisas, ao apanhar, ao escalar.
+	var busy := current_animation(SLOT_ACTION) in [&"interact", &"pickup", &"open_container", &"hit_chest", &"hit_head"] \
+			or _overlays.has(SLOT_HURT) or _overlays.has(SLOT_DEATH)
+	var holding := two_hand_weapon != null and not busy and player.movement_state != PlayerController.MovementState.SCRAMBLING
+	_offhand_weight = _approach(_offhand_weight, 1.0 if holding else 0.0, 10.0, delta)
+	var showing := held_weapon != null and hide_head and not busy and not _overlays.has(SLOT_ACTION) \
+			and player.movement_state != PlayerController.MovementState.SCRAMBLING
+	_fp_hold_weight = _approach(_fp_hold_weight, 1.0 if showing else 0.0, 14.0 if not showing else 7.0, delta)
 	var scrambling := player.movement_state == PlayerController.MovementState.SCRAMBLING
 	_scramble_weight = _approach(_scramble_weight, 1.0 if scrambling else 0.0, 7.0, delta)
 	_first_person_weight = _approach(_first_person_weight, 1.0 if hide_head else 0.0, 10.0, delta)
@@ -729,6 +748,10 @@ func _apply() -> void:
 		if absf(pitch) > 0.001:
 			for bone_name in PITCH_BONES:
 				_rotate_global(skeleton.find_bone(bone_name), Vector3.LEFT, pitch * PITCH_BONES[bone_name])
+		if _fp_hold_weight > 0.01 and held_weapon != null:
+			_apply_fp_hold(_fp_hold_weight)
+		if _offhand_weight > 0.01 and two_hand_weapon != null:
+			_apply_offhand(_offhand_weight)
 	_apply_view_mode()
 
 
@@ -863,6 +886,63 @@ func _apply_scramble_pose(weight: float) -> void:
 				- skeleton.get_bone_global_pose(hand).origin
 		var aim := (to_skeleton.basis * (uphill * 0.8 - normal * 0.35)).normalized()
 		_rotate_global_q(hand, _arc(knuckles.normalized(), aim), weight * 0.8)
+
+
+## Primeira pessoa, ferramenta em repouso: a mão direita vai para baixo à
+## direita da visão, e a ferramenta fica inclinada para cima e para a frente
+## (a cabeça à vista, o lado que golpeia para a frente).
+func _apply_fp_hold(weight: float) -> void:
+	if not _grip_ready:
+		_grip = PlayerEquipment.grip_offset(skeleton)
+		_grip_ready = true
+	var view := Basis.from_euler(Vector3(player.get_pitch(), player.get_view_yaw(), 0.0))
+	var to_skeleton := skeleton.global_transform.affine_inverse()
+	var upper := skeleton.find_bone("upperarm_r")
+	var hand := skeleton.find_bone("hand_r")
+	var target: Vector3 = to_skeleton * (get_eye_position() + view * FP_HOLD)
+	var shoulder := skeleton.global_transform * skeleton.get_bone_global_pose(upper).origin
+	var pole: Vector3 = to_skeleton * (shoulder + Vector3.DOWN * 0.6 + view.x * 0.3)
+	_solve_two_bone_ik(upper, skeleton.find_bone("lowerarm_r"), hand, target, pole, weight)
+	# Orienta a ferramenta: cabo para cima e um pouco para a frente e para
+	# dentro; lado que golpeia para a frente.
+	var shaft: Vector3 = to_skeleton.basis * (view * Vector3(0.12, 0.85, -0.45)).normalized()
+	var strike: Vector3 = to_skeleton.basis * (view * Vector3(0.0, 0.45, -1.0)).normalized()
+	strike = (strike - shaft * strike.dot(shaft)).normalized()
+	var wanted := Basis(shaft.cross(strike).normalized(), shaft.normalized(), strike)
+	var current := skeleton.get_bone_global_pose(hand).basis.orthonormalized() * _grip.basis.orthonormalized()
+	var turn := (wanted * current.inverse()).get_rotation_quaternion()
+	_rotate_global_q(hand, turn, weight)
+
+
+## Ferramenta de duas mãos: a mão esquerda segura o cabo, no ponto a
+## `offhand_offset` da pegada da direita (calculado da pose final da mão
+## direita, depois de toda a animação), com o cotovelo para baixo e para fora.
+func _apply_offhand(weight: float) -> void:
+	if not _grip_ready:
+		_grip = PlayerEquipment.grip_offset(skeleton)
+		_grip_ready = true
+	var right := skeleton.get_bone_global_pose(skeleton.find_bone("hand_r"))
+	var target := right * _grip * Vector3(0.0, two_hand_weapon.offhand_offset, 0.0)
+	var upper := skeleton.find_bone("upperarm_l")
+	var shoulder := skeleton.get_bone_global_pose(upper).origin
+	# Esqueleto olha para +Z; a esquerda do corpo é +X.
+	var pole := shoulder + Vector3(0.45, -0.5, -0.1)
+	var hand := skeleton.find_bone("hand_l")
+	var lower := skeleton.find_bone("lowerarm_l")
+	var middle := skeleton.find_bone("middle_01_l")
+	var forward := (right.basis * _grip.basis * Vector3.BACK).normalized()
+	# O cabo passa pelo centro do punho fechado, não pelo pulso: duas
+	# passadas, corrigindo o alvo do pulso pelo erro do centro do punho.
+	var wrist_target := target
+	for step in 2:
+		_solve_two_bone_ik(upper, lower, hand, wrist_target, pole, weight)
+		# Punho fechado em volta do cabo: os nós dos dedos acompanham a
+		# frente da ferramenta (o mesmo lado da direita).
+		var knuckles := skeleton.get_bone_global_pose(middle).origin - skeleton.get_bone_global_pose(hand).origin
+		_rotate_global_q(hand, _arc(knuckles.normalized(), forward), weight * 0.7)
+		var wrist := skeleton.get_bone_global_pose(hand).origin
+		var fist := wrist + (skeleton.get_bone_global_pose(middle).origin - wrist) * 0.85
+		wrist_target += (target - fist) * weight
 
 
 ## IK analítica de dois ossos (braço e antebraço) no espaço do esqueleto.

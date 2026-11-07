@@ -20,3 +20,7 @@ heavy_max_damage = 64.0
 heavy_min_impulse = 26.0
 heavy_max_impulse = 48.0
 heavy_recovery = 0.45
+light_clip = &"mine"
+two_handed = true
+offhand_offset = -0.14
+grip_shift = 0.16

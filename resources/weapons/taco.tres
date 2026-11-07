@@ -16,4 +16,7 @@ light_recovery = 0.16
 heavy_max_damage = 54.0
 heavy_max_impulse = 42.0
 heavy_recovery = 0.32
+two_handed = true
+offhand_offset = -0.1
+grip_shift = 0.12
 impact_material = &"madeira"

@@ -64,6 +64,70 @@ func add_deposit(key: String, type: StringName, t: Transform3D, box: AABB, insta
 			"max": health, "tool": ROCK_TOOL, "instances": instances, "shape": shape, "material": type}
 
 
+# --- Objetos quebráveis (etapa 10: tudo quebra, como no Minecraft) ------------------
+
+## Material de cada objeto do mundo: resistência e o que solta ao quebrar.
+## pedra: picareta; madeira: machado/facão (mãos e outras ferramentas, mais
+## devagar); metal: picareta, pé de cabra, machado (taco e facão devagar,
+## mãos não); mato: qualquer coisa, inclusive as mãos.
+const PROP_RULES := {
+	"rochedo": ["pedra", 150.0, [["pedra", 4, 7]]],
+	"rock_moss_set_01": ["pedra", 60.0, [["pedra", 2, 3]]],
+	"concrete_road_barrier_02": ["pedra", 110.0, [["pedra", 3, 4]]],
+	"estalagmite": ["pedra", 40.0, [["pedra", 1, 2]]],
+	"tree_stump_01": ["madeira", 45.0, [["madeira", 1, 2]]],
+	"dead_tree_trunk": ["madeira", 70.0, [["madeira", 2, 3]]],
+	"wooden_military_crate": ["madeira", 25.0, [["tabua", 2, 3]]],
+	"Barrel_02": ["metal", 55.0, [["ferro", 1, 2]]],
+	"metal_trash_can": ["metal", 40.0, [["ferro", 1, 1]]],
+	"street_lamp_01": ["metal", 90.0, [["ferro", 2, 3]]],
+	"old_tyre": ["macio", 25.0, []],
+	"carcaca": ["metal", 240.0, [["ferro", 3, 6]]],
+	"fern_02": ["mato", 6.0, [["graveto", 0, 1]]],
+	"shrub_02": ["mato", 10.0, [["graveto", 1, 2]]],
+	"shrub_03": ["mato", 8.0, [["graveto", 1, 2]]],
+	"shrub_04": ["mato", 8.0, [["graveto", 1, 1]]],
+	"weed_plant_02": ["mato", 5.0, [["graveto", 0, 1]]],
+	"dry_branches_medium_01": ["mato", 6.0, [["graveto", 2, 3]]],
+}
+
+
+static func prop_rule(kind: String) -> Array:
+	if kind.begins_with("rochedo"):
+		return PROP_RULES["rochedo"]
+	return PROP_RULES.get(kind, [])
+
+
+## Registra um objeto quebrável (forma de colisão já criada neste corpo).
+func add_prop(key: String, kind: String, t: Transform3D, shape: CollisionShape3D, instances: Array) -> void:
+	var rule := prop_rule(kind)
+	if rule.is_empty():
+		return
+	var health: float = float(rule[1]) * clampf(t.basis.get_scale().x, 0.5, 1.5)
+	_entries[shape] = {"kind": &"objeto", "key": key, "prop": kind, "transform": t, "health": health, "max": health,
+			"material": StringName(rule[0]), "drops": rule[2], "instances": instances, "shape": shape}
+
+
+func _break_prop(entry: Dictionary, point: Vector3) -> void:
+	_hide(entry)
+	if world != null:
+		world.mark_removed(entry["key"])
+	var t: Transform3D = entry["transform"]
+	var center := t.origin + Vector3.UP * 0.4
+	var material: StringName = entry["material"]
+	var sound: String = {&"pedra": "world/pedra_quebra", &"madeira": "props/madeira_cai", &"metal": "props/metal_cai"}.get(material, "combat/impacto_generico")
+	ImpactEffects.sound(self, center, sound, 0.0)
+	ImpactEffects.burst(self, center, Vector3.UP, material if material != &"macio" else &"casca", 22, 0.06, 3.0)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash(entry["key"])
+	for spec: Array in entry["drops"]:
+		var item := ItemData.find(StringName(spec[0]))
+		for i in rng.randi_range(spec[1], spec[2]):
+			var spot := center + Vector3(rng.randf_range(-0.4, 0.4), 0.25 + i * 0.12, rng.randf_range(-0.4, 0.4))
+			ItemPickup.spawn(item, Transform3D(Basis(Vector3.UP, rng.randf() * TAU), spot), get_parent())
+	depleted.emit(entry)
+
+
 ## Recurso atingido por um golpe (pelo índice da forma) ou {}.
 func entry_for_shape(shape_index: int) -> Dictionary:
 	if shape_index < 0:
@@ -91,6 +155,16 @@ func receive_hit(hit: Dictionary) -> bool:
 		_hint(hit.get("attacker"), entry, power < 0.0)
 		return false
 	entry["health"] = float(entry["health"]) - float(hit.get("damage", 0.0)) * power
+	if entry["kind"] == &"objeto":
+		var material: StringName = entry["material"]
+		ImpactEffects.burst(self, point, -direction, material if material != &"macio" else &"casca", 10, 0.04, 2.5)
+		var sound: String = {&"pedra": "world/pedra_golpe", &"madeira": "combat/impacto_madeira", &"metal": "combat/impacto_metal"}.get(material, "combat/impacto_generico")
+		ImpactEffects.sound(self, point, sound, -2.0 if material != &"mato" else -10.0)
+		if entry["health"] <= 0.0:
+			_break_prop(entry, point)
+		else:
+			_shake(entry, direction)
+		return true
 	if entry["kind"] == &"arvore":
 		ImpactEffects.burst(self, point, -direction, &"madeira", 12, 0.035, 3.0)
 		ImpactEffects.sound(self, point, "combat/impacto_madeira", 0.0, 0.9)
@@ -111,6 +185,33 @@ func receive_hit(hit: Dictionary) -> bool:
 ## ferramenta não serve; -1 = picareta fraca demais para esse minério.
 static func work_power(entry: Dictionary, weapon_id: StringName) -> float:
 	var item := ItemData.find(weapon_id) if weapon_id != &"" else null
+	if entry["kind"] == &"objeto":
+		var type := String(item.tool_type) if item != null else "maos"
+		var power := item.work_power if item != null and item.work_power > 0.0 else 0.5
+		match String(entry["material"]):
+			"mato":
+				return 1.0
+			"macio":
+				return 0.6 if item == null else 1.0
+			"madeira":
+				if type in ["machado", "facao"]:
+					return power
+				return 0.4
+			"pedra":
+				if type == "picareta":
+					return power
+				return 0.25 if String(weapon_id) == "pe_de_cabra" else 0.0
+			"metal":
+				if item == null:
+					return 0.0
+				if String(weapon_id) == "pe_de_cabra":
+					return 1.0
+				if type == "picareta":
+					return 0.8 * power
+				if type == "machado":
+					return 0.6 * power
+				return 0.3
+		return 0.0
 	if entry["kind"] == &"arvore":
 		if item == null:
 			return HAND_TREE_POWER
@@ -130,7 +231,10 @@ func _hint(attacker: Variant, entry: Dictionary, weak: bool = false) -> void:
 	var inventory := (attacker as Node).get_node_or_null("Inventory") as Inventory
 	if inventory == null:
 		return
-	if entry["kind"] == &"arvore":
+	if entry["kind"] == &"objeto":
+		inventory.message.emit("Rocha: precisa de uma picareta" if entry["material"] == &"pedra"
+				else "Metal: use uma picareta, um machado ou um pé de cabra")
+	elif entry["kind"] == &"arvore":
 		inventory.message.emit("Isso não corta árvore: use um machado, um facão ou as mãos")
 	elif weak:
 		inventory.message.emit("Minério de ferro: precisa de uma picareta de metal")
@@ -162,6 +266,20 @@ func _set_tilt(entry: Dictionary, axis: Vector3, angle: float) -> void:
 		var t := Transform3D(Basis.IDENTITY, base.origin) * Transform3D(Basis(axis, angle), Vector3.ZERO) \
 				* Transform3D(Basis.IDENTITY, -base.origin) * original
 		scatter.multimesh.set_instance_transform(pair[1], t)
+
+
+## Objeto atingido treme um pouco (o golpe pegou).
+func _shake(entry: Dictionary, direction: Vector3) -> void:
+	var push := Vector3(direction.x, 0.0, direction.z).normalized() * 0.05
+	for pair in entry["instances"]:
+		var scatter: ScatterInstances = pair[0]
+		var original: Transform3D = scatter.transforms[pair[1]]
+		scatter.multimesh.set_instance_transform(pair[1], original.translated(push))
+		var tween := create_tween()
+		tween.tween_interval(0.08)
+		tween.tween_callback(func() -> void:
+			if entry["health"] > 0.0 and is_instance_valid(scatter):
+				scatter.multimesh.set_instance_transform(pair[1], original))
 
 
 func _hide(entry: Dictionary) -> void:

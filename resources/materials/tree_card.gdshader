@@ -46,7 +46,7 @@ void fragment() {
 	// Normal real do plano (as normais da malha são "esféricas").
 	vec3 flat_normal = normalize(cross(dFdx(VERTEX), dFdy(VERTEX)));
 	float facing = abs(dot(flat_normal, normalize(-VERTEX)));
-	float keep = smoothstep(0.08, 0.26, facing) * smoothstep(1.2, 3.5, length(VERTEX));
+	float keep = smoothstep(0.05, 0.16, facing) * smoothstep(0.5, 1.6, length(VERTEX));
 	if (keep < bayer4(FRAGCOORD.xy)) {
 		discard;
 	}

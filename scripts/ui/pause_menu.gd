@@ -14,6 +14,8 @@ var is_open: bool = false
 var _panel: Control
 var _status: Label
 var _save_button: Button
+var _settings: SettingsPanel
+var _info: Label
 var _touch_visibility: Dictionary = {}
 
 
@@ -27,22 +29,25 @@ func _ready() -> void:
 	add_child(_panel)
 	var box := VBoxContainer.new()
 	box.set_anchors_preset(Control.PRESET_CENTER)
-	box.custom_minimum_size = Vector2(380.0, 0.0)
-	box.position = Vector2(-190.0, -190.0)
+	box.custom_minimum_size = Vector2(560.0, 0.0)
+	box.position = Vector2(-280.0, -320.0)
 	box.add_theme_constant_override("separation", 12)
 	_panel.add_child(box)
 	var title := MenuStyle.title("PAUSA", 40)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(title)
-	var info := MenuStyle.label("", 15)
-	info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	info.text = "%s · semente %d" % [GameSession.world_name, GameSession.world_seed] if GameSession.active else "Mundo de teste (sem salvar)"
-	box.add_child(info)
+	_info = MenuStyle.label("", 15)
+	_info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	box.add_child(_info)
 	box.add_child(MenuStyle.button("CONTINUAR", close))
 	_save_button = MenuStyle.button("SALVAR", func() -> void:
 		var ok := world_scene != null and world_scene.save_now()
 		_status.text = "Mundo salvo." if ok else "Não foi possível salvar.")
 	box.add_child(_save_button)
+	_settings = SettingsPanel.new()
+	_settings.visible = false
+	box.add_child(MenuStyle.button("CONFIGURAÇÕES", func() -> void: _settings.visible = not _settings.visible))
+	box.add_child(_settings)
 	box.add_child(MenuStyle.button("SAIR PARA O MENU", _quit_to_menu))
 	_status = MenuStyle.label("", 14)
 	_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -62,6 +67,9 @@ func open() -> void:
 		return
 	is_open = true
 	_panel.visible = true
+	var world_text: String = "%s · semente %d" % [GameSession.world_name, GameSession.world_seed] if GameSession.active else "Mundo de teste (sem salvar)"
+	var cycle: SkyCycle = world_scene.sky_cycle if world_scene != null else null
+	_info.text = world_text + ("\n%s · %s" % [cycle.clock(), cycle.weather_name()] if cycle != null else "")
 	var can_save := GameSession.active and GameSession.storage_allowed
 	_save_button.disabled = not can_save
 	_status.text = "" if can_save else ("Sem permissão para salvar (menu inicial)." if GameSession.active else "")

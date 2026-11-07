@@ -308,8 +308,11 @@ func _town_buildings(t: Dictionary, rng: RandomNumberGenerator) -> Array:
 					if absf(at.x - hx) < HIGHWAY_HALF_WIDTH + 3.0 + w * 0.5:
 						continue
 					var floors := clampi(int(round(rng.randf_range(2.0, 4.5) + central * 4.0)), 2, 8)
+					# Frente (porta) para a rua: o lado que se afasta do centro do quarteirão.
+					var out := offset if split else Vector2.from_angle(rng.randi_range(0, 3) * PI * 0.5)
+					var front := Vector2(signf(out.x), 0.0) if absf(out.x) >= absf(out.y) else Vector2(0.0, signf(out.y))
 					list.append({"pos": Vector3(at.x, base, at.y), "size": Vector3(w, floors * FLOOR_HEIGHT + 0.5, d),
-							"style": [0, 0, 1, 2][rng.randi() % 4], "roof": 0, "seed": rng.randi()})
+							"style": [0, 0, 1, 2][rng.randi() % 4], "roof": 0, "seed": rng.randi(), "front": front, "floors": floors})
 	else:
 		var count := rng.randi_range(5, 9)
 		var tries := 0
@@ -334,8 +337,11 @@ func _town_buildings(t: Dictionary, rng: RandomNumberGenerator) -> Array:
 			if not free:
 				continue
 			var floors := 1 if rng.randf() < 0.65 else 2
+			# Porta virada para o centro da vila.
+			var to_center := c - at
+			var front := Vector2(signf(to_center.x), 0.0) if absf(to_center.x) >= absf(to_center.y) else Vector2(0.0, signf(to_center.y))
 			list.append({"pos": Vector3(at.x, base, at.y), "size": Vector3(w, floors * FLOOR_HEIGHT + 0.3, d),
-					"style": [0, 1, 1, 3][rng.randi() % 4], "roof": 1, "seed": rng.randi()})
+					"style": [0, 1, 1, 3][rng.randi() % 4], "roof": 1, "seed": rng.randi(), "front": front, "floors": floors})
 	return list
 
 
@@ -656,6 +662,11 @@ func sky_visibility(point: Vector3) -> float:
 
 ## Gera tudo de um pedaço (malha do terreno, colisão e listas de objetos).
 ## Seguro para rodar em segundo plano.
+## Escavações do jogador neste pedaço (Vector4: centro xyz e raio). Só
+## mudam o terreno (malha e colisão); árvores e objetos continuam onde estão.
+var digs: Array[Vector4] = []
+
+
 func build_chunk(coord: Vector2i) -> Dictionary:
 	var started := Time.get_ticks_usec()
 	var origin := Vector2(coord.x * CHUNK_SIZE, coord.y * CHUNK_SIZE)
@@ -696,8 +707,16 @@ func build_chunk(coord: Vector2i) -> Dictionary:
 			var s := surfaces[column]
 			var r := roads[column]
 			var base := column * layers
+			var near: Array[Vector4] = []
+			for dig in digs:
+				if Vector2(dig.x - x, dig.z - z).length() < dig.w + CELL:
+					near.append(dig)
 			for py in layers:
-				field[base + py] = density_at(x, y0 + py * CELL, z, s, r)
+				var y := y0 + py * CELL
+				var d := density_at(x, y, z, s, r)
+				for dig in near:
+					d = minf(d, Vector3(x, y, z).distance_to(Vector3(dig.x, dig.y, dig.z)) - dig.w)
+				field[base + py] = d
 	var mesh := _surface_nets(origin, field, points, layers, y0, surfaces, roads)
 	_local_ramps = null
 	_light_caves(mesh, origin, field, points, layers, y0, surfaces)
@@ -979,9 +998,17 @@ func seat_height(x: float, z: float, radius: float) -> float:
 	return low
 
 
-## Chão firme aqui (não é boca de caverna nem barranco)?
+## Chão firme aqui (não é boca de caverna nem barranco)? Confere também em
+## volta (2 m): perto da beira de um corte (boca de rampa), a malha do terreno
+## arredonda a quina e o objeto ficaria no ar.
 func _solid_ground(x: float, z: float, surface: float) -> bool:
-	return density(x, surface - 1.2, z) > 0.0 and density(x, surface - 3.0, z) > 0.0
+	if density(x, surface - 1.2, z) <= 0.0 or density(x, surface - 3.0, z) <= 0.0:
+		return false
+	for offset: Vector2 in [Vector2(2.0, 0.0), Vector2(-2.0, 0.0), Vector2(0.0, 2.0), Vector2(0.0, -2.0)]:
+		var s := surface_height(x + offset.x, z + offset.y)
+		if density(x + offset.x, s - 1.0, z + offset.y) <= 0.0:
+			return false
+	return true
 
 
 ## Distribui árvores, vegetação, pedras, carcaças, destroços e armas.
@@ -1235,6 +1262,30 @@ func _town_contents(coord: Vector2i, origin: Vector2, rng: RandomNumberGenerator
 			# Mato tomando conta.
 			_add(props, "weed_plant_02" if rng.randf() < 0.6 else "shrub_04",
 					Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * rng.randf_range(0.8, 1.4)), Vector3(x, s - 0.04, z)))
+	# Dentro das casas e do térreo dos prédios: caixotes e barris (quebráveis),
+	# o que sobrou (sucata, tábuas, carvão, às vezes uma arma) e, às vezes,
+	# um zumbi preso lá dentro.
+	for b: Dictionary in mine:
+		var p: Vector3 = b["pos"]
+		var size: Vector3 = b["size"]
+		var floor_y := p.y + FLOOR_TOP
+		var hx := size.x * 0.5 - WALL - 0.6
+		var hz := size.z * 0.5 - WALL - 0.6
+		for corner: Vector2 in [Vector2(hx, -hz), Vector2(hx, hz)]:
+			if rng.randf() < 0.7:
+				var kind := "wooden_military_crate" if rng.randf() < 0.65 else "Barrel_02"
+				var thing := Transform3D(Basis(Vector3.UP, rng.randf_range(-0.3, 0.3)), Vector3(p.x + corner.x, floor_y, p.z + corner.y))
+				_add(props, kind, thing)
+				colliders.append([kind, thing])
+		var loot_roll := rng.randf()
+		var loot_at := Vector3(p.x + rng.randf_range(-hx, hx) * 0.5, floor_y + 0.3, p.z + rng.randf_range(-hz, hz) * 0.5)
+		if loot_roll < 0.18:
+			weapons.append([_weapon_pick(rng), _lying(rng, loot_at - Vector3.UP * 0.15)])
+		elif loot_roll < 0.75:
+			items.append([["ferro", "tabua", "carvao", "graveto"][rng.randi() % 4],
+					Transform3D(Basis(Vector3.UP, rng.randf() * TAU), loot_at), rng.randi_range(1, 3)])
+		if rng.randf() < 0.2:
+			zombies.append(Vector3(p.x - hx * 0.5, floor_y + 0.05, p.z))
 	# Mato junto às paredes dos prédios deste pedaço.
 	for b: Dictionary in mine:
 		var p: Vector3 = b["pos"]
@@ -1279,48 +1330,206 @@ func _inside_building(x: float, z: float, t: Dictionary, margin: float) -> bool:
 	return false
 
 
-## Malha dos prédios (uma superfície, material de fachada): paredes com UV em
-## metros (u ao longo da parede, v da base para cima), telhado de duas águas
-## ou laje com mureta. Cor do vértice: r = estilo/7, g = variação de tom,
-## b = 1 se a face tem janelas, a = semente do prédio.
+## Malha dos prédios (uma superfície, material de fachada) e as caixas de
+## colisão. Casas e o térreo dos prédios têm interior de verdade: paredes com
+## vãos de porta e janela (dá para entrar), piso, teto, parede interna com
+## passagem e, nas casas de dois andares, escada e piso de cima com o vão
+## dela. Os andares de cima dos prédios da cidade são fechados (janelas
+## pintadas na fachada). UV em metros (u ao longo da parede, v a partir do
+## chão). Cor do vértice: r = estilo/7, g = tom, b = 1 se a face tem janelas
+## pintadas, a = semente do prédio.
+const WALL := 0.25
+## Piso interno acima do platô.
+const FLOOR_TOP := 0.12
+
+
 func _building_mesh(list: Array) -> Dictionary:
-	var vertices := PackedVector3Array()
-	var normals := PackedVector3Array()
-	var uvs := PackedVector2Array()
-	var colors := PackedColorArray()
+	# Arrays comuns (passados por referência) durante a montagem; os
+	# Packed* só no fim (dentro de um dicionário, cada acréscimo copiaria).
+	var m := {"vertices": [], "normals": [], "uvs": [], "colors": [], "boxes": []}
 	for b: Dictionary in list:
-		var p: Vector3 = b["pos"]
-		var size: Vector3 = b["size"]
-		var seed_value := float(int(b["seed"]) % 997) / 997.0
-		var tone := fposmod(seed_value * 7.31, 1.0)
-		var style := float(b["style"]) / 7.0
-		var hx := size.x * 0.5
-		var hz := size.z * 0.5
-		var bottom := p.y - 1.5 # afunda no chão (o platô tem pequenas ondulações)
-		var top := p.y + size.y
-		var corners := [Vector3(-hx, 0, -hz), Vector3(hx, 0, -hz), Vector3(hx, 0, hz), Vector3(-hx, 0, hz)]
-		for k in 4:
-			var a: Vector3 = corners[k]
-			var c: Vector3 = corners[(k + 1) % 4]
-			var length := a.distance_to(c)
-			var normal := (a + c).normalized() * Vector3(1, 0, 1)
-			normal = Vector3(signf(normal.x), 0, 0) if absf(a.x - c.x) < 0.01 else Vector3(0, 0, signf(normal.z))
-			var color := Color(style, tone, 1.0, seed_value + k * 0.1)
-			_wall_quad(vertices, normals, uvs, colors, p + a, p + c, bottom, top, p.y, length, normal, color)
-		if int(b["roof"]) == 1:
-			_gable(vertices, normals, uvs, colors, p, size, top, tone, seed_value, style)
-		else:
-			# Laje (concreto) com mureta.
-			var roof := Color(2.0 / 7.0, tone, 0.0, seed_value)
-			_face(vertices, normals, uvs, colors, [p + Vector3(-hx, size.y, -hz), p + Vector3(hx, size.y, -hz), p + Vector3(hx, size.y, hz), p + Vector3(-hx, size.y, hz)],
-					Vector3.UP, [Vector2(0, 0), Vector2(size.x, 0), Vector2(size.x, size.z), Vector2(0, size.z)], roof)
+		_building(m, b)
+	var count := (m["vertices"] as Array).size()
 	var indices := PackedInt32Array()
-	for i in vertices.size():
-		indices.append(i)
-	return {"vertices": vertices, "normals": normals, "uvs": uvs, "colors": colors, "indices": indices}
+	indices.resize(count)
+	for i in count:
+		indices[i] = i
+	return {"vertices": PackedVector3Array(m["vertices"]), "normals": PackedVector3Array(m["normals"]),
+			"uvs": PackedVector2Array(m["uvs"]), "colors": PackedColorArray(m["colors"]), "indices": indices, "boxes": m["boxes"]}
 
 
-func _face(vertices: PackedVector3Array, normals: PackedVector3Array, uvs: PackedVector2Array, colors: PackedColorArray,
+func _building(m: Dictionary, b: Dictionary) -> void:
+	var p: Vector3 = b["pos"]
+	var size: Vector3 = b["size"]
+	var seed_value := float(int(b["seed"]) % 997) / 997.0
+	var tone := fposmod(seed_value * 7.31, 1.0)
+	var style := float(b["style"]) / 7.0
+	var outer := Color(style, tone, 0.0, seed_value)
+	var painted := Color(style, tone, 1.0, seed_value)
+	# Faces internas (b = 0,5): sem janelas pintadas nem trepadeiras.
+	var inner := Color(1.0 / 7.0, 0.55, 0.5, seed_value)
+	var boards := Color(3.0 / 7.0, 0.3, 0.5, seed_value)
+	var house: bool = int(b["roof"]) == 1
+	var floors: int = int(b.get("floors", 1))
+	var open_floors := floors if house else 1
+	var hx := size.x * 0.5
+	var hz := size.z * 0.5
+	var bottom := p.y - 1.5
+	var top := p.y + size.y
+	var open_top := top if house else p.y + FLOOR_HEIGHT
+	var front: Vector2 = b.get("front", Vector2(0.0, 1.0))
+	# Paredes externas: [de, até, normal para fora].
+	var sides := [[Vector3(-hx, 0, hz), Vector3(hx, 0, hz), Vector2(0, 1)], [Vector3(hx, 0, -hz), Vector3(-hx, 0, -hz), Vector2(0, -1)],
+			[Vector3(hx, 0, hz), Vector3(hx, 0, -hz), Vector2(1, 0)], [Vector3(-hx, 0, -hz), Vector3(-hx, 0, hz), Vector2(-1, 0)]]
+	for side: Array in sides:
+		var a: Vector3 = p + (side[0] as Vector3)
+		var c: Vector3 = p + (side[1] as Vector3)
+		var n2: Vector2 = side[2]
+		var length := a.distance_to(c)
+		var openings := []
+		var is_front := n2.is_equal_approx(front)
+		for level in open_floors:
+			var y0 := level * FLOOR_HEIGHT
+			if level == 0 and is_front:
+				openings.append([length * 0.5 - 0.6, length * 0.5 + 0.6, FLOOR_TOP, 2.3])
+				if not house and length > 6.0:
+					openings.append([1.0, length * 0.5 - 1.3, 0.6, 2.6])
+					openings.append([length * 0.5 + 1.3, length - 1.0, 0.6, 2.6])
+				elif length > 5.0:
+					openings.append([length * 0.18 - 0.55, length * 0.18 + 0.55, 0.95, 2.15])
+					openings.append([length * 0.82 - 0.55, length * 0.82 + 0.55, 0.95, 2.15])
+			else:
+				var bays := maxi(int(length / 3.2), 1)
+				for k in bays:
+					var center := (k + 0.5) * length / bays
+					if center - 0.55 > 0.7 and center + 0.55 < length - 0.7:
+						openings.append([center - 0.55, center + 0.55, y0 + 0.95, y0 + 2.15])
+		_wall(m, a, c, Vector3(n2.x, 0.0, n2.y), bottom, open_top, p.y, openings, outer, inner)
+		if top > open_top + 0.01:
+			# Andares de cima (cidade): parede maciça com as janelas pintadas.
+			_wall(m, a, c, Vector3(n2.x, 0.0, n2.y), open_top, top, p.y, [], painted, inner)
+	# Piso do térreo.
+	var inside := Vector3(size.x - WALL * 2.0, 0.2, size.z - WALL * 2.0)
+	_cuboid(m, p + Vector3(-inside.x * 0.5, FLOOR_TOP - 0.2, -inside.z * 0.5), p + Vector3(inside.x * 0.5, FLOOR_TOP, inside.z * 0.5),
+			p.y, Vector3.UP, boards, inner, true)
+	# Escada e piso de cima (casa de dois andares), teto do último andar.
+	var stair_x0 := -hx + WALL + 0.35
+	var stair_z0 := hz - WALL - 1.15
+	for level in range(1, open_floors + 1):
+		var y := p.y + level * FLOOR_HEIGHT
+		if level == open_floors:
+			y = open_top - 0.05 if house else y
+		var lo := p + Vector3(-inside.x * 0.5, y - p.y - 0.2, -inside.z * 0.5)
+		var hi := p + Vector3(inside.x * 0.5, y - p.y, inside.z * 0.5)
+		if house and level < open_floors:
+			var hole_lo := Vector3(p.x + stair_x0 - 0.1, 0.0, p.z + stair_z0 - 0.05)
+			var hole_hi := Vector3(p.x + stair_x0 + 3.7, 0.0, hi.z)
+			for piece: Array in [[lo, Vector3(hole_lo.x, hi.y, hi.z)], [Vector3(hole_hi.x, lo.y, lo.z), hi],
+					[Vector3(hole_lo.x, lo.y, lo.z), Vector3(hole_hi.x, hi.y, hole_lo.z)]]:
+				_cuboid(m, piece[0], piece[1], p.y, Vector3.UP, boards, inner, true)
+		else:
+			_cuboid(m, lo, hi, p.y, Vector3.UP, boards if level < open_floors else inner, inner, true)
+	if house and open_floors >= 2:
+		_stairs(m, p + Vector3(stair_x0, 0.0, stair_z0), 3.6, 1.0, FLOOR_HEIGHT, boards, inner)
+	# Parede interna do térreo (casa), com passagem no meio.
+	if house and size.x > 6.0:
+		var x := p.x + hx * 0.3
+		_wall(m, Vector3(x, 0, p.z - hz + WALL), Vector3(x, 0, p.z + hz - WALL), Vector3.RIGHT, p.y, p.y + FLOOR_HEIGHT - 0.05, p.y,
+				[[(size.z - WALL * 2.0) * 0.5 - 0.5, (size.z - WALL * 2.0) * 0.5 + 0.5, FLOOR_TOP, 2.2]], inner, inner)
+	# Telhado.
+	if house:
+		_gable(m["vertices"], m["normals"], m["uvs"], m["colors"], p, size, top, tone, seed_value, style)
+	else:
+		_cuboid(m, p + Vector3(-hx, size.y - 0.2, -hz), p + Vector3(hx, size.y, hz), p.y, Vector3.UP,
+				Color(2.0 / 7.0, tone, 0.0, seed_value), inner, true)
+
+
+## Parede de `a` a `c` (eixo x ou z), espessura para dentro, de `y_from` a
+## `y_to`, com vãos [u0, u1, v0, v1] (u ao longo da parede, v desde `ground`).
+## Cada pedaço maciço vira uma caixa (malha e colisão).
+func _wall(m: Dictionary, a: Vector3, c: Vector3, normal: Vector3, y_from: float, y_to: float, ground: float,
+		openings: Array, outer: Color, inner: Color) -> void:
+	var length := a.distance_to(c)
+	var along := (c - a) / length
+	var v_min := y_from - ground
+	var v_max := y_to - ground
+	var cuts := [0.0, length]
+	for o: Array in openings:
+		cuts.append(clampf(o[0], 0.0, length))
+		cuts.append(clampf(o[1], 0.0, length))
+	cuts.sort()
+	for i in cuts.size() - 1:
+		var u0: float = cuts[i]
+		var u1: float = cuts[i + 1]
+		if u1 - u0 < 0.01:
+			continue
+		var holes := []
+		for o: Array in openings:
+			if float(o[0]) <= u0 + 0.001 and float(o[1]) >= u1 - 0.001:
+				holes.append([maxf(float(o[2]), v_min), minf(float(o[3]), v_max)])
+		holes.sort_custom(func(x: Array, y: Array) -> bool: return x[0] < y[0])
+		var v := v_min
+		for h: Array in holes:
+			if float(h[0]) > v + 0.01:
+				_wall_piece(m, a, along, normal, u0, u1, v, h[0], ground, outer, inner)
+			v = maxf(v, h[1])
+		if v_max > v + 0.01:
+			_wall_piece(m, a, along, normal, u0, u1, v, v_max, ground, outer, inner)
+
+
+func _wall_piece(m: Dictionary, a: Vector3, along: Vector3, normal: Vector3, u0: float, u1: float, v0: float, v1: float,
+		ground: float, outer: Color, inner: Color) -> void:
+	var p0 := a + along * u0
+	var p1 := a + along * u1 - normal * WALL
+	var lo := Vector3(minf(p0.x, p1.x), ground + v0, minf(p0.z, p1.z))
+	var hi := Vector3(maxf(p0.x, p1.x), ground + v1, maxf(p0.z, p1.z))
+	_cuboid(m, lo, hi, ground, normal, outer, inner, true)
+
+
+## Caixa alinhada aos eixos: a face virada para `special` usa a cor
+## `special_color`, as outras `other`. Com `solid`, também é colisão.
+func _cuboid(m: Dictionary, lo: Vector3, hi: Vector3, ground: float, special: Vector3, special_color: Color, other: Color,
+		solid: bool) -> void:
+	var faces := [
+		[Vector3.UP, [Vector3(lo.x, hi.y, lo.z), Vector3(hi.x, hi.y, lo.z), Vector3(hi.x, hi.y, hi.z), Vector3(lo.x, hi.y, hi.z)]],
+		[Vector3.DOWN, [Vector3(lo.x, lo.y, lo.z), Vector3(hi.x, lo.y, lo.z), Vector3(hi.x, lo.y, hi.z), Vector3(lo.x, lo.y, hi.z)]],
+		[Vector3.RIGHT, [Vector3(hi.x, lo.y, lo.z), Vector3(hi.x, lo.y, hi.z), Vector3(hi.x, hi.y, hi.z), Vector3(hi.x, hi.y, lo.z)]],
+		[Vector3.LEFT, [Vector3(lo.x, lo.y, lo.z), Vector3(lo.x, lo.y, hi.z), Vector3(lo.x, hi.y, hi.z), Vector3(lo.x, hi.y, lo.z)]],
+		[Vector3.BACK, [Vector3(lo.x, lo.y, hi.z), Vector3(hi.x, lo.y, hi.z), Vector3(hi.x, hi.y, hi.z), Vector3(lo.x, hi.y, hi.z)]],
+		[Vector3.FORWARD, [Vector3(lo.x, lo.y, lo.z), Vector3(hi.x, lo.y, lo.z), Vector3(hi.x, hi.y, lo.z), Vector3(lo.x, hi.y, lo.z)]],
+	]
+	for face: Array in faces:
+		var normal: Vector3 = face[0]
+		var corners: Array = face[1]
+		var uv := []
+		for q: Vector3 in corners:
+			if absf(normal.y) > 0.5:
+				uv.append(Vector2(q.x, q.z))
+			elif absf(normal.x) > 0.5:
+				uv.append(Vector2(q.z, q.y - ground))
+			else:
+				uv.append(Vector2(q.x, q.y - ground))
+		var color := special_color if normal.is_equal_approx(special) else other
+		_face(m["vertices"], m["normals"], m["uvs"], m["colors"], corners, normal, uv, color)
+	if solid:
+		(m["boxes"] as Array).append([Transform3D(Basis.IDENTITY, (lo + hi) * 0.5), hi - lo])
+
+
+## Escada reta ao longo de +x: degraus (malha) e uma rampa de colisão.
+func _stairs(m: Dictionary, start: Vector3, run: float, width: float, rise: float, boards: Color, inner: Color) -> void:
+	var steps := 12
+	for i in steps:
+		var lo := start + Vector3(run * i / steps, FLOOR_TOP - 0.05, 0.0)
+		var hi := start + Vector3(run * (i + 1) / steps, FLOOR_TOP + rise * (i + 1) / steps, width)
+		_cuboid(m, lo, hi, start.y, Vector3.UP, boards, inner, false)
+	var angle := atan2(rise, run)
+	var length := Vector2(run, rise).length()
+	var basis := Basis(Vector3.BACK, angle)
+	var center := start + Vector3(run * 0.5, FLOOR_TOP + rise * 0.5 - 0.08, width * 0.5)
+	(m["boxes"] as Array).append([Transform3D(basis, center), Vector3(length + 0.3, 0.1, width)])
+
+
+func _face(vertices: Array, normals: Array, uvs: Array, colors: Array,
 		corners: Array, normal: Vector3, uv: Array, color: Color) -> void:
 	# Dois triângulos com a face da frente para `normal` (sentido horário no Godot).
 	var order := [0, 1, 2, 0, 2, 3]
@@ -1334,17 +1543,8 @@ func _face(vertices: PackedVector3Array, normals: PackedVector3Array, uvs: Packe
 		colors.append(color)
 
 
-func _wall_quad(vertices: PackedVector3Array, normals: PackedVector3Array, uvs: PackedVector2Array, colors: PackedColorArray,
-		a: Vector3, c: Vector3, bottom: float, top: float, ground: float, wall_length: float, normal: Vector3, color: Color) -> void:
-	# Número inteiro de vãos de janela de 3 m (as janelas não cortam a quina).
-	var length := maxf(1.0, roundf(wall_length / 3.0)) * 3.0
-	_face(vertices, normals, uvs, colors,
-			[Vector3(a.x, bottom, a.z), Vector3(c.x, bottom, c.z), Vector3(c.x, top, c.z), Vector3(a.x, top, a.z)], normal,
-			[Vector2(0.0, bottom - ground), Vector2(length, bottom - ground), Vector2(length, top - ground), Vector2(0.0, top - ground)], color)
-
-
 ## Telhado de duas águas ao longo do lado maior, com oitões (triângulos) de parede.
-func _gable(vertices: PackedVector3Array, normals: PackedVector3Array, uvs: PackedVector2Array, colors: PackedColorArray,
+func _gable(vertices: Array, normals: Array, uvs: Array, colors: Array,
 		p: Vector3, size: Vector3, top: float, tone: float, seed_value: float, style: float) -> void:
 	var along_x := size.x >= size.z
 	var half_long := (size.x if along_x else size.z) * 0.5 + 0.35

@@ -95,7 +95,8 @@ func _dress() -> void:
 	var outfit := ZombieLook.dress(_body, variant if variant >= 0 else _rng.randi(), _rng)
 	var height := _rng.randf_range(0.93, 1.07)
 	var thin: bool = outfit.get("magro", false)
-	_body.scale = Vector3(height * (0.88 if thin else 1.0), height, height * (0.9 if thin else 1.0))
+	# Escala uniforme (os ossos físicos do ragdoll não aceitam outra).
+	_body.scale = Vector3.ONE * height * (0.95 if thin else 1.0)
 	walk_speed *= _rng.randf_range(0.8, 1.25)
 	var posture := ZombiePosture.new()
 	posture.name = "Postura"

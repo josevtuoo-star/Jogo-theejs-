@@ -26,6 +26,7 @@ signal interaction_completed(interactable: Interactable)
 const INTERACT_SPEED := 1.6
 
 var focused: Interactable = null
+var _focused_id: int = 0
 var _pending: Interactable = null
 var _pressed_previous: bool = false
 var _ray := PhysicsRayQueryParameters3D.new()
@@ -69,12 +70,15 @@ func _update_focus() -> void:
 				# Mira passou raspando num objeto pequeno (pedra, tora, ferramenta
 				# no chão): procura itens soltos numa esfera em volta do ponto.
 				found = _nearby_pickup(space, hit["position"], eye)
-	# Objeto já liberado (pego, quebrado) conta como nada em foco.
-	if focused != null and not is_instance_valid(focused):
+	# Objeto já liberado (pego, quebrado) conta como nada em foco. (Um objeto
+	# liberado é igual a null nas comparações: por isso vale o id guardado.)
+	if _focused_id != 0 and not is_instance_id_valid(_focused_id):
 		focused = null
+		_focused_id = 0
 		focus_changed.emit(null)
 	if found != focused:
 		focused = found
+		_focused_id = found.get_instance_id() if found != null else 0
 		focus_changed.emit(focused)
 
 

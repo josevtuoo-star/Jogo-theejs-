@@ -7,6 +7,8 @@ extends RefCounted
 const MATERIALS := {
 	&"madeira": [Color(0.55, 0.42, 0.27), Color(0.33, 0.24, 0.15)],
 	&"casca": [Color(0.3, 0.22, 0.15), Color(0.2, 0.15, 0.1)],
+	&"mato": [Color(0.24, 0.32, 0.12), Color(0.36, 0.3, 0.16)],
+	&"metal": [Color(0.42, 0.24, 0.14), Color(0.55, 0.53, 0.5)],
 	&"pedra": [Color(0.55, 0.53, 0.5), Color(0.38, 0.36, 0.34)],
 	&"carvao": [Color(0.08, 0.08, 0.09), Color(0.35, 0.34, 0.33)],
 	&"ferro": [Color(0.45, 0.22, 0.12), Color(0.5, 0.48, 0.45)],

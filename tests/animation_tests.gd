@@ -117,6 +117,10 @@ func _ready() -> void:
 		_test_biomes,
 		_test_towns,
 		_test_zombie_variety,
+		_test_break_everything,
+		_test_dig_terrain,
+		_test_house_interior,
+		_test_day_night,
 		_test_ragdoll_death_and_respawn,
 		_test_touch_attack_button,
 		_test_animator_performance,
@@ -1537,7 +1541,9 @@ func _test_weapon_pickup_and_drop() -> void:
 	_check(model != null and model.visible and model.mesh == bat.mesh, "taco preso ao osso da mão direita")
 	if model != null:
 		var hand := _bone("hand_r")
-		_check(model.global_position.distance_to(hand) < 0.15, "empunhadura junto da mão (%.2f m)" % model.global_position.distance_to(hand))
+		# A direita sobe no cabo em `grip_shift` (ferramentas de duas mãos).
+		var held_at := model.global_position.distance_to(hand)
+		_check(held_at < 0.15 + bat.grip_shift, "empunhadura junto da mão (%.2f m)" % held_at)
 	_check(_body.guard_clip == &"weapon_idle", "postura de arma empunhada")
 	var drop_buttons := get_tree().get_nodes_in_group(&"drop_weapon_button")
 	_check(drop_buttons.is_empty() or (drop_buttons[0] as Control).visible, "botão SOLTAR aparece com arma na mão")
@@ -1586,7 +1592,7 @@ func _test_weapon_strikes() -> void:
 		hits = dummy.hits
 		await _hold(&"attack", 2)
 		await _frames(3)
-		_check(_body.current_animation(BodyAnimator.SLOT_ACTION) == &"weapon_swing_a", "%s: golpe rápido de arma" % data.display_name)
+		_check(_body.current_animation(BodyAnimator.SLOT_ACTION) == data.light_clip, "%s: golpe rápido de arma (%s)" % [data.display_name, data.light_clip])
 		await _frames(60)
 		_check(dummy.hits == hits + 1 and is_equal_approx(dummy.last_damage, data.light_damage),
 				"%s: acerta mais longe com dano %.0f (%.0f)" % [data.display_name, data.light_damage, dummy.last_damage])
@@ -3120,7 +3126,8 @@ func _test_towns() -> void:
 	await _frames(2)
 	var p: Vector3 = first["pos"]
 	var size: Vector3 = first["size"]
-	var ray := PhysicsRayQueryParameters3D.create(p + Vector3(size.x * 0.5 + 3.0, 1.5, 0.0), p + Vector3(0.0, 1.5, 0.0), 1)
+	# Abaixo das janelas e longe do meio da parede (onde pode haver porta).
+	var ray := PhysicsRayQueryParameters3D.create(p + Vector3(size.x * 0.5 + 3.0, 0.5, size.z * 0.3), p + Vector3(0.0, 0.5, size.z * 0.3), 1)
 	_check(not space.intersect_ray(ray).is_empty(), "a parede do prédio é sólida (colisão)")
 	var street := Vector2(city["center"]) + Vector2(WorldGenerator.BLOCK, 7.0)
 	var weights := g._vertex_weights(Vector3(street.x, float(city["base"]), street.y), Vector3.UP, 0, 0, Vector3.ZERO, 2,
@@ -3158,4 +3165,231 @@ func _test_zombie_variety() -> void:
 	_check(posture, "cada um com postura própria (cabeça caída, tronco curvado)")
 	for z in zombies:
 		z.queue_free()
+	await _frames(3)
+
+
+## Golpe direto num objeto de um ChunkResources (como o combate faz).
+func _strike(body: ChunkResources, entry: Dictionary, weapon: StringName, damage: float) -> bool:
+	var node: CollisionShape3D = entry["shape"]
+	var index := -1
+	for owner_id in body.get_shape_owners():
+		if body.shape_owner_get_owner(owner_id) == node:
+			index = body.shape_owner_get_shape_index(owner_id, 0)
+	return body.receive_hit({"shape": index, "weapon": weapon, "damage": damage, "point": node.global_position,
+			"direction": Vector3.FORWARD, "attacker": _player})
+
+
+func _test_break_everything() -> void:
+	_begin("Tudo quebra: rochedo (picareta), mato (mãos), carcaça (pé de cabra), e não volta")
+	var world := _world_node(1)
+	add_child(world)
+	await _frames(1)
+	var g := world.generator
+	# Pedaço com rochedo, mato e carcaça por perto da partida.
+	var found := {}
+	var sp := g.spawn_point()
+	for r in 8:
+		for dz in range(-r, r + 1):
+			for dx in range(-r, r + 1):
+				if found.size() == 3:
+					break
+				var coord := ProceduralWorld.chunk_of(sp) + Vector2i(dx, dz)
+				var data := g.build_chunk(coord)
+				for kind: String in data["props"]:
+					if kind.begins_with("rochedo") and not found.has("rocha"):
+						found["rocha"] = coord
+					if kind in ["shrub_03", "fern_02", "dry_branches_medium_01"] and not found.has("mato"):
+						found["mato"] = coord
+				if not (data["wrecks"] as Array).is_empty() and not found.has("carcaca"):
+					found["carcaca"] = coord
+	_check(found.size() == 3, "achou rochedo, mato e carcaça (%s)" % str(found.keys()))
+	for what: String in found:
+		var coord: Vector2i = found[what]
+		world.generate_now(Vector3(coord.x * 32.0 + 16.0, 0.0, coord.y * 32.0 + 16.0), 0)
+	await _frames(2)
+	var cases := {"rocha": [&"picareta", "pedra", false], "mato": [&"", "graveto", true], "carcaca": [&"pe_de_cabra", "ferro", false]}
+	for what: String in found:
+		var coord: Vector2i = found[what]
+		var chunk := world.chunk_node(coord)
+		var body: ChunkResources = chunk.get_node("Mato" if cases[what][2] else "Recursos")
+		var entry: Dictionary = {}
+		for e: Dictionary in body.entries():
+			if e["kind"] == &"objeto" and ((what == "rocha" and String(e["prop"]).begins_with("rochedo"))
+					or (what == "carcaca" and e["prop"] == "carcaca") or (what == "mato" and e["material"] == &"mato")):
+				entry = e
+				break
+		if entry.is_empty():
+			_check(false, "%s registrado como quebrável" % what)
+			continue
+		if what == "rocha":
+			_check(not _strike(body, entry, &"", 12.0), "rochedo: com as mãos não quebra (rebate)")
+		var hits := 0
+		while entry["health"] > 0.0 and hits < 60:
+			_strike(body, entry, cases[what][0], 30.0)
+			hits += 1
+		await _frames(10)
+		var drops := 0
+		for node in chunk.find_children("*", "ItemPickup", true, false):
+			if (node as ItemPickup).item.id == StringName(cases[what][1]):
+				drops += 1
+		_check(entry["health"] <= 0.0 and (entry["shape"] as CollisionShape3D).disabled and world.is_removed(entry["key"]),
+				"%s quebrou em %d golpes e saiu do lugar" % [what, hits])
+		_check(drops > 0 or what == "mato", "%s soltou %d %s" % [what, drops, cases[what][1]])
+	# Recarregar: o que quebrou não volta.
+	var coord: Vector2i = found["rocha"]
+	world._chunks[coord].queue_free()
+	world._chunks.erase(coord)
+	var waited := Time.get_ticks_msec()
+	while world.chunk_node(coord) == null and Time.get_ticks_msec() - waited < 6000:
+		await _frames(2)
+	if world.chunk_node(coord) == null:
+		world.generate_now(Vector3(coord.x * 32.0 + 16.0, 0.0, coord.y * 32.0 + 16.0), 0)
+	var broken_back := false
+	for e: Dictionary in (world.chunk_node(coord).get_node("Recursos") as ChunkResources).entries():
+		broken_back = broken_back or world.is_removed(e["key"])
+	_check(not broken_back, "ao recarregar o pedaço, o rochedo quebrado não volta")
+	world.queue_free()
+	await _frames(5)
+
+
+func _test_dig_terrain() -> void:
+	_begin("Cavar o terreno com a picareta (o buraco abre e fica salvo)")
+	var world := _world_node(1)
+	add_child(world)
+	await _frames(1)
+	var g := world.generator
+	var spot := Vector3(FAR.x + 7.0, 0.0, FAR.z + 5.0)
+	spot.y = g.surface_height(spot.x, spot.z)
+	world.generate_now(spot, 1)
+	await _frames(3)
+	var space := get_viewport().world_3d.direct_space_state
+	var ray := PhysicsRayQueryParameters3D.create(spot + Vector3.UP * 5.0, spot + Vector3.DOWN * 5.0, 1)
+	var before := space.intersect_ray(ray)
+	_check(not before.is_empty(), "chão antes de cavar (y %.2f)" % (before["position"] as Vector3).y if not before.is_empty() else 0.0)
+	var point: Vector3 = before["position"]
+	var hits := 0
+	while world.dig_list().is_empty() and hits < 10:
+		world.dig_hit(point, Vector3.UP, 26.0)
+		hits += 1
+	_check(world.dig_list().size() == 1 and hits >= 2, "cede depois de %d golpes de picareta" % hits)
+	var deeper := false
+	var started := Time.get_ticks_msec()
+	while Time.get_ticks_msec() - started < 6000:
+		await _frames(2)
+		var after := space.intersect_ray(ray)
+		if not after.is_empty() and (after["position"] as Vector3).y < point.y - 0.5:
+			deeper = true
+			break
+	_check(deeper, "o pedaço refeito tem um buraco onde cavou")
+	_check((world.dig_list()[0] as Array).size() == 4, "a escavação vai para o salvamento")
+	world.queue_free()
+	await _frames(5)
+
+
+func _test_house_interior() -> void:
+	_begin("Casas com interior: entra pela porta, paredes sólidas, sobe a escada")
+	var g := WorldGenerator.new(WORLD_SEED)
+	var house: Dictionary = {}
+	for t: Dictionary in g.towns_near(g.spawn_point(), 1500.0):
+		for b: Dictionary in t["buildings"]:
+			if int(b["roof"]) == 1 and int(b["floors"]) == 2 and (b["size"] as Vector3).x > 7.0:
+				house = b
+				break
+		if not house.is_empty():
+			break
+	_check(not house.is_empty(), "casa de dois andares achada")
+	if house.is_empty():
+		return
+	var world := _world_node(1)
+	add_child(world)
+	await _frames(1)
+	var p: Vector3 = house["pos"]
+	var size: Vector3 = house["size"]
+	var front: Vector2 = house["front"]
+	world.generate_now(p, 1)
+	await _frames(3)
+	var half := (size.x if absf(front.x) > 0.5 else size.z) * 0.5
+	var outside := p + Vector3(front.x, 0.0, front.y) * (half + 2.2)
+	outside.y = g.surface_height(outside.x, outside.z)
+	_clear_inventory()
+	await _reset(outside + Vector3.UP * 0.1, atan2(front.x, front.y))
+	await _hold(&"move_forward", 150)
+	var q := _player.global_position
+	var inside := absf(q.x - p.x) < size.x * 0.5 - 0.2 and absf(q.z - p.z) < size.z * 0.5 - 0.2
+	_check(inside, "entrou pela porta (%.1f m do centro)" % Vector2(q.x - p.x, q.z - p.z).length())
+	# Parede sem porta: não atravessa.
+	# (olhando para os fundos: a direção oposta à porta)
+	await _reset(p + Vector3(0.0, WorldGenerator.FLOOR_TOP + 0.05, 0.0) + Vector3(front.x, 0.0, front.y) * 1.0, atan2(front.x, front.y))
+	await _hold(&"move_forward", 150)
+	q = _player.global_position
+	_check(absf(q.x - p.x) < size.x * 0.5 and absf(q.z - p.z) < size.z * 0.5, "a parede dos fundos segura (não sai da casa)")
+	# Escada: sobe ao andar de cima.
+	var hx := size.x * 0.5
+	var hz := size.z * 0.5
+	var stair := p + Vector3(-hx + WorldGenerator.WALL + 0.35 - 0.3, WorldGenerator.FLOOR_TOP + 0.05, hz - WorldGenerator.WALL - 1.15 + 0.5)
+	await _reset(stair, -PI * 0.5)
+	await _hold(&"move_forward", 240)
+	_check(_player.global_position.y > p.y + WorldGenerator.FLOOR_HEIGHT - 0.3,
+			"subiu a escada até o andar de cima (%.2f m)" % (_player.global_position.y - p.y))
+	world.queue_free()
+	await _reset(OPEN_LANE, YAW_TOWARD_POSITIVE_Z)
+
+
+func _test_day_night() -> void:
+	_begin("Dia e noite, clima e configurações")
+	var environment := WorldEnvironment.new()
+	environment.environment = Environment.new()
+	environment.environment.sky = Sky.new()
+	environment.environment.sky.sky_material = ProceduralSkyMaterial.new()
+	var sun := DirectionalLight3D.new()
+	add_child(environment)
+	add_child(sun)
+	var cycle := SkyCycle.new()
+	cycle.environment = environment
+	cycle.sun = sun
+	cycle.day_minutes = 100000.0
+	add_child(cycle)
+	await _frames(1)
+	cycle.hour = 12.0
+	cycle.set_weather("limpo", true)
+	await _frames(2)
+	_check(cycle.sun_energy > 0.6 and cycle.darkness < 0.05 and sun.visible, "meio-dia: sol forte (%.2f)" % cycle.sun_energy)
+	var noon_dir := -sun.global_basis.z
+	cycle.hour = 0.5
+	await _frames(2)
+	_check(cycle.darkness > 0.9 and not sun.visible and cycle.ambient_energy < 0.4, "meia-noite: escuro (%.2f)" % cycle.darkness)
+	cycle.hour = 7.0
+	await _frames(2)
+	_check((-sun.global_basis.z).y > noon_dir.y, "de manhã o sol está mais baixo que ao meio-dia")
+	cycle.day_minutes = 1.0
+	var before := cycle.hour
+	await _frames(60)
+	_check(cycle.hour > before + 0.2, "o tempo passa (%.2f h em 1 s com dia de 1 minuto)" % (cycle.hour - before))
+	cycle.day_minutes = 100000.0
+	cycle.set_weather("neblina", true)
+	await _frames(2)
+	var fog_end := environment.environment.fog_depth_end
+	cycle.set_weather("limpo", true)
+	await _frames(2)
+	_check(fog_end < environment.environment.fog_depth_end * 0.5, "neblina fecha a vista (%.0f m) e o tempo limpo abre (%.0f m)" % [fog_end, environment.environment.fog_depth_end])
+	cycle.set_weather("chuva", true)
+	await _frames(2)
+	_check(cycle.get_node("Chuva").emitting, "chuva cai")
+	var data := cycle.to_data()
+	_check(data["clima"] == "chuva" and absf(float(data["hora"]) - cycle.hour) < 0.01, "hora e clima vão para o salvamento")
+	# Configurações: distância de visão vale para o mundo.
+	var previous: int = GameSession.settings["distancia"]
+	var world := ProceduralWorld.new()
+	world.use_session_seed = true
+	add_child(world)
+	await _frames(1)
+	GameSession.settings["distancia"] = 5
+	GameSession.settings_changed.emit()
+	_check(world.view_distance == 5, "distância de visão nas configurações (5 pedaços)")
+	GameSession.settings["distancia"] = previous
+	GameSession.settings_changed.emit()
+	world.queue_free()
+	cycle.queue_free()
+	sun.queue_free()
+	environment.queue_free()
 	await _frames(3)

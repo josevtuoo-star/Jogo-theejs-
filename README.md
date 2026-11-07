@@ -22,6 +22,7 @@ Gerado automaticamente a cada atualização, só depois de todos os testes passa
 - Etapa 7, picareta, machado e taco com pregos, mundo procedural infinito por pedaços com cavernas, rodovias abandonadas e som só do vento (concluída): [`docs/ETAPA_07_ARMAS_MUNDO_PROCEDURAL.md`](docs/ETAPA_07_ARMAS_MUNDO_PROCEDURAL.md)
 - Etapa 8, lanterna corrigida, cavernas exploráveis, mochila com PEGAR e barra rápida, corte de árvores, mineração, zumbis e durabilidade (concluída): [`docs/ETAPA_08_COLETA_CAVERNAS.md`](docs/ETAPA_08_COLETA_CAVERNAS.md)
 - Etapa 9, menu inicial, mundos com semente salvos no aparelho, personagem personalizável, mochila em grade com bancada e receitas, novas ferramentas e armaduras, escalada de encostas, biomas, vilas e cidades abandonadas, zumbis variados (concluída): [`docs/ETAPA_09_MUNDO_VIVO.md`](docs/ETAPA_09_MUNDO_VIVO.md)
+- Etapa 10, tudo quebra como no Minecraft (objetos e terreno), ferramentas na mão com duas mãos e golpes próprios, ciclo de dia e noite com clima, configurações, casas e prédios com interior (concluída): [`docs/ETAPA_10_QUEBRAR_E_DIA_NOITE.md`](docs/ETAPA_10_QUEBRAR_E_DIA_NOITE.md)
 - Procedência e licenças dos assets: [`ASSET_LICENSES.md`](ASSET_LICENSES.md)
 
 ## Começar

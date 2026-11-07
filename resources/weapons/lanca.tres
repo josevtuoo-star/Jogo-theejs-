@@ -19,4 +19,7 @@ heavy_min_damage = 34.0
 heavy_max_damage = 56.0
 heavy_max_impulse = 40.0
 heavy_recovery = 0.45
+light_clip = &"punch_cross"
+two_handed = true
+offhand_offset = -0.42
 impact_material = &"madeira"

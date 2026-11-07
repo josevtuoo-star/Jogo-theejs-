@@ -6,6 +6,7 @@ extends Node3D
 
 @export var world: ProceduralWorld
 @export var player: PlayerController
+@export var sky_cycle: SkyCycle
 ## Raio gerado na partida, antes de liberar o jogador.
 @export_range(0, 3) var start_radius: int = 1
 
@@ -35,6 +36,9 @@ func _ready() -> void:
 		world.mark_removed(key)
 	for key: String in state.get("pegos", []):
 		world.mark_taken(key)
+	world.load_digs(state.get("escavacoes", []))
+	if sky_cycle != null and state.has("ceu"):
+		sky_cycle.from_data(state["ceu"])
 	world.generate_now(start, start_radius)
 	player.teleport(start)
 	player.set_view_rotation(yaw, pitch)
@@ -85,6 +89,8 @@ func capture_state() -> Dictionary:
 		"mochila": inventory.to_data() if inventory != null else {},
 		"removidos": world.removed_keys(),
 		"pegos": world.taken_keys(),
+		"escavacoes": world.dig_list(),
+		"ceu": sky_cycle.to_data() if sky_cycle != null else {},
 		"kit": _kit_given or GameSession.world_state.get("kit", false),
 	}
 

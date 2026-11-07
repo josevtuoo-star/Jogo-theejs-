@@ -10,6 +10,7 @@ static func button(text: String, action: Callable, width: float = 0.0) -> Button
 	var b := Button.new()
 	b.text = text
 	b.custom_minimum_size = Vector2(width, 58.0)
+	b.add_theme_stylebox_override("hover_pressed", _box(Color(0.22, 0.19, 0.12, 0.95), ACCENT))
 	b.focus_mode = Control.FOCUS_NONE
 	b.add_theme_font_size_override("font_size", 20)
 	b.add_theme_color_override("font_color", Color(0.92, 0.92, 0.88))

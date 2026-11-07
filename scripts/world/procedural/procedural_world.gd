@@ -52,7 +52,13 @@ func _ready() -> void:
 	generator = WorldGenerator.new(world_seed)
 	# No celular, um anel a menos (a neblina já esconde a borda): ~40% menos
 	# pedaços para desenhar e manter na memória.
-	if OS.has_feature("mobile") and view_distance > 3:
+	if use_session_seed:
+		# Mundo do jogo: distância de visão das configurações.
+		view_distance = clampi(int(GameSession.settings.get("distancia", 3)), 2, 6)
+		GameSession.settings_changed.connect(func() -> void:
+			view_distance = clampi(int(GameSession.settings.get("distancia", 3)), 2, 6)
+			_center = Vector2i(1 << 30, 0))
+	elif OS.has_feature("mobile") and view_distance > 3:
 		view_distance = 3
 	_terrain_material = load("res://resources/materials/world_terrain.tres")
 	_building_material = load("res://resources/materials/building.tres")
@@ -98,6 +104,103 @@ func loaded_chunks() -> Array:
 
 func chunk_node(coord: Vector2i) -> Node3D:
 	return _chunks.get(coord)
+
+
+# --- Escavação (etapa 10: o terreno também quebra) ---------------------------------
+
+## A malha do terreno tem 2 m de resolução: o buraco precisa alcançar uma
+## amostra (um "bloco" de ~3 m de largura).
+const DIG_RADIUS := 1.6
+## Dano acumulado num ponto até abrir o buraco.
+const DIG_HEALTH := 34.0
+
+## Pedaço -> escavações que o alcançam (Vector4: centro e raio).
+var _digs: Dictionary = {}
+## Todas as escavações, sem repetir (para salvar).
+var _dig_list: Array[Vector4] = []
+var _dig_damage: Dictionary = {}
+var _dirty: Dictionary = {}
+
+
+func digs_of(coord: Vector2i) -> Array[Vector4]:
+	var list: Array[Vector4] = []
+	list.assign(_digs.get(coord, []))
+	return list
+
+
+func dig_list() -> Array:
+	var out := []
+	for dig in _dig_list:
+		out.append([dig.x, dig.y, dig.z, dig.w])
+	return out
+
+
+func load_digs(list: Array) -> void:
+	for entry: Array in list:
+		if entry.size() == 4:
+			add_dig(Vector4(entry[0], entry[1], entry[2], entry[3]), false)
+
+
+## Golpe no terreno: acumula até ceder e abrir um buraco do tamanho de um
+## bloco. Retorna se o golpe valeu (fundo do mundo não cava).
+func dig_hit(point: Vector3, normal: Vector3, damage: float) -> bool:
+	if point.y < WorldGenerator.FLOOR_Y + 3.0 or damage <= 0.0:
+		return false
+	var cell := Vector3i(floori(point.x / 0.7), floori(point.y / 0.7), floori(point.z / 0.7))
+	var total := float(_dig_damage.get(cell, 0.0)) + damage
+	var depth := generator.surface_height(point.x, point.z) - point.y
+	var rock := depth > 1.5 or normal.y < 0.5
+	ImpactEffects.burst(self, point, normal, &"pedra" if rock else &"casca", 12, 0.04, 2.5)
+	ImpactEffects.sound(self, point, "world/pedra_golpe" if rock else "combat/impacto_generico", -3.0)
+	if total < DIG_HEALTH:
+		_dig_damage[cell] = total
+		return true
+	_dig_damage.erase(cell)
+	var center := point - normal.normalized() * 0.35
+	add_dig(Vector4(center.x, center.y, center.z, DIG_RADIUS), true)
+	ImpactEffects.burst(self, point, normal, &"pedra" if rock else &"casca", 26, 0.06, 3.0)
+	var chunk := chunk_node(chunk_of(point))
+	if rock and chunk != null and randf() < 0.6:
+		ItemPickup.spawn(ItemData.find(&"pedra"), Transform3D(Basis.IDENTITY, point + normal * 0.4), chunk)
+	return true
+
+
+func add_dig(dig: Vector4, rebuild: bool) -> void:
+	_dig_list.append(dig)
+	var reach := dig.w + WorldGenerator.CELL * 1.5
+	var a := chunk_of(Vector3(dig.x - reach, 0.0, dig.z - reach))
+	var b := chunk_of(Vector3(dig.x + reach, 0.0, dig.z + reach))
+	for cz in range(a.y, b.y + 1):
+		for cx in range(a.x, b.x + 1):
+			var coord := Vector2i(cx, cz)
+			if not _digs.has(coord):
+				_digs[coord] = []
+			(_digs[coord] as Array).append(dig)
+			if rebuild and _chunks.has(coord):
+				_rebuild(coord)
+
+
+## Refaz o pedaço com as escavações (em segundo plano); troca quando pronto.
+func _rebuild(coord: Vector2i) -> void:
+	if _tasks.has(coord):
+		_dirty[coord] = true
+		return
+	_tasks[coord] = WorkerThreadPool.add_task(_generate.bind(coord, world_seed, digs_of(coord), true), false, "Escavação %s" % coord)
+
+
+func _swap_chunk(coord: Vector2i, data: Dictionary) -> void:
+	var old: Node3D = _chunks[coord]
+	var fresh := _build_chunk_node(data)
+	# O que está solto no pedaço (itens, ferramentas, árvores caindo, zumbis)
+	# continua onde está.
+	for child in old.get_children():
+		if child is RigidBody3D or child is CharacterBody3D:
+			child.reparent(fresh)
+	old.queue_free()
+	_chunks[coord] = fresh
+	if _dirty.has(coord):
+		_dirty.erase(coord)
+		_rebuild(coord)
 
 
 func mark_removed(key: String) -> void:
@@ -172,14 +275,17 @@ func _start_tasks(center: Vector2i) -> void:
 		if _chunks.has(coord) or _tasks.has(coord) or _is_done(coord):
 			continue
 		var seed_value := world_seed
-		_tasks[coord] = WorkerThreadPool.add_task(_generate.bind(coord, seed_value), false, "Pedaço %s" % coord)
+		_tasks[coord] = WorkerThreadPool.add_task(_generate.bind(coord, seed_value, digs_of(coord)), false, "Pedaço %s" % coord)
 		if _tasks.size() >= max_tasks:
 			return
 
 
 ## Roda em segundo plano: só dados, nenhum nó.
-func _generate(coord: Vector2i, seed_value: int) -> void:
-	var data := WorldGenerator.new(seed_value).build_chunk(coord)
+func _generate(coord: Vector2i, seed_value: int, chunk_digs: Array[Vector4] = [], rebuild: bool = false) -> void:
+	var generator_copy := WorldGenerator.new(seed_value)
+	generator_copy.digs = chunk_digs
+	var data := generator_copy.build_chunk(coord)
+	data["rebuild"] = rebuild
 	data["faces"] = _faces(data["mesh"])
 	_mutex.lock()
 	_done.append(data)
@@ -219,6 +325,9 @@ func _apply_results(center: Vector2i) -> void:
 	var limit := (view_distance + 1) * (view_distance + 1)
 	for data in batch:
 		var coord: Vector2i = data["coord"]
+		if data.get("rebuild", false) and _chunks.has(coord):
+			_swap_chunk(coord, data)
+			continue
 		if _chunks.has(coord) or (coord - center).length_squared() > limit * 2:
 			continue
 		_generation_usec.append(data["usec"])
@@ -245,7 +354,9 @@ func generate_now(position: Vector3, radius: int = 1) -> void:
 			var coord := center + Vector2i(dx, dz)
 			if _chunks.has(coord) or _tasks.has(coord):
 				continue
+			generator.digs = digs_of(coord)
 			var data := generator.build_chunk(coord)
+			generator.digs = []
 			data["faces"] = _faces(data["mesh"])
 			_chunks[coord] = _build_chunk_node(data)
 			chunk_loaded.emit(coord)
@@ -284,6 +395,8 @@ func _build_chunk_node(data: Dictionary) -> Node3D:
 		body.name = "Chao"
 		body.collision_layer = 1
 		body.collision_mask = 0
+		# O combate reconhece o terreno (cavar com a picareta).
+		body.set_meta(&"world", self)
 		var shape := ConcavePolygonShape3D.new()
 		shape.set_faces(data["faces"])
 		var collision := CollisionShape3D.new()
@@ -352,14 +465,60 @@ func _build_chunk_node(data: Dictionary) -> Node3D:
 		var deposit: Array = entry[1]
 		resources.add_deposit(entry[0], StringName(deposit[0]), deposit[1], _boxes[entry[2]],
 				[[deposit_scatters[entry[2]], entry[3]]])
-	# Objetos espalhados (uma instância múltipla por tipo).
+	# Objetos espalhados (uma instância múltipla por tipo). Tudo o que tem
+	# regra em ChunkResources.PROP_RULES quebra (rocha, madeira, metal, mato);
+	# o mato só recebe golpes (camada de alvos), não trava o caminho.
+	var soft := ChunkResources.new()
+	soft.name = "Mato"
+	soft.collision_layer = 32
+	soft.collision_mask = 0
+	soft.world = self
+	soft.coord = coord
+	chunk.add_child(soft)
+	var solid_props := {}
+	for entry in data["colliders"]:
+		var marker := _prop_marker(entry[0], entry[1])
+		solid_props[marker] = int(solid_props.get(marker, 0)) + 1
 	var props: Dictionary = data["props"]
-	for kind in props:
+	for kind: String in props:
 		var small: bool = kind in ["can_rusted", "plastic_jerrycan", "rusted_wheel_rim_01", "trashbag", "fern_02", "shrub_03",
 				"dry_branches_medium_01", "shrub_02", "shrub_04", "weed_plant_02"]
-		_scatter(chunk, kind, _mesh(kind), props[kind], 45.0 if small else 110.0, not small)
+		var list: Array = props[kind]
+		var shown: Array = []
+		var kept: Array = [] # [chave, transformação]
+		for i in list.size():
+			var key := "p_%d_%d_%s_%d" % [coord.x, coord.y, kind, i]
+			var t: Transform3D = list[i]
+			if is_removed(key):
+				# Quebrado antes: não volta (nem a colisão).
+				var gone := _prop_marker(kind, t)
+				if solid_props.has(gone):
+					solid_props[gone] = int(solid_props[gone]) - 1
+				continue
+			shown.append(t)
+			kept.append([key, t])
+		var scatter := _scatter(chunk, kind, _mesh(kind), shown, 45.0 if small else 110.0, not small)
+		var breakable := not ChunkResources.prop_rule(kind).is_empty()
+		for j in kept.size():
+			var t: Transform3D = kept[j][1]
+			var marker := _prop_marker(kind, t)
+			var solid := int(solid_props.get(marker, 0)) > 0
+			if solid:
+				solid_props[marker] = int(solid_props[marker]) - 1
+			if not breakable:
+				if solid:
+					_box_collider(solids, kind, t)
+				continue
+			if solid:
+				resources.add_prop(kept[j][0], kind, t, _box_collider(resources, kind, t), [[scatter, j]])
+			else:
+				soft.add_prop(kept[j][0], kind, t, _soft_shape(soft, kind, t), [[scatter, j]])
+	# Colisões sem objeto visível correspondente (segurança).
 	for entry in data["colliders"]:
-		_box_collider(solids, entry[0], entry[1])
+		var marker := _prop_marker(entry[0], entry[1])
+		if int(solid_props.get(marker, 0)) > 0:
+			solid_props[marker] = int(solid_props[marker]) - 1
+			_box_collider(solids, entry[0], entry[1])
 	# Prédios e casas das vilas e cidades: uma malha por pedaço e uma caixa
 	# de colisão por prédio (do chão afundado até o teto).
 	var building_mesh: Dictionary = data.get("building_mesh", {})
@@ -379,27 +538,40 @@ func _build_chunk_node(data: Dictionary) -> Node3D:
 		buildings.mesh = mesh
 		buildings.visibility_range_end = 260.0
 		chunk.add_child(buildings)
-		for b: Dictionary in data.get("buildings", []):
-			var size: Vector3 = b["size"]
+		# Uma caixa por pedaço de parede, piso, teto e rampa da escada (dá
+		# para entrar pelas portas e subir a escada).
+		for entry: Array in building_mesh.get("boxes", []):
 			var box := BoxShape3D.new()
-			box.size = Vector3(size.x, size.y + 1.5, size.z)
+			box.size = entry[1]
 			var shape := CollisionShape3D.new()
 			shape.shape = box
-			shape.position = (b["pos"] as Vector3) + Vector3(0.0, (size.y - 1.5) * 0.5, 0.0)
+			shape.transform = entry[0]
 			solids.add_child(shape)
 	# Carcaças: agrupadas por modelo, com a cor de cada uma.
 	var by_kind := {}
-	for entry in data["wrecks"]:
+	var wrecks: Array = data["wrecks"]
+	var wreck_entries: Array = [] # [chave, tipo, transformação, índice na instância]
+	for i in wrecks.size():
+		var entry: Array = wrecks[i]
+		var key := "c_%d_%d_%d" % [coord.x, coord.y, i]
+		if is_removed(key):
+			continue
 		if not by_kind.has(entry[0]):
 			by_kind[entry[0]] = [[], []]
+		wreck_entries.append([key, entry[0], entry[1], (by_kind[entry[0]][0] as Array).size()])
 		(by_kind[entry[0]][0] as Array).append(entry[1])
 		(by_kind[entry[0]][1] as Array).append(entry[2])
-		_box_collider(solids, entry[0], entry[1])
+	var wreck_scatters := {}
 	for kind in by_kind:
 		# (PackedColorArray é cópia por valor: monta no fim, de uma vez.)
-		_scatter(chunk, "Carcacas_" + kind, _mesh(kind), by_kind[kind][0], 160.0, true, PackedColorArray(by_kind[kind][1]))
-	# Zumbis (os mortos não voltam).
-	var zombies: Array = data.get("zombies", [])
+		wreck_scatters[kind] = _scatter(chunk, "Carcacas_" + kind, _mesh(kind), by_kind[kind][0], 160.0, true, PackedColorArray(by_kind[kind][1]))
+	for entry: Array in wreck_entries:
+		# Carcaça: sucata de ferro (picareta, pé de cabra ou machado).
+		resources.add_prop(entry[0], "carcaca", entry[2], _box_collider(resources, entry[1], entry[2]), [[wreck_scatters[entry[1]], entry[3]]])
+	# Zumbis (os mortos não voltam). Pedaço refeito por escavação: os zumbis,
+	# as armas e os itens que já estavam soltos passam para o novo nó.
+	var rebuilt: bool = data.get("rebuild", false)
+	var zombies: Array = data.get("zombies", []) if not rebuilt else []
 	for i in zombies.size():
 		var key := "z_%d_%d_%d" % [coord.x, coord.y, i]
 		if is_removed(key):
@@ -414,7 +586,7 @@ func _build_chunk_node(data: Dictionary) -> Node3D:
 		zombie.rotation.y = hash(key) % 628 / 100.0
 		zombie.died.connect(func() -> void: mark_removed(key))
 	# Armas largadas (corpos físicos de verdade).
-	var weapons: Array = data["weapons"]
+	var weapons: Array = data["weapons"] if not rebuilt else []
 	for i in weapons.size():
 		var key := "%d_%d_%d" % [coord.x, coord.y, i]
 		if _taken.has(key):
@@ -423,7 +595,7 @@ func _build_chunk_node(data: Dictionary) -> Node3D:
 		var pickup: WeaponPickup = body.get_node("WeaponPickup")
 		pickup.interacted.connect(func(_by: Node) -> void: _taken[key] = true)
 	# Recursos soltos (sucata de ferro, tábuas) nas vilas e cidades.
-	var items: Array = data.get("items", [])
+	var items: Array = data.get("items", []) if not rebuilt else []
 	for i in items.size():
 		var key := "i_%d_%d_%d" % [coord.x, coord.y, i]
 		var item := ItemData.find(StringName(items[i][0]))
@@ -459,9 +631,28 @@ func _mesh(kind: String) -> Mesh:
 	return _meshes[kind]
 
 
+func _prop_marker(kind: String, t: Transform3D) -> String:
+	return "%s|%.2f|%.2f|%.2f" % [kind, t.origin.x, t.origin.y, t.origin.z]
+
+
+## Alvo de golpe do mato (arbustos, samambaias, galhos): uma caixa menor que
+## a planta, só na camada de alvos (o jogador passa por dentro).
+func _soft_shape(body: StaticBody3D, kind: String, t: Transform3D) -> CollisionShape3D:
+	_mesh(kind)
+	var box: AABB = _boxes[kind]
+	var scale := t.basis.get_scale()
+	var shape := BoxShape3D.new()
+	shape.size = (box.size * scale * 0.6).max(Vector3(0.3, 0.3, 0.3))
+	var collision := CollisionShape3D.new()
+	collision.shape = shape
+	collision.transform = Transform3D(t.basis.orthonormalized(), t * box.get_center())
+	body.add_child(collision)
+	return collision
+
+
 ## Caixa de colisão do objeto (a caixa da malha, um pouco menor). Formações
 ## pontudas usam um cilindro fino no tronco.
-func _box_collider(body: StaticBody3D, kind: String, t: Transform3D) -> void:
+func _box_collider(body: StaticBody3D, kind: String, t: Transform3D) -> CollisionShape3D:
 	_mesh(kind)
 	var box: AABB = _boxes[kind]
 	if kind == "street_lamp_01":
@@ -474,7 +665,7 @@ func _box_collider(body: StaticBody3D, kind: String, t: Transform3D) -> void:
 		column.shape = pole
 		column.transform = Transform3D(Basis.IDENTITY, t.origin + Vector3.UP * pole.height * 0.5)
 		body.add_child(column)
-		return
+		return column
 	if kind == "estalagmite":
 		var scale := t.basis.get_scale()
 		var cylinder := CylinderShape3D.new()
@@ -484,7 +675,7 @@ func _box_collider(body: StaticBody3D, kind: String, t: Transform3D) -> void:
 		spire.shape = cylinder
 		spire.transform = Transform3D(Basis.IDENTITY, t.origin + Vector3.UP * cylinder.height * 0.5)
 		body.add_child(spire)
-		return
+		return spire
 	if kind.begins_with("rochedo"):
 		# Rochedo: casco convexo da própria malha (uma caixa deixaria quinas
 		# invisíveis), com a escala aplicada aos pontos.
@@ -500,7 +691,7 @@ func _box_collider(body: StaticBody3D, kind: String, t: Transform3D) -> void:
 		rock.shape = hull
 		rock.transform = Transform3D(t.basis.orthonormalized(), t.origin)
 		body.add_child(rock)
-		return
+		return rock
 	# A física não aceita forma escalada: a escala vai para o tamanho da caixa.
 	var scale := t.basis.get_scale()
 	var shape := BoxShape3D.new()
@@ -509,3 +700,4 @@ func _box_collider(body: StaticBody3D, kind: String, t: Transform3D) -> void:
 	collision.shape = shape
 	collision.transform = Transform3D(t.basis.orthonormalized(), t * box.get_center())
 	body.add_child(collision)
+	return collision

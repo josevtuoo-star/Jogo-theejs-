@@ -22,6 +22,12 @@ var storage_asked: bool = false
 ## Permissão para gravar os mundos na memória do aparelho.
 var storage_allowed: bool = false
 var look: Dictionary = CharacterLook.default_look()
+## Configurações (menu CONFIGURAÇÕES): distância de visão em pedaços de 32 m,
+## sombras (0 desligadas, 1 baixas, 2 altas), sensibilidade da câmera,
+## duração do dia (minutos reais por dia de jogo).
+var settings: Dictionary = {"distancia": 3, "sombras": 1, "sensibilidade": 1.0, "dia_minutos": 24.0}
+
+signal settings_changed
 
 ## Mundo aberto pelo menu (false: cena aberta direto, sem salvar).
 var active: bool = false
@@ -34,6 +40,7 @@ var world_state: Dictionary = {}
 
 func _ready() -> void:
 	_load_settings()
+	apply_input_settings()
 
 
 # --- Configuração --------------------------------------------------------------
@@ -44,6 +51,10 @@ func _load_settings() -> void:
 		return
 	storage_asked = config.get_value("armazenamento", "perguntado", false)
 	storage_allowed = config.get_value("armazenamento", "permitido", false)
+	var saved_settings: Dictionary = config.get_value("jogo", "configuracoes", {})
+	for key: String in settings:
+		if saved_settings.has(key):
+			settings[key] = saved_settings[key]
 	var saved_look: Dictionary = config.get_value("personagem", "aparencia", {})
 	for part: String in CharacterLook.ORDER:
 		look[part] = int(saved_look.get(part, 0))
@@ -58,7 +69,22 @@ func save_settings() -> void:
 	config.set_value("armazenamento", "perguntado", storage_asked)
 	config.set_value("armazenamento", "permitido", storage_allowed)
 	config.set_value("personagem", "aparencia", look)
+	config.set_value("jogo", "configuracoes", settings)
 	config.save(SETTINGS_FILE)
+
+
+## Muda uma configuração, aplica (quem estiver ouvindo) e grava.
+func set_setting(key: String, value: Variant) -> void:
+	settings[key] = value
+	apply_input_settings()
+	settings_changed.emit()
+	save_settings()
+
+
+func apply_input_settings() -> void:
+	var factor := float(settings.get("sensibilidade", 1.0))
+	GameInput.mouse_sensitivity = 0.0022 * factor
+	GameInput.touch_sensitivity = 0.0032 * factor
 
 
 func set_storage_permission(allowed: bool) -> void:

@@ -7,8 +7,8 @@
 [ext_resource type="Script" path="res://scripts/ui/player_hud.gd" id="5_kegvl"]
 [ext_resource type="Script" path="res://scripts/ui/inventory_hud.gd" id="6_y4gja"]
 [ext_resource type="Script" path="res://scripts/ui/pause_menu.gd" id="7_52jc1"]
-[ext_resource type="Script" path="res://scripts/ui/cave_compass.gd" id="8_k5g47"]
-[ext_resource type="Script" path="res://scripts/world/procedural/cave_atmosphere.gd" id="9_hgoho"]
+[ext_resource type="Script" path="res://scripts/world/procedural/cave_atmosphere.gd" id="8_k5g47"]
+[ext_resource type="Script" path="res://scripts/world/sky_cycle.gd" id="9_hgoho"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_umup1"]
 sky_top_color = Color(0.46, 0.52, 0.57, 1)
@@ -45,10 +45,11 @@ adjustment_enabled = true
 adjustment_contrast = 1.05
 adjustment_saturation = 0.8
 
-[node name="Mundo" type="Node3D" node_paths=PackedStringArray("world", "player")]
+[node name="Mundo" type="Node3D" node_paths=PackedStringArray("world", "player", "sky_cycle")]
 script = ExtResource("1_dsmiq")
 world = NodePath("ProceduralWorld")
 player = NodePath("Player")
+sky_cycle = NodePath("SkyCycle")
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
 environment = SubResource("Environment_akupr")
@@ -91,16 +92,19 @@ script = ExtResource("7_52jc1")
 world_scene = NodePath("..")
 player = NodePath("../Player")
 
-[node name="CaveCompass" type="CanvasLayer" parent="." node_paths=PackedStringArray("world", "camera")]
+[node name="CaveAtmosphere" type="Node" parent="." node_paths=PackedStringArray("world", "camera", "eyes", "body", "environment", "sun", "sky_cycle")]
 script = ExtResource("8_k5g47")
-world = NodePath("../ProceduralWorld")
-camera = NodePath("../Player/CameraRig/Camera3D")
-
-[node name="CaveAtmosphere" type="Node" parent="." node_paths=PackedStringArray("world", "camera", "eyes", "body", "environment", "sun")]
-script = ExtResource("9_hgoho")
 world = NodePath("../ProceduralWorld")
 camera = NodePath("../Player/CameraRig/Camera3D")
 eyes = NodePath("../Player/Head/CameraEffects")
 body = NodePath("../Player/Survivor")
 environment = NodePath("../WorldEnvironment")
 sun = NodePath("../Sun")
+sky_cycle = NodePath("../SkyCycle")
+
+[node name="SkyCycle" type="Node" parent="." node_paths=PackedStringArray("environment", "sun", "world", "camera")]
+script = ExtResource("9_hgoho")
+environment = NodePath("../WorldEnvironment")
+sun = NodePath("../Sun")
+world = NodePath("../ProceduralWorld")
+camera = NodePath("../Player/CameraRig/Camera3D")
