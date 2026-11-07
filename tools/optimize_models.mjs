@@ -22,7 +22,11 @@ for (const [name, ratio] of Object.entries(RATIO)) {
   if (!fs.existsSync(f)) continue;
   const before = fs.statSync(f).size;
   const doc = await io.read(f);
+  // idempotente: marca o arquivo como já otimizado para não simplificar duas vezes
+  const root = doc.getRoot();
+  if (root.getExtras().s2x2opt) { console.log(name.padEnd(26), 'já otimizado'); continue; }
   await doc.transform(weld({ tolerance: 0.0001 }), simplify({ simplifier: MeshoptSimplifier, ratio, error: 0.02, lockBorder: false }));
+  doc.getRoot().setExtras({ ...doc.getRoot().getExtras(), s2x2opt: true });
   await io.write(f, doc);
   console.log(name.padEnd(26), 'ratio', ratio, (before / 1024) | 0, 'KB ->', (fs.statSync(f).size / 1024) | 0, 'KB');
 }

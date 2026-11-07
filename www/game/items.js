@@ -1,19 +1,14 @@
 // Banco de itens e inventário em grade (estilo DayZ): slots de equipamento + contêineres das roupas.
 export const SLOT = { HEAD: 'head', FACE: 'face', BODY: 'body', VEST: 'vest', LEGS: 'legs', FEET: 'feet', BACK: 'back', PRIMARY: 'primary', SECONDARY: 'secondary', MELEE: 'melee', HANDS: 'hands' };
-export const SLOT_NAMES = { head: 'Cabeça', face: 'Rosto', body: 'Torso', vest: 'Colete', legs: 'Pernas', feet: 'Pés', back: 'Costas', primary: 'Arma principal', secondary: 'Pistola', melee: 'Corpo a corpo', hands: 'Mãos' };
+export const SLOT_NAMES = { head: 'Cabeça', face: 'Rosto', body: 'Torso', vest: 'Colete', legs: 'Pernas', feet: 'Pés', back: 'Costas', primary: 'Arma principal', secondary: 'Pistola', melee: 'Ferramenta', hands: 'Mãos' };
 
-// kind: weapon|ammo|food|drink|med|tool|cloth|misc|throw
+// kind: food|drink|med|tool|cloth|misc
 export const ITEMS = {
-  // ---- armas
-  mosin: { name: 'Rifle de ferrolho 7,62', kind: 'weapon', slot: 'primary', w: 5, h: 2, weight: 4.0, model: 'bolt_action_rifle_7_62', icon: 'rifle', weapon: 'mosin', desc: 'Ferrolho, 5 tiros, 7,62x54R. Alta precisão e queda de projétil real.' },
-  m1911: { name: 'Pistola .45', kind: 'weapon', slot: 'secondary', w: 2, h: 2, weight: 1.1, model: 'service_pistol', weapon: 'pistol', desc: 'Semiautomática, carregador de 7 tiros .45 ACP.' },
-  hatchet: { name: 'Machadinha', kind: 'weapon', slot: 'melee', w: 2, h: 3, weight: 1.2, model: 'hatchet', weapon: 'hatchet', desc: 'Corta lenha e inimigos.' },
-  machete: { name: 'Facão', kind: 'weapon', slot: 'melee', w: 1, h: 4, weight: 0.8, model: 'machete', weapon: 'machete', desc: 'Lâmina longa e rápida.' },
-  crowbar: { name: 'Pé de cabra', kind: 'weapon', slot: 'melee', w: 1, h: 4, weight: 1.6, model: 'crowbar_01', weapon: 'crowbar', desc: 'Pesado e confiável.' },
-  grenade: { name: 'Granada de mão', kind: 'throw', w: 1, h: 2, weight: 0.6, model: 'stick_grenade', desc: 'Detona 4 s após ser lançada. Empurra objetos físicos.' },
-  // ---- munição (qty = projéteis)
-  ammo_762: { name: 'Munição 7,62x54R', kind: 'ammo', ammo: '762', w: 1, h: 1, weight: 0.02, stack: 40, model: 'ammo_box', desc: 'Para o rifle de ferrolho.' },
-  ammo_45: { name: 'Munição .45 ACP', kind: 'ammo', ammo: '45', w: 1, h: 1, weight: 0.015, stack: 50, model: 'ammo_box', tint: [0.85, 0.7, 0.4], desc: 'Para a pistola.' },
+  // ---- ferramentas de trabalho (modelos CC0 do Poly Haven)
+  axe: { name: 'Machado', kind: 'tool', tool: 'axe', slot: 'melee', w: 2, h: 4, weight: 1.6, model: 'wooden_axe', desc: 'Corta árvores para obter madeira. Toque numa árvore ou use o botão de ação.' },
+  pickaxe: { name: 'Picareta', kind: 'tool', tool: 'pickaxe', slot: 'melee', w: 2, h: 4, weight: 2.2, model: 'picke_dirty_01', desc: 'Quebra rochas para obter pedra.' },
+  wood: { name: 'Madeira', kind: 'misc', w: 2, h: 2, weight: 1.2, stack: 10, model: 'dry_branches_medium_01', node: 'dry_branches_medium_01_b', desc: 'Toras e galhos. Recurso de construção/fogueira.' },
+  stone: { name: 'Pedra', kind: 'misc', w: 1, h: 1, weight: 1.5, stack: 10, model: 'stone_01', desc: 'Pedra bruta.' },
   // ---- comida e bebida
   fish_can: { name: 'Sardinha em lata', kind: 'food', w: 1, h: 1, weight: 0.3, model: 'russian_food_cans_01', node: 'russian_food_cans_01_can_fish', food: { kcal: 380, water: -10, health: 0 }, desc: 'Calorias seguras.' },
   milk_can: { name: 'Leite condensado', kind: 'food', w: 1, h: 1, weight: 0.4, model: 'russian_food_cans_01', node: 'russian_food_cans_01_can_cond', food: { kcal: 420, water: 40 }, desc: 'Doce e energético.' },
@@ -33,9 +28,9 @@ export const ITEMS = {
   pants: { name: 'Calça cargo preta', kind: 'cloth', slot: 'legs', w: 2, h: 3, weight: 0.6, grid: [3, 3], tint: [0.12, 0.12, 0.13], icon: '👖', warmth: 0.15, desc: 'Pernas. 3x3 de espaço.' },
   jeans: { name: 'Jeans', kind: 'cloth', slot: 'legs', w: 2, h: 3, weight: 0.6, grid: [3, 2], tint: [0.18, 0.26, 0.42], icon: '👖', warmth: 0.15, desc: 'Pernas. 3x2.' },
   boots: { name: 'Botas de borracha', kind: 'cloth', slot: 'feet', w: 2, h: 2, weight: 0.9, tint: [0.12, 0.1, 0.07], model: 'rubber_boots', warmth: 0.1, desc: 'Pés.' },
-  vest: { name: 'Colete tático', kind: 'cloth', slot: 'vest', w: 3, h: 2, weight: 1.4, grid: [4, 2], tint: [0.2, 0.22, 0.16], icon: '🦺', armor: 0.25, desc: 'Colete. 4x2 de espaço e proteção leve.' },
-  backpack: { name: 'Mochila pequena', kind: 'cloth', slot: 'back', w: 3, h: 3, weight: 0.6, grid: [5, 5], tint: [0.7, 0.28, 0.1], icon: '🎒', pack: 'small', desc: 'Costas. 5x5 de espaço.' },
-  backpack_big: { name: 'Mochila grande militar', kind: 'cloth', slot: 'back', w: 4, h: 4, weight: 1.2, grid: [7, 8], tint: [0.28, 0.32, 0.2], icon: '🎒', pack: 'big', desc: 'Costas. 7x8 de espaço.' },
+  vest: { name: 'Colete salva-vidas', kind: 'cloth', slot: 'vest', w: 3, h: 2, weight: 1.4, grid: [4, 2], tint: [0.9, 0.45, 0.1], model: 'life_jacket', desc: 'Colete. 4x2 de espaço.' },
+  backpack: { name: 'Saco de lona', kind: 'cloth', slot: 'back', w: 3, h: 3, weight: 0.6, grid: [5, 5], tint: [0.7, 0.62, 0.45], model: 'cement_bag', pack: 'small', desc: 'Costas. 5x5 de espaço.' },
+  backpack_big: { name: 'Saco de carga', kind: 'cloth', slot: 'back', w: 4, h: 4, weight: 1.2, grid: [7, 8], tint: [0.3, 0.4, 0.22], model: 'compost_bag_02', pack: 'big', desc: 'Costas. 7x8 de espaço.' },
   hat: { name: 'Chapéu de pescador', kind: 'cloth', slot: 'head', w: 2, h: 2, weight: 0.2, model: 'fishermans_hat', warmth: 0.05, desc: 'Cabeça.' },
   helmet: { name: 'Capacete', kind: 'cloth', slot: 'head', w: 2, h: 2, weight: 1.0, icon: '⛑️', tint: [0.2, 0.25, 0.3], armor: 0.35, desc: 'Cabeça. Reduz dano.' },
   gasmask: { name: 'Máscara de gás', kind: 'cloth', slot: 'face', w: 2, h: 2, weight: 0.5, model: 'old_gas_mask', desc: 'Rosto.' },
@@ -47,8 +42,6 @@ export function makeItem(id, qty) {
   if (!d) throw new Error('item desconhecido ' + id);
   const it = { id, def: d, qty: qty ?? (d.stack > 1 ? d.stack : 1), uid: ++makeItem.n, cond: 1 };
   if (d.kind === 'drink') it.qty = d.qtyMax || 1;
-  if (d.weapon === 'mosin') { it.mag = 5; it.chamber = true; }
-  if (d.weapon === 'pistol') { it.mag = 7; it.chamber = true; }
   if (d.grid) it.grid = new Grid(d.grid[0], d.grid[1]);
   return it;
 }
@@ -146,15 +139,15 @@ export class Inventory {
 
 // tabelas de loot por tipo de lugar [id, peso, qtdMin, qtdMax]
 export const LOOT = {
-  house: [['water', 8], ['fish_can', 9], ['milk_can', 6], ['ration', 4], ['bandage', 8, 1, 3], ['hoodie', 4], ['pants', 4], ['jeans', 4], ['boots', 3], ['flashlight', 4], ['backpack', 2], ['hat', 3], ['can_empty', 5], ['ammo_45', 3, 7, 21], ['m1911', 0.8], ['hatchet', 1.5], ['machete', 1], ['jerrycan', 1]],
-  apartment: [['water', 8], ['fish_can', 8], ['bandage', 8, 1, 3], ['jeans', 5], ['hoodie', 5], ['ration', 4], ['flashlight', 5], ['ammo_45', 3, 7, 21], ['medkit', 1.2], ['can_empty', 4]],
-  barn: [['hatchet', 4], ['crowbar', 3], ['machete', 2], ['jerrycan', 4], ['pants', 3], ['boots', 3], ['water', 4], ['ration', 3], ['backpack', 2], ['hat', 2]],
-  shed: [['crowbar', 3], ['hatchet', 3], ['jerrycan', 4], ['can_empty', 4], ['flashlight', 4], ['boots', 3], ['bandage', 2]],
+  house: [['water', 8], ['fish_can', 9], ['milk_can', 6], ['ration', 4], ['bandage', 8, 1, 3], ['hoodie', 4], ['pants', 4], ['jeans', 4], ['boots', 3], ['flashlight', 4], ['backpack', 2], ['hat', 3], ['can_empty', 5], ['axe', 1.2], ['jerrycan', 1], ['wood', 2, 1, 3]],
+  apartment: [['water', 8], ['fish_can', 8], ['bandage', 8, 1, 3], ['jeans', 5], ['hoodie', 5], ['ration', 4], ['flashlight', 5], ['medkit', 1.2], ['can_empty', 4]],
+  barn: [['axe', 4], ['pickaxe', 4], ['jerrycan', 4], ['pants', 3], ['boots', 3], ['water', 4], ['ration', 3], ['backpack', 2], ['hat', 2], ['wood', 3, 1, 4]],
+  shed: [['axe', 3], ['pickaxe', 3], ['jerrycan', 4], ['can_empty', 4], ['flashlight', 4], ['boots', 3], ['bandage', 2], ['wood', 3, 1, 3]],
   shop: [['water', 10], ['fish_can', 10], ['milk_can', 8], ['ration', 8], ['bandage', 6, 1, 3], ['flashlight', 4], ['binoculars', 1.2], ['backpack', 3], ['medkit', 2], ['hoodie', 3], ['hat', 2]],
   church: [['bandage', 4], ['water', 4], ['can_empty', 2], ['medkit', 1]],
-  warehouse: [['crowbar', 3], ['jerrycan', 4], ['ammo_762', 4, 10, 30], ['ammo_45', 3, 7, 21], ['backpack_big', 1.5], ['vest', 2], ['helmet', 1.5], ['jacket', 2], ['medkit', 2], ['binoculars', 1], ['grenade', 2], ['mosin', 1.2]],
-  military: [['mosin', 5], ['m1911', 4], ['ammo_762', 8, 10, 30], ['ammo_45', 6, 7, 21], ['vest', 4], ['helmet', 4], ['jacket', 4], ['backpack_big', 3], ['grenade', 3], ['medkit', 3], ['gasmask', 2], ['binoculars', 2], ['ration', 4]],
-  outside: [['can_empty', 6], ['water', 2], ['fish_can', 2], ['bandage', 1]],
+  warehouse: [['pickaxe', 3], ['axe', 3], ['jerrycan', 4], ['backpack_big', 1.5], ['vest', 2], ['helmet', 1.5], ['jacket', 2], ['medkit', 2], ['binoculars', 1], ['stone', 2, 1, 4]],
+  military: [['axe', 4], ['pickaxe', 4], ['vest', 4], ['helmet', 4], ['jacket', 4], ['backpack_big', 3], ['medkit', 3], ['gasmask', 2], ['binoculars', 2], ['ration', 4]],
+  outside: [['can_empty', 6], ['water', 2], ['fish_can', 2], ['bandage', 1], ['wood', 2, 1, 2]],
 };
 export function rollLoot(table, rnd) {
   const total = table.reduce((a, r) => a + r[1], 0);

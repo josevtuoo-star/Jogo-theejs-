@@ -1,7 +1,9 @@
 // Vegetação: árvores procedurais (4 LODs), cobertura de solo (modelos CC0), grama instanciada na GPU.
 import { Mesh, MeshBuilder, InstanceBuffer, texFromImage } from '../engine/gl.js';
 import { Material } from '../engine/renderer.js';
-import { m4, mulberry32, hash2, clamp, lerp, smoothstep } from '../engine/math.js';
+import { m4, q4, mulberry32, hash2, clamp, lerp, smoothstep } from '../engine/math.js';
+import { makeItem } from './items.js';
+import { SURF } from '../engine/physics.js';
 import { grassVS, GRASS_FS } from '../engine/shaders.js';
 import { WORLD } from './worldgen.js';
 import { MAT } from './assets.js';
@@ -270,6 +272,7 @@ export class Vegetation {
     this.grassProg = renderer.prog('grass', grassVS(), GRASS_FS);
     this._prepCover();
     this.stats = { trees: 0, cover: 0 };
+    this.falling = [];
   }
 
   // ---------------------------------------------------------- colocação
@@ -304,9 +307,12 @@ export class Vegetation {
       const rot = hash2(i, j, 9) * Math.PI * 2, rr = hash2(i, j, 10);
       const cx = Math.min(G - 1, Math.floor(x / CELL)), cz = Math.min(G - 1, Math.floor(z / CELL));
       const rec = [x, h - 0.15, z, sc, rot, rr, 0, 0];
-      cells[cz * G + cx].t[type].push(...rec);
-      sup[Math.min(GS - 1, Math.floor(z / SUPER)) * GS + Math.min(GS - 1, Math.floor(x / SUPER))].push(x, h - 0.15, z, sc * (type === TREE.BROAD ? 0.9 : 1), rot, rr, type === TREE.BROAD ? 1 : 0, type);
-      this.trunks.push({ x, z, r: TREE_DEFS[type].r0 * sc * 0.85 + 0.08, y0: h, y1: h + TREE_DEFS[type].H * sc });
+      const ci = cz * G + cx, ca = cells[ci].t[type], cidx = ca.length;
+      ca.push(...rec);
+      const si = Math.min(GS - 1, Math.floor(z / SUPER)) * GS + Math.min(GS - 1, Math.floor(x / SUPER)), sa = sup[si], sidx = sa.length;
+      sa.push(x, h - 0.15, z, sc * (type === TREE.BROAD ? 0.9 : 1), rot, rr, type === TREE.BROAD ? 1 : 0, type);
+      const rad = TREE_DEFS[type].r0 * sc * 0.85 + 0.08;
+      this.trunks.push({ x, z, r: rad, y0: h, y1: h + TREE_DEFS[type].H * sc, type, sc, rot, cell: ci, idx: cidx, sup: si, sidx, hp: 4 + Math.round(rad * 6), hit: 0 });
       count++;
     }
     this.treeCount = count;
@@ -359,7 +365,90 @@ export class Vegetation {
       const m = lvl.model(model, root, wind > 0);
       if (!m) continue;
       for (const p of m.parts) { if (wind > 0 && p.material.wind !== wind * 0.5) { p.material.wind = wind * 0.5; p.material.refreshKey(); } }
-      this.cover[k] = { parts: m.parts, maxD };
+      this.cover[k] = { parts: m.parts, maxD, size: m.size };
+    }
+  }
+
+  // ---------------------------------------------------------- recursos (machado/picareta)
+  _setScale(arr, idx, v) {
+    arr[idx + 3] = v;
+    if (arr._buf) { const gl = this.gl; gl.bindBuffer(gl.ARRAY_BUFFER, arr._buf.buf); gl.bufferSubData(gl.ARRAY_BUFFER, (idx + 3) * 4, new Float32Array([v])); }
+  }
+  // colisores de árvores (cilindros) e rochas grandes, ligados aos registros para poder removê-los
+  addColliders(phys) {
+    this.phys = phys;
+    for (const t of this.trunks) { const c = phys.addCyl(t.x, t.z, t.r, t.y0, t.y1, SURF.WOOD); c.tree = t; t.col = c; }
+    for (const k of ['rock07', 'rock09', 'stone01']) {
+      const cv = this.cover[k]; if (!cv) continue;
+      this.cells.forEach((cell, ci) => {
+        const arr = cell.cover[k]; if (!arr) return;
+        for (let i = 0; i < arr.length; i += 8) {
+          const sc = arr[i + 3]; if (sc < 0.6) continue;
+          const r = clamp(Math.max(cv.size[0], cv.size[2]) * 0.42 * sc, 0.35, 2.6), h = cv.size[1] * sc * 0.85;
+          const c = phys.addCyl(arr[i], arr[i + 2], r, arr[i + 1], arr[i + 1] + h, SURF.STONE);
+          c.rock = { cell: ci, key: k, idx: i, sc, hp: 3 + Math.round(sc * 4), x: arr[i], y: arr[i + 1], z: arr[i + 2], col: c };
+        }
+      });
+    }
+  }
+  hitTree(col, dmg, pt) {
+    const g = this.opts.game, t = col.tree; if (!t || t.felled) return;
+    if (dmg <= 0) { g.audio.hit(SURF.WOOD, 0.5, pt); g.ui.hint('Use o machado para cortar árvores'); return; }
+    t.hp -= dmg; t.hit = 0.35;
+    g.audio.chopTree(pt);
+    g.particles.debris(pt[0], pt[1], pt[2], 7, [0.6, 0.45, 0.28, 1], [0, 1, 0], 3.5);
+    if (t.hp <= 0) this._fell(t);
+  }
+  _fell(t) {
+    const g = this.opts.game, P = g.player;
+    t.felled = true;
+    this.phys.removeCol(t.col);
+    this._setScale(this.cells[t.cell].t[t.type], t.idx, 0);
+    this._setScale(this.superCells[t.sup], t.sidx, 0);
+    let dx = t.x - P.pos[0], dz = t.z - P.pos[2]; const l = Math.hypot(dx, dz) || 1; dx /= l; dz /= l;
+    this.falling.push({ t, age: 0, dx, dz, spawned: false });
+    g.audio.treeFall([t.x, t.y0 + 2, t.z]);
+  }
+  hitRock(col, dmg, pt) {
+    const g = this.opts.game, k = col.rock; if (!k || k.gone) return;
+    if (dmg <= 0) { g.audio.hit(SURF.STONE, 0.5, pt); g.ui.hint('Use a picareta para quebrar rochas'); return; }
+    k.hp -= dmg;
+    g.audio.mineRock(pt);
+    g.particles.debris(pt[0], pt[1], pt[2], 9, [0.62, 0.6, 0.57, 1], [0, 1, 0], 4);
+    g.particles.dust(pt[0], pt[1], pt[2], 4, [0.65, 0.62, 0.58, 0.5], 1.2);
+    if (k.hp > 0) return;
+    k.gone = true;
+    this.phys.removeCol(k.col);
+    const arr = this.cells[k.cell].cover[k.key];
+    this._setScale(arr, k.idx, 0);
+    g.audio.breakRock([k.x, k.y + 0.5, k.z]);
+    g.particles.dust(k.x, k.y + 0.6, k.z, 14, [0.62, 0.6, 0.56, 0.7], 3);
+    const n = 2 + Math.min(3, Math.round(k.sc));
+    for (let i = 0; i < n; i++) g.level.spawnItemBody(makeItem('stone', 1 + (Math.random() < 0.4 ? 1 : 0)), [k.x + (Math.random() - 0.5) * 1.2, k.y + 0.8 + i * 0.15, k.z + (Math.random() - 0.5) * 1.2], [(Math.random() - 0.5) * 3, 2.5, (Math.random() - 0.5) * 3]);
+  }
+  update(dt) {
+    const g = this.opts.game;
+    for (const f of this.falling) {
+      f.age += dt;
+      if (!f.spawned && f.age > 1.55) {
+        f.spawned = true;
+        g.audio.hit(SURF.WOOD, 1.0, [f.t.x + f.dx * 8, f.t.y0, f.t.z + f.dz * 8]);
+        g.shake = Math.max(g.shake || 0, 0.35);
+        for (let i = 0; i < 3; i++) { const d = 2.5 + i * 2.2; g.level.spawnItemBody(makeItem('wood', 2 + (Math.random() < 0.5 ? 1 : 0)), [f.t.x + f.dx * d, f.t.y0 + 1.2, f.t.z + f.dz * d], [f.dx * 0.8, 1.5, f.dz * 0.8]); }
+        g.particles.dust(f.t.x + f.dx * 6, f.t.y0 + 0.3, f.t.z + f.dz * 6, 18, [0.45, 0.4, 0.28, 0.6], 3);
+      }
+    }
+    this.falling = this.falling.filter((f) => f.age < 14);
+  }
+  _drawFalling(r) {
+    for (const f of this.falling) {
+      const t = f.t, k = clamp(f.age / 1.7, 0, 1), ang = Math.PI / 2 * Math.pow(k, 2.2) * (f.age > 1.7 ? 1 : 1);
+      const q = q4.axisAngle(new Float32Array(4), f.dz, 0, -f.dx, Math.min(ang, Math.PI / 2 * 0.98));
+      const yaw = q4.axisAngle(new Float32Array(4), 0, 1, 0, t.rot);
+      const m = m4.fromTRS(m4.create(), [t.x, t.y0 - 0.15, t.z], q4.mul(new Float32Array(4), q, yaw), [t.sc, t.sc, t.sc]);
+      const tl = this.types[t.type].lods[1];
+      r.draw(tl.fol, t.type === TREE.BROAD ? this.broadMat : this.coniferMat, { model: m });
+      if (tl.trunk) r.draw(tl.trunk, this.barkMat, { model: m });
     }
   }
 
@@ -445,6 +534,7 @@ export class Vegetation {
         r.draw(this.types[0].lods[3].solid, this.solidFar, { inst: this._treeBuf(arr), instNear: L2, instFar: L3 });
       }
     }
+    this._drawFalling(r);
     this.stats.trees = ntree; this.stats.cover = ncover;
   }
 

@@ -15,6 +15,7 @@ page.on('console', (m) => { const t = m.text(); if (m.type() !== 'log' || /error
 page.on('pageerror', (e) => logs.push('PAGEERROR: ' + e.message + '\n' + (e.stack || '').split('\n').slice(0, 4).join('\n')));
 await page.goto(`http://localhost:${port}/index.html?${q}`);
 await page.waitForFunction('window.game && window.game.started', null, { timeout: 400000, polling: 500 });
+if (opt('click', '0') === '1') { await page.mouse.click(8, 8); await page.waitForTimeout(2500); }
 for (const s of scenes) {
   try {
     const r = await page.evaluate(s.js);

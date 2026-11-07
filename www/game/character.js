@@ -1,49 +1,41 @@
-// Personagem: Soldier (CC/Mixamo) com esqueleto, blend de animações, IK e roupas por região.
+// Personagem: Quaternius "Universal Base Characters" + "Universal Animation Library" (CC0), esqueleto UE-Mannequin.
+// Locomoção por blend de clipes, IK de pernas (terreno) e braços (ferramenta), torção/inclinação do tronco pela mira.
 import { Skeleton } from '../engine/anim.js';
-import { Material } from '../engine/renderer.js';
-import { MeshBuilder } from '../engine/gl.js';
-import { m4, q4, v3, clamp, lerp, smoothstep, angleDiff, damp } from '../engine/math.js';
-import { MAT } from './assets.js';
+import { m4, q4, clamp, lerp, smoothstep, angleDiff, damp } from '../engine/math.js';
 
 const REGION = { skin: 0, torso: 1, arms: 2, legs: 3, feet: 4, hands: 5, head: 6 };
 function regionOf(name) {
-  name = name.replace('mixamorig:', '');
-  if (/Head|Neck/.test(name)) return REGION.head;
-  if (/Hand/.test(name)) return REGION.hands;
-  if (/Arm|Shoulder/.test(name)) return REGION.arms;
-  if (/Foot|Toe/.test(name)) return REGION.feet;
-  if (/Leg/.test(name)) return REGION.legs;
+  if (/^(Head|neck)/i.test(name)) return REGION.head;
+  if (/hand|thumb|index|middle|ring|pinky/i.test(name)) return REGION.hands;
+  if (/clavicle|upperarm|lowerarm/i.test(name)) return REGION.arms;
+  if (/foot|ball/i.test(name)) return REGION.feet;
+  if (/thigh|calf/i.test(name)) return REGION.legs;
   return REGION.torso;
 }
+const NODES = {
+  Hips: 'pelvis', Spine: 'spine_01', Spine1: 'spine_02', Spine2: 'spine_03', Neck: 'neck_01', Head: 'Head',
+  LeftArm: 'upperarm_l', LeftForeArm: 'lowerarm_l', LeftHand: 'hand_l', RightArm: 'upperarm_r', RightForeArm: 'lowerarm_r', RightHand: 'hand_r',
+  LeftUpLeg: 'thigh_l', LeftLeg: 'calf_l', LeftFoot: 'foot_l', RightUpLeg: 'thigh_r', RightLeg: 'calf_r', RightFoot: 'foot_r', LeftToe: 'ball_l', RightToe: 'ball_r',
+};
 
 export class Character {
   constructor(game, row = 0) {
     this.g = game; this.row = row;
     this.pos = [0, 0, 0]; this.bodyYaw = 0; this.phase = 0; this.speedSm = 0;
-    this.crouchT = 0; this.proneT = 0; this.fp = false;
-    this.hips = null; this.regionTints = new Float32Array(24).fill(1);
-    this.accessories = {};
-    this._q = new Float32Array(4);
-    this.charM = m4.create();
-    this.moveBlend = [0, 0, 0];
-    this.reload = 0;
+    this.fp = false; this.hidden = false;
+    this.regionTints = new Float32Array(24).fill(1);
+    this.charM = m4.create(); this.airT = 0; this.landT = 0;
+    this.deadT = 0; this.equip = {}; this.spineQ = q4.create();
   }
-
   async init() {
-    const g = this.g;
-    const gltf = await g.assets.loadSoldier(Character.onPrimitive);
-    this.gltf = gltf;
+    this.gltf = await this.g.assets.loadCharacter(Character.onPrimitive);
     return this;
   }
-
-  // chamado pelo loader (assets.loadSoldier) para gerar cores por região
+  // cores por região (para tingir roupas) a partir do osso dominante de cada vértice
   static onPrimitive(d, gltf) {
     if (!d.joints) return;
-    let maxJ = 0; for (let i = 0; i < d.joints.length; i++) if (d.joints[i] > maxJ) maxJ = d.joints[i];
-    const n = d.positions.length / 3;
-    const colors = new Uint8Array(n * 4);
-    if (maxJ < 4) { for (let i = 0; i < n; i++) { colors[i * 4] = 255; colors[i * 4 + 1] = 0; colors[i * 4 + 2] = 128; colors[i * 4 + 3] = 255; } d.colors = colors; return; }
     const names = gltf.json.skins[0].joints.map((j) => gltf.json.nodes[j].name || '');
+    const n = d.positions.length / 3, colors = new Uint8Array(n * 4);
     for (let i = 0; i < n; i++) {
       let best = 0, bw = -1;
       for (let k = 0; k < 4; k++) { const w = d.weights[i * 4 + k]; if (w > bw) { bw = w; best = d.joints[i * 4 + k]; } }
@@ -53,245 +45,147 @@ export class Character {
   }
 
   setup() {
-    const gltf = this.gltf, g = this.g;
-    this.skel = new Skeleton(gltf, 0);
-    this.skin2 = gltf.skins[1] || null;
-    this.joints2 = new Float32Array((this.skin2 ? this.skin2.joints.length : 1) * 16);
-    // materiais com tinta por região
-    for (const m of gltf.materials) { m.tint = true; m.regionTints = this.regionTints; m.refreshKey(); m.rough = 0.85; }
-    // nós usados
-    const s = this.skel;
+    const gltf = this.gltf, s = this.skel = new Skeleton(gltf, 0);
+    for (const m of gltf.materials) { m.tint = true; m.regionTints = this.regionTints; m.refreshKey(); m.rough = Math.max(m.rough, 0.7); }
     this.n = {};
-    for (const k of ['Hips', 'Spine', 'Spine1', 'Spine2', 'Neck', 'Head', 'LeftArm', 'LeftForeArm', 'LeftHand', 'RightArm', 'RightForeArm', 'RightHand', 'LeftUpLeg', 'LeftLeg', 'LeftFoot', 'RightUpLeg', 'RightLeg', 'RightFoot', 'LeftToeBase', 'RightToeBase']) this.n[k] = s.node(k);
-    // pés: referência de repouso em espaço do esqueleto
-    // meshes
+    for (const [k, v] of Object.entries(NODES)) { this.n[k] = s.node(v); if (this.n[k] === undefined) console.warn('osso ausente', v); }
+    // orientação do esqueleto: descobre para onde os pés apontam e corrige para +Z
+    s.resetPose(); s.fk();
+    const f = s.pos(this.n.LeftFoot, [0, 0, 0]), t = s.pos(this.n.LeftToe, [0, 0, 0]);
+    s.base = m4.rotationY(m4.create(), -Math.atan2(t[0] - f[0], t[2] - f[2]));
+    s.fk();
     this.parts = [];
-    gltf.nodes.forEach((n) => { if (n.mesh !== undefined) for (const p of gltf.meshes[n.mesh]) this.parts.push({ mesh: p.mesh, material: p.material, skin: n.skin ?? 0 }); });
-    this.buildAccessories();
+    gltf.nodes.forEach((n) => { if (n.mesh !== undefined) for (const p of gltf.meshes[n.mesh]) this.parts.push({ mesh: p.mesh, material: p.material }); });
     this.setEquipment({});
-    // distribuição de peso dos clipes
-    this.clipNames = Object.keys(s.clips);
   }
 
-  buildAccessories() {
-    const gl = this.g.r.gl;
-    const bp = (w, h, d, big) => {
-      const b = new MeshBuilder();
-      b.box(-w / 2, -h / 2, -d / 2, w / 2, h / 2, d / 2, 0, { uvScale: 1 });
-      b.box(-w * 0.4, -h * 0.5, -d * 0.5 - 0.06, w * 0.4, -h * 0.05, -d * 0.5, 0, { uvScale: 1 });
-      b.box(-w * 0.52, -h * 0.35, -d * 0.2, -w * 0.5, h * 0.1, d * 0.2, 0, {});
-      b.box(w * 0.5, -h * 0.35, -d * 0.2, w * 0.52, h * 0.1, d * 0.2, 0, {});
-      if (big) b.box(-w * 0.45, h * 0.45, -d * 0.45, w * 0.45, h * 0.55, d * 0.45, 0, {});
-      return b.build(gl);
-    };
-    this.meshes = { small: bp(0.32, 0.4, 0.2, false), big: bp(0.4, 0.62, 0.26, true) };
-    // capacete
-    const hb = new MeshBuilder(), seg = 10, rows = 5;
-    for (let j = 0; j < rows; j++) for (let i = 0; i <= seg; i++) {
-      const a = i / seg * Math.PI * 2, e0 = j / rows * Math.PI / 2, e1 = (j + 1) / rows * Math.PI / 2, R = 0.125;
-      if (i === 0) continue;
-      const p = (aa, e) => [Math.cos(aa) * Math.cos(e) * R, Math.sin(e) * R * 0.95, Math.sin(aa) * Math.cos(e) * R * 1.1];
-      const a0 = (i - 1) / seg * Math.PI * 2;
-      const P00 = p(a0, e0), P10 = p(a, e0), P01 = p(a0, e1), P11 = p(a, e1);
-      const n = (P) => { const l = Math.hypot(...P) || 1; return [P[0] / l, P[1] / l, P[2] / l]; };
-      const f = hb.vcount;
-      [P00, P10, P11, P01].forEach((P) => { const nn = n(P); hb.vert(P[0], P[1], P[2], nn[0], nn[1], nn[2], 0, 0, 255, 0, 128, 0); });
-      hb.quad(f, f + 1, f + 2, f + 3); hb.quad(f, f + 3, f + 2, f + 1);
-    }
-    this.meshes.helmet = hb.build(gl);
-    this.matAcc = new Material({ color: [0.3, 0.3, 0.3, 1], rough: 0.8, vcolorAO: false, doubleSided: true });
-    this.matAcc2 = new Material({ layered: true, rough: 0.9, vcolorAO: false, doubleSided: true, color: [1, 1, 1, 1] });
-  }
-
-  // equipment: mapa slot->item
   setEquipment(slots) {
-    const t = this.regionTints;
-    const col = (it, def = [1, 1, 1]) => (it && it.def.tint ? it.def.tint.map((c) => c * 1.25) : def);
+    const t = this.regionTints, tint = (it, def) => (it && it.def.tint ? it.def.tint.map((c) => c * 1.25) : def);
     const set = (reg, c) => { t[reg * 3] = c[0]; t[reg * 3 + 1] = c[1]; t[reg * 3 + 2] = c[2]; };
-    set(REGION.skin, [1, 1, 1]);
-    set(REGION.torso, col(slots.body, [0.55, 0.6, 0.55])); set(REGION.arms, col(slots.body, [0.55, 0.6, 0.55]));
-    set(REGION.legs, col(slots.legs, [0.5, 0.5, 0.5])); set(REGION.feet, slots.feet ? [0.35, 0.3, 0.2] : [0.5, 0.5, 0.5]);
-    set(REGION.hands, [1, 1, 1]); set(REGION.head, [1, 1, 1]);
+    set(REGION.skin, [1, 1, 1]); set(REGION.hands, [1, 1, 1]); set(REGION.head, [1, 1, 1]);
+    set(REGION.torso, tint(slots.body, [0.42, 0.45, 0.4])); set(REGION.arms, tint(slots.body, [0.42, 0.45, 0.4]));
+    set(REGION.legs, tint(slots.legs, [0.2, 0.22, 0.26])); set(REGION.feet, slots.feet ? [0.2, 0.17, 0.12] : [0.12, 0.12, 0.13]);
     this.equip = slots;
   }
 
-  // ---------------------------------------------------------------- por frame
-  // st: { pos, aimYaw, aimPitch, vel:[x,z], stance:0|1|2, fp, swimming, grounded, weapon:{rh,lh,q}|null, lean, dead }
+  // mistura sequencial de clipes: [clip, fase(0..1) ou segundos(abs), peso, abs]
+  _blend(list) {
+    const s = this.skel; let acc = 0, first = true;
+    for (const [clip, t, w, abs] of list) {
+      const c = s.clips[clip];
+      if (w <= 0.001 || !c) continue;
+      const time = abs ? t % c.duration : (((t % 1) + 1) % 1) * c.duration;
+      acc += w;
+      s.sample(c, time, first ? 1 : w / acc);
+      first = false;
+    }
+    if (first) s.sample('Idle_Loop', 0, 1);
+  }
+
+  // st: { pos, aimYaw, aimPitch, vel:[x,z], stance:0|1, fp, swimming, grounded, vehicle, vehicleYaw, weapon:{rh,lh}|null, dead, action:{clip,t}|null }
   update(dt, st) {
     const s = this.skel, N = this.n, g = this.g;
-    this.fp = st.fp;
-    this.pos = st.pos;
+    this.fp = st.fp; this.pos = st.pos;
     const speed = Math.hypot(st.vel[0], st.vel[1]);
     this.speedSm = damp(this.speedSm, speed, 10, dt);
-    // direção do movimento relativa à mira
-    const moveYaw = speed > 0.3 ? Math.atan2(-st.vel[0], -st.vel[1]) : st.aimYaw; // yaw da velocidade (forward=-z)
-    let rel = angleDiff(st.aimYaw, moveYaw);
-    let reverse = false;
-    let targetBody;
-    if (speed > 0.3 && !st.prone) {
+    // yaw do corpo segue o movimento; o tronco torce para a mira
+    const moveYaw = speed > 0.3 ? Math.atan2(-st.vel[0], -st.vel[1]) : st.aimYaw;
+    const rel = angleDiff(st.aimYaw, moveYaw);
+    let reverse = false, targetBody = st.aimYaw;
+    if (speed > 0.3 && !st.vehicle) {
       if (Math.abs(rel) > Math.PI * 0.62) { reverse = true; targetBody = st.aimYaw + (rel > 0 ? rel - Math.PI : rel + Math.PI) * 0.6; }
       else targetBody = st.aimYaw + clamp(rel, -1.1, 1.1) * 0.8;
-    } else targetBody = st.aimYaw;
-    const diff = angleDiff(this.bodyYaw, targetBody);
-    if (speed > 0.3 || Math.abs(angleDiff(this.bodyYaw, st.aimYaw)) > 1.0) this.bodyYaw += diff * Math.min(1, dt * (speed > 0.3 ? 9 : 6));
-    if (st.prone) this.bodyYaw = st.aimYaw;
-    const twist = clamp(angleDiff(this.bodyYaw, st.aimYaw), -1.5, 1.5);
+    }
+    if (st.vehicle) targetBody = st.vehicleYaw ?? st.aimYaw;
+    if (speed > 0.3 || st.vehicle || Math.abs(angleDiff(this.bodyYaw, st.aimYaw)) > 1.0) this.bodyYaw += angleDiff(this.bodyYaw, targetBody) * Math.min(1, dt * (st.vehicle ? 20 : speed > 0.3 ? 9 : 6));
+    const twist = st.vehicle ? 0 : clamp(angleDiff(this.bodyYaw, st.aimYaw), -1.5, 1.5);
 
-    // estado de pose: stance
-    this.crouchT = damp(this.crouchT, st.stance === 1 ? 1 : 0, 9, dt);
-    this.proneT = damp(this.proneT, st.stance === 2 ? 1 : 0, 6, dt);
+    // estados no ar / pouso / morte
+    if (!st.grounded && !st.swimming) this.airT += dt; else { if (this.airT > 0.3 && st.grounded) this.landT = 0.45; this.airT = 0; }
+    this.landT = Math.max(0, this.landT - dt);
+    this.deadT = st.dead ? this.deadT + dt : 0;
 
-    // fase do ciclo
-    const stride = lerp(1.35, 3.1, smoothstep(1.6, 4.5, speed));
+    // ---------------- pose base (clipes da Universal Animation Library)
+    const stride = lerp(1.7, 3.4, smoothstep(1.6, 4.8, speed));
     this.phase += dt * (this.speedSm / stride) * (reverse ? -1 : 1);
-    const wRun = smoothstep(2.4, 3.9, this.speedSm) * (1 - this.proneT * 0.5);
-    const wWalk = smoothstep(0.12, 0.9, this.speedSm) * (1 - wRun);
-    const wIdle = Math.max(0, 1 - wRun - wWalk);
-
+    const ph = this.phase, v = this.speedSm, C = s.clips;
     s.resetPose(); s.clearHooks();
-    const ph = ((this.phase % 1) + 1) % 1;
-    const clips = s.clips;
-    // idle sempre como base, depois mistura walk e run
-    s.sample('Idle', g.time * 0.5 % clips.Idle.duration, 1);
-    if (wWalk > 0.01) s.sample('Walk', ph * clips.Walk.duration, wWalk + wRun * 0.0);
-    if (wRun > 0.01) s.sample('Run', ph * clips.Run.duration, Math.min(1, wRun / Math.max(wRun + wWalk * 0.2, 0.01)));
-    // translação do quadril: remover movimento horizontal (root motion)
-    const hipsN = N.Hips;
-    this.hipsRest = this.hipsRest || [s.restT[hipsN * 3], s.restT[hipsN * 3 + 1], s.restT[hipsN * 3 + 2]];
-    // FK pass A (sem ganchos): posições do pé na animação
+    let plain = false;
+    if (st.dead && C.Death01) { this._blend([['Death01', Math.min(this.deadT, C.Death01.duration - 0.03), 1, true]]); plain = true; }
+    else if (st.vehicle) { this._blend([['Driving_Loop', g.time, 1, true]]); plain = true; }
+    else if (st.swimming) { const wf = smoothstep(0.3, 1.0, v); this._blend([['Swim_Idle_Loop', g.time * 0.8, 1 - wf, true], ['Swim_Fwd_Loop', g.time * 0.9, wf, true]]); plain = true; }
+    else if (!st.grounded && this.airT > 0.12) { this._blend([[this.airT < 0.3 ? 'Jump_Start' : 'Jump_Loop', this.airT < 0.3 ? this.airT : g.time, 1, true]]); plain = true; }
+    else if (this.landT > 0 && v < 2.2) { this._blend([['Jump_Land', 0.45 - this.landT, 1, true]]); plain = true; }
+    else if (st.action && st.action.clip && v < 1.0 && C[st.action.clip]) this._blend([[st.action.clip, st.action.t, 1, true]]);
+    else if (st.stance === 1) {
+      const wm = smoothstep(0.2, 1.0, v);
+      this._blend([['Crouch_Idle_Loop', g.time * 0.5, 1 - wm, true], ['Crouch_Fwd_Loop', ph * 0.8, wm, false]]);
+    } else {
+      const wSp = smoothstep(4.7, 5.6, v), wJog = smoothstep(2.4, 3.2, v) * (1 - wSp), wWalk = smoothstep(0.12, 0.9, v) * (1 - wJog - wSp), wIdle = Math.max(0, 1 - wWalk - wJog - wSp);
+      this._blend([['Idle_Loop', g.time * 0.35, wIdle, true], ['Walk_Loop', ph, wWalk, false], ['Jog_Fwd_Loop', ph, wJog, false], ['Sprint_Loop', ph, wSp, false]]);
+    }
+    if (st.fp) s.hide.add(N.Head); else s.hide.delete(N.Head);
+    // ---------------- tronco: torção e inclinação para a mira
+    const pitch = clamp(st.aimPitch, -1.2, 1.2);
+    const spineQ = q4.create();
+    if (!plain) {
+      const wts = [0.25, 0.35, 0.4];
+      [N.Spine, N.Spine1, N.Spine2].forEach((n, i) => {
+        const q = q4.mul(new Float32Array(4), q4.axisAngle(new Float32Array(4), 0, 1, 0, twist * wts[i]), q4.axisAngle(new Float32Array(4), -1, 0, 0, pitch * wts[i] * 0.85));
+        s.setHook(n, { delta: q }); q4.mul(spineQ, q, spineQ);
+      });
+      s.setHook(N.Head, { delta: q4.axisAngle(new Float32Array(4), -1, 0, 0, pitch * 0.15) });
+    }
+    this.spineQ = spineQ;
     s.fk();
-    const footA = { L: s.pos(N.LeftFoot, [0, 0, 0]), R: s.pos(N.RightFoot, [0, 0, 0]) };
-    const hipsA = s.pos(N.Hips, [0, 0, 0]);
-    // remove deriva horizontal do quadril da animação (fica centrado)
-    const driftX = hipsA[0], driftZ = hipsA[2];
-    // ganchos: quadril abaixa ao agachar
-    const crouchDrop = 0.42 * this.crouchT + (st.swimming ? 0.35 : 0);
-    s.setOffset(hipsN, [-driftX * 0.9, -crouchDrop, -driftZ * 0.9 + 0.08 * this.crouchT]);
-    // torso: pitch e torção distribuídos
-    const pitch = clamp(st.aimPitch, -1.3, 1.3) * (1 - this.proneT * 0.4);
-    const lean = (st.lean || 0) * 0.25;
-    const sp = [N.Spine, N.Spine1, N.Spine2];
-    const wts = [0.25, 0.35, 0.4];
-    let accQ = q4.create();
-    const spineQs = [];
-    sp.forEach((n, i) => {
-      const qy = q4.axisAngle(new Float32Array(4), 0, 1, 0, twist * wts[i]);
-      const qp = q4.axisAngle(new Float32Array(4), -1, 0, 0, pitch * wts[i] * 0.85);
-      const ql = q4.axisAngle(new Float32Array(4), 0, 0, 1, lean * wts[i]);
-      const q = q4.mul(new Float32Array(4), q4.mul(new Float32Array(4), qy, ql), qp);
-      s.setHook(n, { delta: q });
-      q4.mul(accQ, q, accQ);
-    });
-    this.spineQ = accQ;
-    // cabeça: olha na direção da mira (parte do pitch restante)
-    s.setHook(N.Head, { delta: q4.axisAngle(new Float32Array(4), -1, 0, 0, pitch * 0.15) });
-    if (st.fp) { s.hide.add(N.Head); } else s.hide.delete(N.Head);
-    // FK pass B
-    s.fk();
-    // IK de pernas (terreno)
-    const ground = (x, z) => g.phys.groundAt(x, z, st.pos[1] + 0.6, 0.6);
-    const cM = this.computeCharM(st);
-    const inv = m4.invert(m4.create(), cM);
-    const toW = (p) => m4.transformPoint([0, 0, 0], cM, p);
-    const toS = (p) => m4.transformPoint([0, 0, 0], inv, p);
-    const ankle = 0.095;
-    const doLeg = (up, mid, end, foot) => {
-      const fw = toW(foot);
-      const gy = ground(fw[0], fw[2]);
-      const lift = Math.max(0, foot[1] - 0.04);              // altura do pé na animação (acima do chão do esqueleto)
-      let ty = st.grounded || st.swimming === false ? gy + ankle + lift * 0.0 : fw[1];
-      // mantém a altura da animação em relação ao chão base, somando o relevo
-      const base = st.pos[1];
-      ty = base + foot[1] + (gy - base) * (st.grounded ? 1 : 0.0);
-      if (st.swimming) ty = fw[1];
-      const target = toS([fw[0], ty, fw[2]]);
-      s.solveTwoBone(up, mid, end, target, [0, 0.12, 1], { weight: st.prone ? 0 : 1 });
-    };
-    doLeg(N.LeftUpLeg, N.LeftLeg, N.LeftFoot, footA.L);
-    doLeg(N.RightUpLeg, N.RightLeg, N.RightFoot, footA.R);
-    // IK de braços (arma)
+    // ---------------- IK de pernas (pés acompanham o relevo)
+    const cM = this.computeCharM(st), inv = m4.invert(m4.create(), cM);
+    const toW = (p) => m4.transformPoint([0, 0, 0], cM, p), toS = (p) => m4.transformPoint([0, 0, 0], inv, p);
+    if (!plain) {
+      const doLeg = (up, mid, end) => {
+        const ft = s.pos(end, [0, 0, 0]), fw = toW(ft), gy = g.phys.groundAt(fw[0], fw[2], st.pos[1] + 0.6, 0.6);
+        s.solveTwoBone(up, mid, end, toS([fw[0], st.pos[1] + ft[1] + (gy - st.pos[1]) * (st.grounded ? 1 : 0), fw[2]]), [0, 0.12, 1]);
+      };
+      const lf = s.pos(N.LeftFoot, [0, 0, 0]), rf = s.pos(N.RightFoot, [0, 0, 0]);
+      // alvos calculados antes de alterar qualquer perna
+      const tl = (() => { const fw = toW(lf), gy = g.phys.groundAt(fw[0], fw[2], st.pos[1] + 0.6, 0.6); return toS([fw[0], st.pos[1] + lf[1] + (gy - st.pos[1]) * (st.grounded ? 1 : 0), fw[2]]); })();
+      const tr = (() => { const fw = toW(rf), gy = g.phys.groundAt(fw[0], fw[2], st.pos[1] + 0.6, 0.6); return toS([fw[0], st.pos[1] + rf[1] + (gy - st.pos[1]) * (st.grounded ? 1 : 0), fw[2]]); })();
+      s.solveTwoBone(N.LeftUpLeg, N.LeftLeg, N.LeftFoot, tl, [0, 0.12, 1]);
+      s.solveTwoBone(N.RightUpLeg, N.RightLeg, N.RightFoot, tr, [0, 0.12, 1]);
+    }
+    // ---------------- IK de braços (ferramenta/objeto nas mãos)
     if (st.weapon) {
       const w = st.weapon;
-      const rh = toS(w.rh), lh = w.lh ? toS(w.lh) : null;
-      s.solveTwoBone(N.RightArm, N.RightForeArm, N.RightHand, rh, [-0.55, -1, -0.15]);
-      if (lh) s.solveTwoBone(N.LeftArm, N.LeftForeArm, N.LeftHand, lh, [0.6, -1, -0.15]);
-      // orientação das mãos acompanha a arma (espaço do esqueleto)
-      if (w.q) {
-        const invQ = q4.conj(new Float32Array(4), q4.fromEuler(new Float32Array(4), this.charYaw, 0, 0));
-        const qs = q4.mul(new Float32Array(4), invQ, w.q);
-        s.setAbs(N.RightHand, q4.mul(new Float32Array(4), qs, w.rhOff || q4.create()));
-        if (lh) s.setAbs(N.LeftHand, q4.mul(new Float32Array(4), qs, w.lhOff || q4.create()));
-      }
+      s.solveTwoBone(N.RightArm, N.RightForeArm, N.RightHand, toS(w.rh), [-0.55, -1, 0.1]);
+      if (w.lh) s.solveTwoBone(N.LeftArm, N.LeftForeArm, N.LeftHand, toS(w.lh), [0.6, -1, 0.1]);
     }
     s.fk();
-    // ossos para o shader
-    const out = s.computeJoints();
-    g.r.setBones(this.row, out);
-    if (this.skin2) { s.jointsFor(this.skin2, this.joints2); g.r.setBones(this.row + 1, this.joints2); }
+    g.r.setBones(this.row, s.computeJoints());
     this.charM = cM;
-    this.headPos = s.pos(N.Head, [0, 0, 0]);
   }
 
   computeCharM(st) {
-    const m = this.charM, yaw = this.bodyYaw + Math.PI;
-    this.charYaw = yaw;
-    const p = this.proneT;
-    const q = q4.fromEuler(new Float32Array(4), yaw, p * Math.PI / 2 * 0.97, 0);
-    // quando deitado, o ponto de referência fica no centro do corpo
-    const fwd = [-Math.sin(this.bodyYaw), 0, -Math.cos(this.bodyYaw)];
-    const off = p * 0.92;
-    m4.fromTRS(m, [this.pos[0] + fwd[0] * off * 0.0 - fwd[0] * 0.0, this.pos[1] + p * 0.12, this.pos[2]], q, null);
-    // desloca para trás (pés ficam atrás) quando deitado
-    m[12] -= fwd[0] * p * 0.0;
+    const m = this.charM, q = q4.fromEuler(new Float32Array(4), this.bodyYaw + Math.PI, 0, 0);
+    m4.fromTRS(m, [this.pos[0], st.swimming ? this.g.phys.waterY - 1.05 : this.pos[1], this.pos[2]], q, null);
     return m;
   }
 
-  // matriz de anexo: posição de um nó + rotação base (character space)
-  attach(node, offset, rotQ, out) {
-    const s = this.skel, cM = this.charM;
-    const p = s.pos(node, [0, 0, 0]);
-    const q = rotQ || q4.create();
-    const o = q4.rotate([0, 0, 0], q, offset);
-    const m = m4.create();
-    m4.fromTRS(m, [p[0] + o[0], p[1] + o[1], p[2] + o[2]], q, null);
-    return m4.multiply(out || m4.create(), cM, m);
+  attach(node, offset, rotQ) {
+    const s = this.skel, p = s.pos(node, [0, 0, 0]), q = rotQ || q4.create(), o = q4.rotate([0, 0, 0], q, offset);
+    return m4.multiply(m4.create(), this.charM, m4.fromTRS(m4.create(), [p[0] + o[0], p[1] + o[1], p[2] + o[2]], q, null));
   }
 
-  draw(r, shadow, opts = {}) {
-    if (this.fp && shadow === false && !opts.showBody) { /* corpo sempre desenhado (cabeça escondida) */ }
-    const M = this.charM;
-    for (const p of this.parts) r.draw(p.mesh, p.material, { model: M, skinRow: this.row + (p.skin === 1 ? 1 : 0) });
-    // acessórios
+  draw(r) {
+    for (const p of this.parts) {
+      if (this.fp && /Hair|Eye/i.test(p.material.name || '')) continue;   // em 1ª pessoa a cabeça fica oculta (cabelo/olhos não podem colapsar na câmera)
+      r.draw(p.mesh, p.material, { model: this.charM, skinRow: this.row });
+    }
     const eq = this.equip || {};
-    const spineQ = this.spineQ || q4.create();
-    if (eq.back && eq.back.def.pack) {
-      const big = eq.back.def.pack === 'big';
-      const m = this.attach(this.n.Spine2, [0, 0.0, big ? -0.24 : -0.2], spineQ);
-      const mat = this.matAcc2; mat.color = [...eq.back.def.tint.map((c) => c * 2.2), 1];
-      r.draw(this.meshes[big ? 'big' : 'small'], mat, { model: m });
-    }
-    if (eq.vest && !this.fp) {
-      const m = this.attach(this.n.Spine2, [0, -0.02, 0.0], spineQ);
-      this.matAcc.color = [...eq.vest.def.tint.map((c) => c * 1.5), 1];
-      // colete simples: caixa em torno do tronco
-      if (!this.vestMesh) { const b = new MeshBuilder(); b.box(-0.2, -0.22, -0.13, 0.2, 0.2, 0.15, 0, {}); this.vestMesh = b.build(this.g.r.gl); }
-      r.draw(this.vestMesh, this.matAcc, { model: m });
-    }
-    if (!this.fp) {
-      if (eq.head && eq.head.id === 'helmet') {
-        const m = this.attach(this.n.Head, [0, 0.12, 0.02], this.skel.worldQuat(this.n.Head));
-        const q = this.skel.worldQuat(this.n.Head);
-        // o osso da cabeça tem eixo Y para cima; o capacete é simétrico
-        this.matAcc.color = [...eq.head.def.tint.map((c) => c * 1.5), 1];
-        r.draw(this.meshes.helmet, this.matAcc, { model: this.attachHead([0, 0.07, 0.0]) });
-      }
-    }
-  }
-  attachHead(off) {
-    // usa a posição do osso da cabeça e a orientação do corpo (sem torção da cabeça)
-    const s = this.skel, p = s.pos(this.n.Head, [0, 0, 0]);
-    const q = q4.mul(new Float32Array(4), this.spineQ || q4.create(), q4.create());
-    const m = m4.create(); m4.fromTRS(m, [p[0] + off[0], p[1] + off[1], p[2] + off[2]], q, null);
-    return m4.multiply(m4.create(), this.charM, m);
+    if (this.fp || !this.g.level) return;
+    // chapéu e máscara: modelos CC0 do Poly Haven presos à cabeça
+    const hat = eq.head && eq.head.def.model === 'fishermans_hat' ? this.g.level.model('fishermans_hat') : null;
+    if (hat) { const m = this.attach(this.n.Head, [0, 0.1, 0.0], this.spineQ); for (const p of hat.parts) r.draw(p.mesh, p.material, { model: m }); }
+    const mask = eq.face && eq.face.def.model === 'old_gas_mask' ? this.g.level.model('old_gas_mask') : null;
+    if (mask) { const m = this.attach(this.n.Head, [0, 0.07, 0.08], this.spineQ); for (const p of mask.parts) r.draw(p.mesh, p.material, { model: m }); }
   }
 }

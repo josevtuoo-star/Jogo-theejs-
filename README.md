@@ -1,10 +1,10 @@
 # Sobrevivência 2×2 — laboratório de mecânicas (motor próprio, WebGL2 + APK Android)
 
 Jogo 3D de sobrevivência em **primeira e terceira pessoa**, com **física realista**, mapa de **2 × 2 km** e **sem zumbis** (versão de testes).
-Inspirado em **DayZ** (mundo aberto, inventário em grade, balística, vegetação, clima) e **Project Zomboid** (estados de sobrevivência tipo *moodles*).
+Inspirado em **DayZ** (mundo aberto, inventário em grade, vegetação, clima) e **Project Zomboid** (estados de sobrevivência tipo *moodles*).
 Roda no navegador (PC) e como **APK** (Android 7 → 16, otimizado para o POCO X7 Pro).
 
-> O motor é próprio (`www/engine`), escrito em JavaScript/WebGL2, sem Three.js/Unity/Unreal. Os modelos e texturas são CC0 do Poly Haven (ver `CREDITS.md`).
+> O motor é próprio (`www/engine`), escrito em JavaScript/WebGL2, sem Three.js/Unity/Unreal. **Regra nº 1: nenhum modelo é criado do zero** — personagem, carros, machado, picareta, props e sons vêm da internet (CC0: Quaternius, Kenney, Poly Haven, OpenGameArt; ver `CREDITS.md`). Não há armas no jogo.
 
 ## Como jogar/testar
 
@@ -16,38 +16,38 @@ node tools/serve.mjs 8080          # serve a pasta www/
 Clique na tela para capturar o mouse. **Esc** abre o menu de testes (clima, hora, teleporte, spawn de itens, gráficos, desempenho).
 
 ### No celular (APK)
-- Baixe o APK de [`dist/Sobrevivencia2x2-v1.0.apk`](dist/Sobrevivencia2x2-v1.0.apk) (ou o artefato do GitHub Actions) e instale (permita "fontes desconhecidas").
+- Baixe o APK de [`dist/Sobrevivencia2x2-v1.1.apk`](dist/Sobrevivencia2x2-v1.1.apk) (ou o artefato do GitHub Actions) e instale (permita "fontes desconhecidas").
 - Ou compile: veja *Compilar o APK* abaixo.
 
 ### Controles
+Interface limpa: só aparece o que importa (nome do alvo, barras de estado quando estão baixas, atalhos preenchidos).
+
 | Ação | PC | Celular |
 |---|---|---|
 | Mover / olhar | `WASD` / mouse | joystick à esquerda / arrastar à direita |
-| Correr | `Shift` | `»` ou empurrar o joystick |
-| Agachar / deitar | `C` / `Z` | `⤓` / `▭` |
-| Pular | `Espaço` | `⤒` |
-| Atirar / mirar | botão esq. / dir. (`Shift` segura a respiração) | `🔥` / `🎯` |
-| Recarregar | `R` | `⟳` |
-| Interagir / pegar | `F` | botão `F` (aparece perto de itens/carros) |
-| Inventário | `Tab` ou `I` | `🎒` |
-| Atalhos de itens | `1`–`8` | barra no rodapé |
-| Câmera 1ª/3ª pessoa | `V` | `👁` |
-| Lanterna / guardar item | `L` / `H` | `🔦` / `✋` |
-| Inclinar | `Q` / `E` | — |
-| Voar (teste) / criar carro | `N` / `K` | menu → Jogador |
-| Menu / depuração | `Esc` / `F3` | `☰` |
+| Correr | `Shift` | empurrar o joystick até a borda |
+| Agachar / pular | `C` / `Espaço` | botões à direita |
+| **Interagir / usar ferramenta** | `F` ou clique esq. | **toque no objeto na tela** ou botão de ação |
+| Cortar árvore / minerar pedra | equipar machado (`1`) / picareta (`2`) e clicar | toque na árvore/pedra |
+| Entrar / sair do carro | `F` | toque no carro / botão de ação |
+| Inventário | `Tab` ou `I` | ícone da mochila |
+| Atalhos | `1`–`8` | barra no rodapé (só slots com item) |
+| Câmera 1ª/3ª pessoa | `V` | ícone do olho |
+| Lanterna / guardar | `L` / `H` | toque no atalho |
+| Menu / depuração | `Esc` / `F3` | ícone de menu |
 
-### O que testar (cada item tem um lugar no mapa)
-- **Polígono de testes** (você nasce ao lado): alvos a 25, 50, 100, 150, 200 e 300 m (queda e velocidade reais do projétil), pilha de caixas, barris e pneus (corpos rígidos), degraus, paredes de madeira/concreto/metal (penetração), 2 carros.
-- **Mundo:** 5 assentamentos (Vila Nova, Porto do Lago, Serra Alta, Campo Seco, Posto Norte), base militar a sudeste, lago, rio com ponte, floresta densa, montanhas, estradas, postes com fios.
-- **Sobrevivência:** fome, sede, temperatura, sangue, estamina, umidade, perna quebrada, queda. Velocidade das taxas em Menu → Jogo.
-- **Itens:** menu → Itens; ou o kit espalhado em círculo perto do spawn.
+### O que testar
+- **Machado e picareta** (modelos Poly Haven): derrube árvores (viram toras de madeira) e quebre pedras (viram pedra). Os itens vão para o inventário.
+- **Carros** (Kenney): dirija com `WASD` (câmera de perseguição), com suspensão, derrapagem e som de motor/pneus.
+- **Mundo:** 5 assentamentos, base militar a sudeste, lago, rio com ponte, floresta densa, montanhas, estradas, postes com fios.
+- **Sobrevivência:** fome, sede, temperatura, sangue, estamina, umidade, perna quebrada, queda.
+- **Itens:** menu → Itens; ou o kit espalhado perto do spawn.
 
 ## Estrutura
 ```
 www/engine/    motor: renderer PBR+sombras, shaders, glTF, física, animação/IK, partículas, áudio, entrada
-www/game/      jogo: mundo procedural, terreno, vegetação, construções, jogador, armas, itens, UI
-www/assets/    texturas e modelos otimizados (gerados por tools/fetch_assets.py)
+www/game/      jogo: mundo procedural, terreno, vegetação, construções, jogador, ferramentas, veículos, itens, UI
+www/assets/    texturas, modelos, personagem e sons CC0 (tools/fetch_assets.py, build_character.py, import_external.py)
 android/       projeto Gradle (WebView em tela cheia, 120 Hz, API 24–36)
 tools/         servidor local, baixador de assets, scripts de captura de tela (Playwright)
 docs/          pesquisa (DayZ, Project Zomboid, fontes de assets)
@@ -73,6 +73,10 @@ node tools/bake_world.mjs              # gera o mapa 2x2 km e grava www/assets/w
 ```
 Sem os arquivos de `www/assets/world/` o jogo gera o mapa na hora (mais lento; use `?gen` para forçar).
 
+## Assets de terceiros (scripts)
+- `tools/build_character.py` — monta o personagem (Quaternius CC0) e suas 27 animações.
+- `tools/import_external.py` — importa os carros (Kenney) e os sons (Kenney/OpenGameArt).
+
 ## Regenerar os assets (somente baixar)
 ```bash
 pip install pillow
@@ -85,8 +89,7 @@ Android 7.0+ (API 24) com **Android System WebView / Chrome atualizado** (recome
 ## Desempenho (alvo: POCO X7 Pro, 60 fps)
 Predefinição **Alta**: 72% de resolução, 2 cascatas de sombra 2048, grama média. A **resolução dinâmica** reduz a escala se o quadro passar de ~18,5 ms e a recupera depois. Ajustes em Menu → Gráficos (resolução, sombras, grama, distância da vegetação, alcance, limite de 60 FPS) e números em Menu → Desempenho (draw calls, triângulos, árvores, GPU).
 
-## Limitações conhecidas da v1
-- **Não foi possível rodar o APK em um aparelho/emulador neste ambiente**: o jogo foi validado no Chromium (WebGL2 por software, mesmo código servido pelo APK) e o APK foi compilado e verificado (assinatura, manifesto, conteúdo). O desempenho real no celular precisa ser medido por você.
-- O personagem é um placeholder (Mixamo "Vanguard"); a orientação das mãos na arma e as poses de agachar/deitar são procedurais e simples.
-- Sem zumbis, sem multijogador, sem construção de base (ver roteiro em `docs/PESQUISA.md`).
+## Limitações conhecidas (v1.1)
+- **Não foi possível rodar o APK em um aparelho/emulador neste ambiente**: tudo foi validado no Chromium (WebGL2 por software, mesmo código do APK). O **chão branco** relatado foi endurecido (texturas opacas, guardas contra NaN, fallback de cor), mas **precisa ser confirmado no aparelho**. O mesmo vale para o som no celular (desbloqueio do áudio no primeiro toque) e para o desempenho real.
+- Sem zumbis, sem armas, sem multijogador, sem construção de base (ver roteiro em `docs/PESQUISA.md`).
 - A geração do mundo leva alguns segundos na abertura (mais em celulares).

@@ -82,7 +82,7 @@ export class Skeleton {
       if (this.hide.has(i)) { tmp[0] = tmp[1] = tmp[2] = tmp[4] = tmp[5] = tmp[6] = tmp[8] = tmp[9] = tmp[10] = 0; }
       const p = this.parent[i];
       const out = W.subarray(i * 16, i * 16 + 16);
-      if (p >= 0) m4.multiply(out, W.subarray(p * 16, p * 16 + 16), tmp); else out.set(tmp);
+      if (p >= 0) m4.multiply(out, W.subarray(p * 16, p * 16 + 16), tmp); else if (this.base) m4.multiply(out, this.base, tmp); else out.set(tmp);
       const h = this.hooks.get(i);
       if (h && (h.delta || h.abs)) {
         const x = out[12], y = out[13], z = out[14];

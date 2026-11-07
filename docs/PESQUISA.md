@@ -46,13 +46,13 @@ Referências: [projectzomboid.wiki – Moodles](https://projectzomboid.wiki/guid
 
 | Fonte | Licença | Acesso neste ambiente | Uso |
 |---|---|---|---|
-| [Poly Haven](https://polyhaven.com) (API `api.polyhaven.com`) | **CC0** | OK | **Usado**: texturas PBR, rifle Mosin, pistola, machadinha, facão, lanterna, comidas, galões, caixas, barris, pedras, samambaias, mobiliário urbano. |
+| [Poly Haven](https://polyhaven.com) (API `api.polyhaven.com`) | **CC0** | OK | **Usado**: texturas PBR, machado, picareta, lanterna, comidas, galões, caixas, barris, pedras, samambaias, mobiliário urbano. |
 | [ambientCG](https://ambientcg.com) | CC0 | OK | Alternativa para texturas (não necessário). |
-| [Quaternius](https://quaternius.com) | CC0 | página OK (downloads em Google Drive) | Sugestão futura: personagens/armas low-poly. |
+| [Quaternius](https://quaternius.com) | CC0 | página OK (downloads em Google Drive) | **Usado (v1.1)**: personagem e 27 animações. |
 | [Kenney](https://kenney.nl) | CC0 | bloqueado (HTTP 403) | Não usado. |
 | [OpenGameArt](https://opengameart.org) | variada | página OK | Exige conferir a licença item a item. |
 | [Sketchfab](https://sketchfab.com) | variada, exige login | página OK | Não usado. |
-| three.js `examples/models` (`Soldier.glb`) | modelo do Mixamo | OK | **Usado como personagem provisório** — veja `CREDITS.md` (restrições do Mixamo). |
+| Kenney / OpenGameArt | CC0 | OK | **Usado (v1.1)**: carros e sons. O Soldier.glb (Mixamo) foi removido. |
 
 Observação: as árvores do Poly Haven têm de 60 MB a 950 MB de geometria por modelo — inviáveis no celular. Por isso as árvores foram geradas proceduralmente pelo motor.
 

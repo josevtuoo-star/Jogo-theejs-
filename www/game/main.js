@@ -12,7 +12,7 @@ import { Terrain } from './terrain.js';
 import { Vegetation } from './vegetation.js';
 import { Level } from './world.js';
 import { Player } from './player.js';
-import { WeaponSystem } from './weapons.js';
+import { ToolSystem } from './tools.js';
 import { Character } from './character.js';
 import { Vehicle } from './vehicle.js';
 import { UI } from './ui.js';
@@ -63,7 +63,7 @@ class Game {
     if (Q.get('weather')) this.atm.setWeather(Q.get('weather'));
     if (Q.get('timescale')) this.atm.timeScale = +Q.get('timescale');
     this.input = new Input(canvas); this.input.sens = S.sens;
-    this.audio = new AudioEngine(); this.audio.volume = S.volume;
+    this.audio = new AudioEngine(); this.audio.volume = S.volume; this.audio.init();
     this.particles = new Particles(this.r);
     this.assets = new Assets(this.r.gl);
     await step('Texturas do terreno e materiais', 0.04, () => this.assets.loadTextures());
@@ -81,12 +81,10 @@ class Game {
     this.level = new Level(this);
     await step('Construindo vilas, estradas e props', 0.68, async () => this.level.build((t, p) => ui0.loading(t, 0.68 + p * 0.1)));
     this.terrain = new Terrain(this.r, this.world, this.assets);
-    await step('Plantando vegetação', 0.8, async () => { this.veg = new Vegetation(this.r, this.world, this.assets, { grass: S.grass, level: this.level, exclude: (x, z, m) => this.level.exclude(x, z, m) }); this.veg.terrain = this.terrain; this.veg.distScale = S.vegDist; });
-    // colliders das árvores (troncos)
-    for (const t of this.veg.trunks) this.phys.addCyl(t.x, t.z, t.r, t.y0, t.y1, SURF.WOOD, { tree: true });
-    mark('vegetacao'); this.weapons = new WeaponSystem(this);
-    this.weapons.prepare();
-    this.phys.onProjectileHit = (p, hit, speed) => this.weapons.onHit(p, hit, speed);
+    await step('Plantando vegetação', 0.8, async () => { this.veg = new Vegetation(this.r, this.world, this.assets, { grass: S.grass, level: this.level, game: this, exclude: (x, z, m) => this.level.exclude(x, z, m) }); this.veg.terrain = this.terrain; this.veg.distScale = S.vegDist; });
+    this.veg.addColliders(this.phys);   // árvores e rochas viram alvos de machado/picareta
+    mark('vegetacao'); this.tools = new ToolSystem(this);
+    this.tools.prepare();
     this.player = new Player(this);
     this.ui = new UI(this);
     this.player.ui = this.ui;
@@ -94,14 +92,15 @@ class Game {
     mark('icones'); this.player.reset();
     this.ui.renderQuick();
     // veículos de teste
-    for (const s of this.level.vehicleSpots) this.vehicles.push(new Vehicle(this, s.x, s.z, s.yaw, this.vehicles.length * 3 + 1));
+    for (const s of this.level.vehicleSpots) this.vehicles.push(new Vehicle(this, s.x, s.z, s.yaw, this.vehicles.length));
     this.level.vehicleSpots.length = 0;
     this.syncEquipment();
     // eventos
     this.input.wantLock = !this.input.touchMode;
     this.input.onLockChange = (locked) => { if (!locked && !this.ui.invOpen && !this.ui.menuOpen && this.started && !this.player.dead) this.ui.openMenu(); };
-    const resume = () => this.audio.resume();
-    addEventListener('pointerdown', resume); addEventListener('keydown', resume);
+    // no toque, só pointerup/touchend/click contam como gesto para liberar o áudio
+    const unlock = () => this.audio.unlock();
+    for (const ev of ['pointerup', 'touchend', 'click', 'keydown', 'mouseup']) addEventListener(ev, unlock, { passive: true });
     addEventListener('resize', () => this.r.resize());
     document.addEventListener('visibilitychange', () => { this.hidden = document.hidden; });
     if (Q.get('pos')) { const [x, z] = Q.get('pos').split(',').map(Number); this.teleport(x, z); }
@@ -113,8 +112,7 @@ class Game {
     this.ui.loading('Pronto', 1);
     this.started = true;
     this.ui.loadDone();
-    if (!this.input.touchMode) { this.ui.toast('Clique na tela para capturar o mouse · Esc abre o menu de testes'); }
-    this.ui.toast('Mapa 2×2 km · sem zumbis · use o menu ☰ para testar tudo');
+    this.ui.hint(this.input.touchMode ? 'Toque nos objetos para interagir' : 'Clique na tela para capturar o mouse');
     if (Q.has('manual')) { window.game = this; return; }
     this.last = performance.now();
     requestAnimationFrame((t) => this.frame(t));
@@ -122,12 +120,12 @@ class Game {
 
   syncEquipment() { if (this.char && this.char.setEquipment) this.char.setEquipment(this.inv.slots); }
   teleport(x, z) { const P = this.player; if (P.inVehicle) P.exitVehicle(); P.pos[0] = x; P.pos[2] = z; P.pos[1] = this.world.heightAt(x, z) + 0.3; P.vel.fill(0); }
-  respawn() { this.player.reset(); this.ui.renderQuick(); this.syncEquipment(); }
+  respawn() { this.player.reset(); this.tools.equip(null); this.ui.renderQuick(); this.syncEquipment(); }
   spawnVehicle() {
     const P = this.player, d = P.aimDir();
     const x = P.pos[0] + d[0] * 6, z = P.pos[2] + d[2] * 6;
-    const v = new Vehicle(this, x, z, Math.atan2(d[0], d[2]), this.vehicles.length * 3 + 2);
-    this.vehicles.push(v); this.ui.toast('Veículo criado à frente');
+    const v = new Vehicle(this, x, z, Math.atan2(d[0], d[2]), this.vehicles.length);
+    this.vehicles.push(v); this.ui.hint('Veículo criado à frente');
   }
 
   // ---------------------------------------------------------------- quadro
@@ -158,45 +156,41 @@ class Game {
     this.r.settings.renderScale = S.renderScale; this.r.resize();
   }
   step(dt) {
-    const S = this.settings, inp = this.input, P = this.player, W = this.weapons;
-    this.time += dt;
+    const S = this.settings, inp = this.input, P = this.player, T = this.tools;
+    this.time += dt; this.frameNo = (this.frameNo || 0) + 1;
     this.adaptRes(dt);
     inp.poll();
-    // teclas globais
     if (inp.pressed('menu')) { this.ui.invOpen ? this.ui.closeInv() : this.ui.toggleMenu(); }
     if (inp.pressed('inventory')) { if (!this.ui.menuOpen) this.ui.toggleInv(); }
     if (inp.pressed('debug')) S.debug = !S.debug;
-    if (inp.pressed('noclip')) { P.noclip = !P.noclip; this.ui.toast(P.noclip ? 'Modo voar ligado' : 'Modo voar desligado'); }
-    if (inp.pressed('time')) { this.atm.hour = (this.atm.hour + 3) % 24; }
+    if (inp.pressed('noclip')) { P.noclip = !P.noclip; this.ui.hint(P.noclip ? 'Modo voar ligado' : 'Modo voar desligado'); }
+    if (inp.pressed('time')) this.atm.hour = (this.atm.hour + 3) % 24;
     if (inp.pressed('vehicle') && !P.inVehicle) this.spawnVehicle();
     if (S.invertY) inp.look[1] *= -1;
-    // simulação
     this.atm.update(dt);
     this.phys.wind[0] = this.env.wind[0] * this.env.wind[2] * 6; this.phys.wind[1] = this.env.wind[1] * this.env.wind[2] * 6;
     this.env.exposure *= S.exposure;
     P.update(dt, inp);
-    W.update(dt);
+    T.update(dt);
     this.phys.step(dt);
     this.level.update(dt);
+    this.veg.update(dt);
     this.particles.update(dt);
-    // faróis dos veículos
+    // faróis e som dos veículos
     this.env.lights[1] = this.env.lights[2] = null;
+    let driving = false;
     for (const v of this.vehicles) {
-      if (v.driver && v.lights) {
-        const M = v.matrix(m4.create());
-        for (const [i, sx] of [[1, -0.6], [2, 0.6]]) { const p = m4.transformPoint([0, 0, 0], M, [sx, 0.7, 2.2]); const f = [Math.sin(v.yaw), -0.06, Math.cos(v.yaw)]; this.env.lights[i] = { pos: p, dir: f, radius: 45, color: [1, 0.95, 0.8], intensity: 9, spot: true, cosOuter: Math.cos(0.55), cosInner: Math.cos(0.2) }; }
-      }
-      if (v.driver) this.audio.engine(v.rpm, Math.abs(v.input.throttle), 0.6); else if (this._engOn) this.audio.engine(0.1, 0, 0);
+      if (!v.driver) continue;
+      driving = true;
+      if (v.lights) { const M = v.matrix(m4.create()); for (const [i, sx] of [[1, -0.6], [2, 0.6]]) { const p = m4.transformPoint([0, 0, 0], M, [sx, 0.75, 2.0]); this.env.lights[i] = { pos: p, dir: [Math.sin(v.yaw), -0.06, Math.cos(v.yaw)], radius: 45, color: [1, 0.95, 0.8], intensity: 9, spot: true, cosOuter: Math.cos(0.55), cosInner: Math.cos(0.2) }; } }
+      this.audio.engine(v.rpm, Math.abs(v.input.throttle), 0.9);
+      const slip = Math.max(...v.wheels.map((w) => (w.grounded ? w.slip || 0 : 0)));
+      this.audio.skid(slip > 3 ? Math.min(0.8, (slip - 3) * 0.15) : 0);
     }
-    // dano de projétil ao jogador por queda de veículo: omitido
-    // personagem
     this.updateCharacter(dt);
-    // áudio
     if (!this._wt || this.time - this._wt > 0.4) { this._wt = this.time; this._nearW = this.nearWater(); }
-    this.audio.update(dt, P.camPos, P.camYaw, { windStrength: this.env.wind[2], rain: this.atm.rainAmount, night: this.env.night, nearWater: this._nearW || 0 });
-    if (this.atm.rainAmount > 0.01 && P.camPos) this.particles.updateRain(P.camPos, this.atm.rainAmount, dt, this.env.wind);
-    else this.particles.rainN = 0;
-    // interface
+    this.audio.update(dt, P.camPos, P.camYaw, { windStrength: this.env.wind[2], rain: this.atm.rainAmount, night: this.env.night, nearWater: this._nearW || 0, driving });
+    if (this.atm.rainAmount > 0.01 && P.camPos) this.particles.updateRain(P.camPos, this.atm.rainAmount, dt, this.env.wind); else this.particles.rainN = 0;
     this.ui.update(dt, this);
     inp.endFrame();
   }
@@ -209,26 +203,22 @@ class Game {
   }
 
   updateCharacter(dt) {
-    const P = this.player, W = this.weapons, C = this.char;
-    if (P.inVehicle) { C.hidden = true; return; }
-    C.hidden = false;
-    const hasWeapon = !!P.hands;
-    // viewmodel
-    let wpn = null;
-    if (hasWeapon && W.def) {
-      W.computeWorld(P, dt);
-      const hp = W.handPoints();
-      if (hp) wpn = { rh: hp.rh, lh: hp.lh };
-    } else if (hasWeapon) {
-      // item na mão sem arma: segura à frente
-      const dirq = q4.fromEuler(new Float32Array(4), P.aimYaw, P.aimPitch, 0);
-      const m = m4.fromTRS(m4.create(), P.eye, dirq, null);
-      wpn = { rh: m4.transformPoint([0, 0, 0], m, [0.2, -0.3, -0.45]), lh: m4.transformPoint([0, 0, 0], m, [-0.1, -0.3, -0.5]) };
-      this.heldMatrix = m4.multiply(m4.create(), m, m4.translation(m4.create(), 0.2, -0.3, -0.45));
+    const P = this.player, T = this.tools, C = this.char, v = P.inVehicle;
+    let tool = null;
+    this.heldMatrix = null;
+    if (!v && T.active) {
+      T.computeWorld(P, dt);
+      tool = T.handPoints();
+    } else if (!v && P.hands) {
+      const q = q4.fromEuler(new Float32Array(4), P.aimYaw, P.aimPitch, 0), m = m4.fromTRS(m4.create(), P.eye, q, null);
+      tool = { rh: m4.transformPoint([0, 0, 0], m, [0.22, -0.28, -0.42]), lh: m4.transformPoint([0, 0, 0], m, [-0.08, -0.3, -0.5]) };
+      this.heldMatrix = m4.multiply(m4.create(), m, m4.translation(m4.create(), 0.22, -0.28, -0.42));
     }
+    const seat = v ? v.seat() : null;
     const st = {
-      pos: P.pos, aimYaw: P.aimYaw, aimPitch: P.aimPitch, vel: [P.vel[0], P.vel[2]], stance: P.stance, prone: P.stance === 2, fp: P.camMode === 'fp',
-      swimming: P.swimming, grounded: P.grounded, weapon: wpn, lean: P.lean, dead: P.dead,
+      pos: v ? [seat[0], seat[1] - 0.2, seat[2]] : P.pos, aimYaw: P.aimYaw, aimPitch: P.aimPitch, vel: v ? [0, 0] : [P.vel[0], P.vel[2]], stance: P.stance,
+      fp: P.camMode === 'fp', swimming: P.swimming, grounded: P.grounded, vehicle: !!v, vehicleYaw: v ? v.yaw + Math.PI : 0, weapon: tool, dead: P.dead,
+      action: P.action && P.action.clip ? { clip: P.action.clip, t: P.action.t } : null,
     };
     C.g.time = this.time;
     C.update(dt, st);
@@ -236,9 +226,8 @@ class Game {
 
   // ---------------------------------------------------------------- desenho
   render() {
-    const P = this.player, W = this.weapons, S = this.settings, r = this.r;
+    const P = this.player, S = this.settings, r = this.r;
     let fov = S.fov * Math.PI / 180;
-    if (W.def && W.def.adsFov) fov = lerp(fov, W.def.adsFov * Math.PI / 180, smoothstep(0, 1, W.adsT));
     if (P.zoomBino) fov = 12 * Math.PI / 180;
     fov += P.sprinting ? 0.06 : 0;
     r.settings.aniso = S.aniso;
@@ -264,15 +253,14 @@ class Game {
     }, this.time);
   }
   drawActors(rr, shadow) {
-    const P = this.player, W = this.weapons, C = this.char;
-    if (!C.hidden && !(P.dead && false)) C.draw(rr, shadow);
-    if (W.def && !C.hidden) W.draw(rr, shadow);
-    else if (P.hands && this.heldMatrix && !C.hidden && P.hands.def.model) {
+    const P = this.player, T = this.tools, C = this.char;
+    if (!P.inVehicle) C.draw(rr, shadow);   // dentro do carro (carroceria fechada) o motorista não aparece
+    if (T.active && !P.inVehicle) T.draw(rr);
+    else if (P.hands && this.heldMatrix && P.hands.def.model && !P.inVehicle) {
       const vis = this.level.itemVisual(P.hands.id);
       if (vis) for (const p of vis.parts) rr.draw(p.mesh, p.material, { model: this.heldMatrix });
     }
-    for (const v of this.vehicles) v.draw(rr, this.level.carMeshes, this.level.carMatSet);
-    for (const n of W.nades) { const m = m4.fromTRS(m4.create(), n.body.pos, n.body.q, null); const vis = this.level.itemVisual('grenade'); if (vis) { m[12] -= vis.center[0]; m[13] -= vis.center[1]; m[14] -= vis.center[2]; for (const p of vis.parts) rr.draw(p.mesh, p.material, { model: m }); } }
+    for (const v of this.vehicles) v.draw(rr, this.level.vehModels);
   }
 }
 

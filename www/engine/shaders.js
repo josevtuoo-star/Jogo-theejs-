@@ -88,7 +88,7 @@ vec3 shade(vec3 albedo, vec3 N, vec3 V, float rough, float metal, float ao, vec3
     float D = a2 / (PI * d * d + 1e-5);
     float k = (rough + 1.0) * (rough + 1.0) / 8.0;
     float G = (NL / (NL * (1.0 - k) + k)) * (NV / (NV * (1.0 - k) + k));
-    vec3 F = F0 + (1.0 - F0) * pow(1.0 - VH, 5.0);
+    vec3 F = F0 + (1.0 - F0) * pow(max(1.0 - VH, 0.0), 5.0);
     vec3 spec = D * G * F / (4.0 * NL * NV + 1e-3);
     col += (diff / PI + spec) * uSunColor.rgb * NL * sh * smoothstep(-0.05, 0.08, uSunDir.y);
   }
@@ -99,7 +99,7 @@ vec3 shade(vec3 albedo, vec3 N, vec3 V, float rough, float metal, float ao, vec3
   }
   // ambiente: hemisfério + reflexo do céu
   vec3 R = reflect(-V, N);
-  float fr = pow(1.0 - NV, 5.0);
+  float fr = pow(max(1.0 - NV, 0.0), 5.0);
   vec3 Fa = F0 + (max(vec3(1.0 - rough), F0) - F0) * fr;
   vec3 amb = ambientLight(N);
   vec3 refl = mix(skyGradient(R), ambientLight(R), rough) * (0.35 + 0.65 * smoothstep(-0.3, 0.2, R.y));
@@ -141,7 +141,7 @@ vec3 applyFog(vec3 c, vec3 wp) {
   return mix(c, fc, clamp(f, 0.0, 1.0));
 }
 vec3 toSRGB(vec3 c) { return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
-vec3 finalColor(vec3 c, vec3 wp) { c = applyFog(c, wp); return toSRGB(aces(c * uMisc.w)); }
+vec3 finalColor(vec3 c, vec3 wp) { if (!(c.r < 1e4 && c.g < 1e4 && c.b < 1e4 && c.r > -1.0 && c.g > -1.0 && c.b > -1.0)) c = vec3(0.12, 0.14, 0.08); c = applyFog(c, wp); return toSRGB(aces(c * uMisc.w)); }
 vec3 perturbNormal(vec3 N, vec3 p, vec2 uv, vec3 tn) {
   vec3 dp1 = dFdx(p), dp2 = dFdy(p);
   vec2 duv1 = dFdx(uv), duv2 = dFdy(uv);
@@ -259,7 +259,7 @@ void main() {
     vec4 a = texture(uMatAlb, vec3(vUV, layer));
     vec4 nr = texture(uMatNor, vec3(vUV, layer));
     base.rgb *= a.rgb * (0.82 + 0.36 * vCol.b);
-    rough = nr.a * uMat.x; tn = nr.rgb * 2.0 - 1.0; tn.xy *= uMat.w; hasN = true;
+    rough = nr.b * uMat.x; tn.xy = (nr.rg * 2.0 - 1.0) * uMat.w; tn.z = sqrt(max(1.0 - dot(tn.xy, tn.xy), 0.05)); hasN = true;
   }
 #endif
 #ifdef HAS_ALBEDO
@@ -289,7 +289,7 @@ void main() {
     base.rgb *= mix(mix(g, y, smoothstep(0.28, 0.6, rr)), o, smoothstep(0.72, 0.95, rr)) * (0.85 + 0.3 * fract(rr * 7.3)); }
 #endif
 #ifdef TINT
-  { int r = int(vCol.g * 255.0 + 0.5); vec3 tr = uRegion[r & 7]; if (tr != vec3(1.0)) { float lu = dot(base.rgb, vec3(0.3, 0.55, 0.15)); base.rgb = tr * (0.28 + 2.2 * lu); } }
+  { int r = int(vCol.g * 255.0 + 0.5); vec3 tr = uRegion[r & 7]; if (tr != vec3(1.0)) { float lu = dot(base.rgb, vec3(0.3, 0.55, 0.15)); base.rgb = tr * clamp(0.1 + 1.55 * lu, 0.0, 1.5); } }
 #endif
   if (hasN) N = perturbNormal(N, vWP, vUV, normalize(tn));
 #ifdef FOLIAGE
@@ -489,34 +489,35 @@ void main() {
   float tot = 0.0;
   for (int i = 0; i < 7; i++) { w[i] = max(w[i] * (0.75 + 0.5 * n1) + (n2 - 0.5) * 0.08 * w[i], 0.0); w[i] = w[i] * w[i]; tot += w[i]; }
   float dist = vVZ;
-  vec3 albedo = vec3(0.0); float rough = 0.0;
-  vec3 tn = vec3(0.0, 0.0, 1.0);
   float norm = 1.0 / max(tot, 1e-4);
+  vec2 gx = dFdx(vWP.xz), gy = dFdy(vWP.xz);        // derivadas fora de ramos (comportamento definido em qualquer GPU)
+  vec3 macro = vec3(0.0);
+  for (int i = 0; i < 7; i++) macro += uLayerAvg[i] * w[i] * norm;
+  vec3 albedo = macro * (0.85 + 0.3 * n1) * (0.92 + 0.16 * n2); float rough = 0.92;
+  vec3 tn = vec3(0.0, 0.0, 1.0);
   if (dist < 70.0) {
-    float bestW = 0.0; int best = 0;
+    vec3 acc = vec3(0.0); float bestW = 0.0; int best = 0;
     for (int i = 0; i < 7; i++) {
       float wi = w[i] * norm;
       if (wi < 0.03) continue;
       vec2 uv = vWP.xz * SC[i];
-      vec3 a = texture(uTerrAlb, vec3(uv, float(i))).rgb;
-      a *= mix(texture(uTerrAlb, vec3(uv * 0.113 + 0.37, float(i))).rgb * 1.7, vec3(1.0), 0.45); // quebra de repetição
-      albedo += a * uLayerTint[i] * wi;
+      vec3 a = textureGrad(uTerrAlb, vec3(uv, float(i)), gx * SC[i], gy * SC[i]).rgb;
+      vec3 b2 = textureGrad(uTerrAlb, vec3(uv * 0.113 + 0.37, float(i)), gx * SC[i] * 0.113, gy * SC[i] * 0.113).rgb;
+      a *= mix(b2 * 1.7, vec3(1.0), 0.45);
+      acc += a * uLayerTint[i] * wi;
       if (wi > bestW) { bestW = wi; best = i; }
     }
+    // se as texturas falharem (preto), cai na cor média do material
+    float lum = dot(acc, vec3(0.3, 0.55, 0.15));
+    acc = lum < 0.004 ? macro : acc;
+    albedo = mix(acc, macro * (0.9 + 0.2 * n1), smoothstep(40.0, 70.0, dist));
     if (dist < 32.0 || best == 6) {
-      vec4 nt = texture(uTerrNor, vec3(vWP.xz * SC[best], float(best)));
-      tn = nt.rgb * 2.0 - 1.0; rough = nt.a;
-    } else rough = 0.9;
-    // mistura suave com a cor média (macro) no limite
-    vec3 macro = vec3(0.0);
-    for (int i = 0; i < 7; i++) macro += uLayerAvg[i] * w[i] * norm;
-    albedo = mix(albedo, macro * (0.9 + 0.2 * n1), smoothstep(40.0, 70.0, dist));
-  } else {
-    vec3 macro = vec3(0.0);
-    for (int i = 0; i < 7; i++) macro += uLayerAvg[i] * w[i] * norm;
-    albedo = macro * (0.85 + 0.3 * n1) * (0.92 + 0.16 * n2);
-    rough = 0.92;
+      vec4 nt = textureGrad(uTerrNor, vec3(vWP.xz * SC[best], float(best)), gx * SC[best], gy * SC[best]);
+      tn.xy = nt.rg * 2.0 - 1.0; tn.z = sqrt(max(1.0 - dot(tn.xy, tn.xy), 0.05)); rough = nt.b;
+    }
   }
+  rough = clamp(rough, 0.55, 1.0);
+  albedo = clamp(albedo, 0.0, 1.2);
   if (dist < 32.0) {
     vec3 dn = vec3(tn.xy * 0.9, tn.z);
     N = perturbNormal(N, vWP, vWP.xz * 0.2, normalize(vec3(dn.x, -dn.y, dn.z)));

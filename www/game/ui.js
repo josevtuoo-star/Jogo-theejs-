@@ -5,10 +5,28 @@ import { WEATHER } from '../engine/atmosphere.js';
 
 const $ = (h) => { const t = document.createElement('template'); t.innerHTML = h.trim(); return t.content.firstChild; };
 const CELL = () => (innerHeight < 520 ? 34 : 40);
-const DOLL = ['head', 'face', 'back', 'body', 'vest', 'melee', 'legs', 'feet', 'hands', 'primary', 'secondary'];
-const CAT = { weapon: 'Armas', ammo: 'Munição', food: 'Comida', drink: 'Bebida', med: 'Médico', tool: 'Ferramentas', cloth: 'Roupas', misc: 'Outros', throw: 'Explosivos' };
-const DIRS = ['N', 'NE', 'L', 'SE', 'S', 'SO', 'O', 'NO'];
-
+const DOLL = ['head', 'face', 'back', 'body', 'vest', 'melee', 'legs', 'feet', 'hands'];
+const CAT = { food: 'Comida', drink: 'Bebida', med: 'Médico', tool: 'Ferramentas', cloth: 'Roupas', misc: 'Recursos e outros' };
+const svg = (d, w = 1.8) => `<svg viewBox="0 0 24 24" width="100%" height="100%" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+const ICON = {
+  bag: svg('<path d="M7 8V6a5 5 0 0 1 10 0v2"/><rect x="4" y="8" width="16" height="13" rx="3"/><path d="M9 14h6"/>'),
+  eye: svg('<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>'),
+  menu: svg('<path d="M4 7h16M4 12h16M4 17h16"/>'),
+  hand: svg('<path d="M8 12V5.5a1.5 1.5 0 0 1 3 0V11m0-1.5V4.5a1.5 1.5 0 0 1 3 0V11m0-4a1.5 1.5 0 0 1 3 0v6c0 4-2.5 7-6 7-2.7 0-4.2-1.4-5.7-3.6L4 13.5a1.6 1.6 0 0 1 2.6-1.8L8 13"/>'),
+  axe: svg('<path d="M5 20 15 10"/><path d="M13 4c3 0 6 1 8 3l-3 3 -2 2 -3 -3 -2 -2z"/>'),
+  pick: svg('<path d="M6 20 16 9"/><path d="M3 11c3-5 9-7 15-5 2 .7 3 1.5 3 1.5s-1 .8-3 1c-3 .3-4 1-5 2"/>'),
+  car: svg('<path d="M5 16V11l2-5h10l2 5v5"/><path d="M3 16h18v3H3z"/><circle cx="7.5" cy="19" r="1.2"/><circle cx="16.5" cy="19" r="1.2"/>'),
+  up: svg('<path d="M6 14l6-6 6 6"/><path d="M6 19l6-6 6 6" opacity=".5"/>'),
+  down: svg('<path d="M7 7l5 5 5-5"/><path d="M5 18h14"/>'),
+  light: svg('<path d="M9 3h6l1 5H8z"/><path d="M8 8l1 12h6l1-12"/>'),
+  food: svg('<path d="M7 3v7a2 2 0 0 0 4 0V3M9 3v18M17 3c-2 2-3 5-3 8h3v10"/>'),
+  water: svg('<path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z"/>'),
+  temp: svg('<path d="M10 14V5a2 2 0 0 1 4 0v9a4 4 0 1 1-4 0z"/>'),
+  blood: svg('<path d="M12 3s6 6 6 10.5A6 6 0 0 1 6 13.5C6 9 12 3 12 3z" fill="currentColor"/>'),
+  heart: svg('<path d="M12 20s-7-4.6-7-10a4 4 0 0 1 7-2.5A4 4 0 0 1 19 10c0 5.4-7 10-7 10z"/>'),
+  leg: svg('<path d="M9 3v8l-3 3 2 6M15 3v8l-1 4"/><path d="M5 12l4 3" />'),
+  swing: svg('<path d="M6 19 17 8"/><path d="M15 4c3 0 5 1 6 3l-3 3-3-3z"/>'),
+};
 export class UI {
   constructor(game) {
     this.g = game;
@@ -29,119 +47,123 @@ export class UI {
   loadDone() { const l = document.getElementById('loading'); l.classList.add('hide'); setTimeout(() => (l.style.display = 'none'), 700); }
   loadError(e) { document.getElementById('lerr').textContent = 'Erro: ' + (e && e.message ? e.message : e) + '\n' + (e && e.stack ? e.stack.split('\n').slice(0, 3).join('\n') : ''); }
 
-  // ---------------------------------------------------------------- HUD
+  // ---------------------------------------------------------------- HUD (limpo: só o essencial)
   buildHUD() {
     const R = this.root;
-    R.append($('<div id="cross" class="hud"><i></i><div class="ring"></div></div>'));
-    R.append($('<div id="hitm"></div>'));
     R.append($('<div id="vig" class="hud"></div>'));
-    R.append($('<div id="flash" class="hud"></div>'));
     R.append($('<div id="bino" class="hud"></div>'));
-    R.append($('<div id="compass" class="hud">N</div>'));
-    R.append($('<div id="info" class="hud"></div>'));
+    R.append($('<div id="cross" class="hud"><i></i><b></b></div>'));
+    R.append($('<div id="info" class="hud glass"></div>'));
     R.append($('<div id="dbg" class="hud"></div>'));
-    R.append($('<div id="hitinfo" class="hud"></div>'));
-    R.append($('<div id="toasts" class="hud"></div>'));
-    R.append($('<div id="prompt" class="hud"></div>'));
-    R.append($('<div id="actbar" class="hud"><div class="t"></div><div class="bar"><i></i></div></div>'));
-    R.append($('<div id="ammo" class="hud"><div class="a"></div><div class="w"></div></div>'));
-    R.append($('<div id="stam" class="hud"><div class="t">RESISTÊNCIA</div><div class="bar"><i></i></div></div>'));
     const st = $('<div id="status" class="hud"></div>');
     this.sts = {};
-    for (const [k, e, t] of [['food', '🍖', 'Fome'], ['water', '💧', 'Sede'], ['temp', '🌡️', 'Temp.'], ['blood', '🩸', 'Sangue'], ['health', '❤️', 'Saúde']]) { const el = $(`<div class="st" title="${t}"><span>${e}</span><small></small></div>`); st.append(el); this.sts[k] = el; }
+    for (const [k, ic, t] of [['food', 'food', 'Fome'], ['water', 'water', 'Sede'], ['temp', 'temp', 'Temperatura'], ['blood', 'blood', 'Sangue'], ['health', 'heart', 'Saúde'], ['leg', 'leg', 'Perna quebrada']]) {
+      const el = $(`<div class="st" title="${t}" data-k="${k}"><div class="ico">${ICON[ic]}</div><small></small></div>`); st.append(el); this.sts[k] = el;
+    }
     R.append(st);
+    R.append($('<div id="hint" class="hud glass"></div>'));
+    R.append($('<div id="prompt" class="hud glass"></div>'));
+    R.append($('<div id="actbar" class="hud glass"><span></span><div class="bar"><i></i></div></div>'));
+    R.append($('<div id="stam" class="hud"><i></i></div>'));
     const q = $('<div id="quick" class="hud"></div>');
     this.qslots = [];
-    for (let i = 0; i < 8; i++) { const s = $(`<div class="qs"><b>${i + 1}</b></div>`); s.addEventListener('pointerdown', (e) => { e.preventDefault(); this.g.audio.resume(); this.g.player.useQuick(i); this.renderQuick(); }); q.append(s); this.qslots.push(s); }
+    for (let i = 0; i < 8; i++) { const s = $(`<div class="qs"><b>${i + 1}</b></div>`); s.addEventListener('pointerdown', (e) => { e.preventDefault(); this.g.audio.unlock(); this.g.player.useQuick(i); this.renderQuick(); }); q.append(s); this.qslots.push(s); }
     R.append(q);
-    const d = $('<div id="death" class="hud"><h1>VOCÊ MORREU</h1><div id="dcause" style="color:#ddd"></div><div class="pill" id="drespawn">Renascer</div></div>');
+    // botões superiores (iguais no PC e no celular)
+    const top = $('<div id="topbtns" class="hud"></div>');
+    const mkTop = (ic, fn, id) => { const b = $(`<div class="ibtn" id="${id || ''}">${ICON[ic]}</div>`); b.addEventListener('pointerdown', (e) => { e.preventDefault(); this.g.audio.unlock(); fn(); }); top.append(b); return b; };
+    this.btnFlash = mkTop('light', () => this.g.input.press('flashlight'), 'bflash'); this.btnFlash.style.display = 'none';
+    mkTop('eye', () => this.g.input.press('camera')); mkTop('bag', () => this.g.input.press('inventory')); mkTop('menu', () => this.g.input.press('menu'));
+    R.append(top);
+    const d = $('<div id="death" class="hud"><h1>VOCÊ MORREU</h1><div id="dcause"></div><div class="pill" id="drespawn">Renascer</div></div>');
     d.querySelector('#drespawn').addEventListener('click', () => { d.style.display = 'none'; this.g.respawn(); });
     R.append(d);
   }
-  toast(msg) {
-    const t = $(`<div class="toast">${msg}</div>`);
-    const box = this.root.querySelector('#toasts');
-    box.append(t); setTimeout(() => t.remove(), 3100);
-    while (box.children.length > 4) box.firstChild.remove();
+  // mensagem curta e discreta (substitui a pilha de avisos)
+  hint(msg) {
+    const h = this.root.querySelector('#hint'); h.textContent = msg; h.classList.add('on');
+    clearTimeout(this._ht); this._ht = setTimeout(() => h.classList.remove('on'), 2300);
   }
-  flashMuzzle() { const f = this.root.querySelector('#flash'); f.style.transition = 'none'; f.style.opacity = '0.8'; requestAnimationFrame(() => { f.style.transition = 'opacity .09s'; f.style.opacity = '0'; }); }
-  hitInfo(dist, data, other) { const h = this.root.querySelector('#hitinfo'); h.textContent = `${dist.toFixed(0)} m` + (other ? '' : ' · alvo'); h.style.opacity = 1; clearTimeout(this._hi); this._hi = setTimeout(() => (h.style.opacity = 0), 1500); }
+  toast(msg) { this.hint(msg); }
+  hitInfo() {}
+  flashMuzzle() {}
   onDeath(cause) { const d = this.root.querySelector('#death'); d.style.display = 'flex'; d.querySelector('#dcause').textContent = 'Causa: ' + (cause || 'ferimentos'); this.closeInv(); this.closeMenu(); this.g.input.exitLock(); }
 
-  iconHTML(item, cls = '') {
+  iconHTML(item) {
     const d = item.def, src = this.icons[item.id];
     if (src) return `<img src="${src}" draggable="false">`;
-    const t = d.tint ? `style="background:rgb(${d.tint.map((c) => Math.min(255, c * 330)).join(',')})"` : '';
+    const t = d.tint ? `style="color:rgb(${d.tint.map((c) => Math.min(255, c * 360)).join(',')})"` : '';
     return `<div class="emo" ${t}>${d.icon || '📦'}</div>`;
   }
-
   renderQuick() {
-    const P = this.g.player, inv = this.g.inv;
+    const P = this.g.player, inv = this.g.inv; let any = false;
     this.qslots.forEach((el, i) => {
       const it = inv.quick[i];
-      el.classList.toggle('act', !!it && P.hands === it);
-      el.querySelector('img,.emo,em')?.remove();
       el.querySelectorAll('img,.emo,em').forEach((n) => n.remove());
-      if (it) { el.insertAdjacentHTML('beforeend', this.iconHTML(it)); if (it.def.stack > 1) el.insertAdjacentHTML('beforeend', `<em>${it.qty}</em>`); }
+      el.classList.toggle('act', !!it && P.hands === it);
+      el.style.display = it ? 'flex' : 'none';
+      if (it) { any = true; el.insertAdjacentHTML('beforeend', this.iconHTML(it)); if (it.def.stack > 1) el.insertAdjacentHTML('beforeend', `<em>${it.qty}</em>`); }
     });
+    this.root.querySelector('#quick').style.display = any ? 'flex' : 'none';
   }
 
   update(dt, g) {
-    const P = g.player, W = g.weapons, atm = g.atm, root = this.root;
+    const P = g.player, T = g.tools, atm = g.atm, root = this.root;
     this.fpsAcc += dt; this.fpsN++;
     if (this.fpsAcc > 0.5) { this.fps = this.fpsN / this.fpsAcc; this.ms = this.fpsAcc / this.fpsN * 1000; this.fpsAcc = 0; this.fpsN = 0; }
-    // status
-    const set = (k, v, txt) => { const el = this.sts[k]; el.style.setProperty('--p', clamp(v, 0, 1)); const c = v < 0.18 ? '#e5534b' : v < 0.35 ? '#e0b34a' : '#e8e6df'; el.style.setProperty('--c', c); if (txt !== undefined) el.querySelector('small').textContent = txt; };
-    set('food', P.food / 5000); set('water', P.water / 5000);
-    const tv = clamp((P.temp - 33) / 5, 0, 1); set('temp', tv, P.temp.toFixed(1) + '°');
-    if (P.temp < 35.5) this.sts.temp.style.setProperty('--c', '#6fb3e0'); else if (P.temp > 38) this.sts.temp.style.setProperty('--c', '#e5834b');
-    set('blood', P.blood / 5000); set('health', P.health / 100);
-    // stamina
-    root.querySelector('#stam .bar i').style.width = P.stamina + '%';
-    root.querySelector('#stam .bar i').style.background = P.stamina < 20 ? '#d9534f' : '#cfd8a0';
-    root.querySelector('#stam .t').textContent = ['EM PÉ', 'AGACHADO', 'DEITADO'][P.stance] + (P.sprinting ? ' · CORRENDO' : P.swimming ? ' · NADANDO' : '') + (P.limp ? ' · PERNA QUEBRADA' : '');
-    // mira
-    const ring = root.querySelector('#cross .ring');
-    const hasGun = W.isGun;
-    const spread = hasGun ? 4 + (1 - W.adsT) * 26 + Math.min(1, P.lastSpeed / 4) * 18 + W.kick * 14 : 0;
-    ring.style.width = ring.style.height = spread * 2 + 'px'; ring.style.opacity = hasGun ? 1 - W.adsT : 0;
-    root.querySelector('#cross i').style.opacity = W.adsT > 0.6 ? 0.25 : 0.9;
-    root.querySelector('#hitm').style.opacity = W.hitMarker;
+    // indicadores: só os que precisam de atenção
+    const lvl = { food: P.food / 5000, water: P.water / 5000, temp: 1 - Math.abs(P.temp - 36.6) / 3, blood: P.blood / 5000, health: P.health / 100 };
+    const warnAt = { food: 0.4, water: 0.4, temp: 0.62, blood: 0.7, health: 0.7 };
+    let anyShown = false;
+    for (const k of Object.keys(lvl)) {
+      const el = this.sts[k], v = clamp(lvl[k], 0, 1), show = v < warnAt[k] || this.invOpen || this.menuOpen;
+      el.classList.toggle('show', show); anyShown = anyShown || show;
+      if (show) { el.style.setProperty('--p', v); const crit = v < warnAt[k] * 0.5; el.classList.toggle('crit', crit); el.classList.toggle('cold', k === 'temp' && P.temp < 36); el.classList.toggle('hot', k === 'temp' && P.temp > 37.5); if (k === 'temp') el.querySelector('small').textContent = P.temp.toFixed(1) + '°'; }
+    }
+    this.sts.leg.classList.toggle('show', P.limp); this.sts.leg.classList.toggle('crit', P.limp);
+    root.querySelector('#stam').style.opacity = P.stamina < 99 ? 1 : 0; root.querySelector('#stam i').style.width = P.stamina + '%';
+    root.querySelector('#stam i').style.background = P.stamina < 20 ? '#e5534b' : '#dfe6c0';
+    root.querySelector('#vig').style.opacity = clamp(P.hurt * 1.2 + (P.health < 30 ? (30 - P.health) / 60 : 0) + (P.bleeding ? 0.1 : 0), 0, 1);
     root.querySelector('#bino').style.display = P.zoomBino ? 'block' : 'none';
-    root.querySelector('#vig').style.opacity = clamp(P.hurt * 1.2 + (P.health < 30 ? (30 - P.health) / 60 : 0) + (P.bleeding ? 0.12 : 0), 0, 1);
-    // munição
-    const am = root.querySelector('#ammo');
-    if (W.item && hasGun) { am.style.display = 'block'; am.querySelector('.a').innerHTML = `${W.item.mag}<small> / ${W.ammoAvailable()}</small>`; am.querySelector('.w').textContent = W.item.def.name + (W.state === 'reload' ? ' · recarregando' : ''); }
-    else if (P.hands) { am.style.display = 'block'; am.querySelector('.a').innerHTML = P.hands.id === 'grenade' ? `${g.inv.count('grenade')}` : ''; am.querySelector('.w').textContent = P.hands.def.name; }
-    else am.style.display = 'none';
-    // bússola
-    const yaw = ((-P.camYaw % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
-    const deg = Math.round(yaw * 180 / Math.PI);
-    root.querySelector('#compass').textContent = `${DIRS[Math.round(yaw / (Math.PI / 4)) % 8]}  ${String(deg).padStart(3, '0')}°`;
-    // info
-    const wn = { clear: 'Limpo ☀️', cloudy: 'Nublado ⛅', overcast: 'Encoberto ☁️', rain: 'Chuva 🌧️', storm: 'Tempestade ⛈️', fog: 'Neblina 🌫️' }[atm.weatherName];
-    root.querySelector('#info').textContent = `${atm.hourText} · ${wn} · ${P.airT !== undefined ? P.airT.toFixed(0) + '°C' : ''} · ${g.settings.showFps ? Math.round(this.fps) + ' fps' : ''}`;
-    // prompt de interação
-    const pr = root.querySelector('#prompt'), t = P.interactTarget;
-    if (t && !this.invOpen && !this.menuOpen && !P.inVehicle) { pr.style.display = 'block'; pr.innerHTML = t.type === 'loot' ? `<b>[F]</b> Pegar ${t.e.item.def.name}${t.e.item.def.stack > 1 ? ' ×' + t.e.item.qty : ''}` : `<b>[F]</b> Entrar no veículo`; }
-    else if (P.inVehicle) { pr.style.display = 'block'; pr.innerHTML = `<b>[F]</b> Sair · ${Math.abs(P.inVehicle.speed * 3.6).toFixed(0)} km/h · combustível ${P.inVehicle.fuel.toFixed(0)} L`; }
-    else pr.style.display = 'none';
-    this.touchInteract && (this.touchInteract.style.display = (t || P.inVehicle) ? 'flex' : 'none');
-    // barra de ação
+    // mira: ponto discreto; anel quando há algo para interagir
+    const cross = root.querySelector('#cross'), tgt = P.interactTarget || P.resourceTarget;
+    cross.classList.toggle('on', !!tgt && !P.inVehicle); cross.style.display = P.inVehicle || (P.camMode === 'tp' && false) ? 'none' : 'block';
+    // relógio e temperatura
+    const fps = g.settings.showFps ? ` · ${Math.round(this.fps)} fps` : '';
+    root.querySelector('#info').textContent = `${atm.hourText} · ${P.airT !== undefined ? P.airT.toFixed(0) + '°C' : ''}${fps}`;
+    // prompt contextual
+    const pr = root.querySelector('#prompt'), mob = g.input.touchMode;
+    let txt = '', mode = 'hand';
+    if (P.inVehicle) { txt = `${mob ? '' : '<b>F</b> '}Sair · ${Math.abs(P.inVehicle.speed * 3.6).toFixed(0)} km/h · ${P.inVehicle.fuel.toFixed(0)} L`; mode = 'car'; }
+    else if (!this.invOpen && !this.menuOpen) {
+      const R = P.resourceTarget, it = P.interactTarget;
+      if (R && T.active) { txt = (R.kind === 'tree' ? 'Cortar árvore' : 'Quebrar rocha'); mode = T.def.id === 'axe' ? 'axe' : 'pick'; if ((R.kind === 'tree') !== (T.def.id === 'axe')) txt += R.kind === 'tree' ? ' (precisa do machado)' : ' (precisa da picareta)'; txt = (mob ? '' : '<b>Botão esq.</b> ') + txt; }
+      else if (it && it.type === 'loot') { txt = `${mob ? '' : '<b>F</b> '}Pegar ${it.e.item.def.name}${it.e.item.def.stack > 1 ? ' ×' + it.e.item.qty : ''}`; mode = 'hand'; }
+      else if (it && it.type === 'vehicle') { txt = `${mob ? '' : '<b>F</b> '}Entrar no veículo`; mode = 'car'; }
+      else if (R) { txt = R.kind === 'tree' ? 'Árvore — use o machado' : 'Rocha — use a picareta'; mode = R.kind === 'tree' ? 'axe' : 'pick'; }
+      else if (T.active) mode = T.def.id === 'axe' ? 'axe' : 'pick';
+    }
+    pr.classList.toggle('on', !!txt); pr.classList.toggle('low', !!P.inVehicle); if (txt && pr._t !== txt) { pr.innerHTML = txt; pr._t = txt; }
+    // botão de ação (celular)
+    if (this.actBtn) {
+      if (this._am !== mode) { this._am = mode; this.actBtn.innerHTML = ICON[mode === 'hand' ? 'hand' : mode]; }
+      this.actBtn.classList.toggle('ready', !!txt || T.active);
+    }
+    if (this.btnFlash) this.btnFlash.style.display = (g.inv.all().some((i) => i.def.tool === 'flashlight') && (g.env.night > 0.25 || P.flashlight)) ? 'flex' : 'none';
+    this.btnFlash && this.btnFlash.classList.toggle('on', P.flashlight);
+    // barra de ação (comer/beber/curar)
     const ab = root.querySelector('#actbar');
-    if (P.action) { ab.style.display = 'block'; ab.querySelector('.t').textContent = P.action.label; ab.querySelector('.bar i').style.width = (P.action.t / P.action.dur * 100) + '%'; } else ab.style.display = 'none';
-    // debug
+    if (P.action && P.action.label) { ab.classList.add('on'); ab.querySelector('span').textContent = P.action.label; ab.querySelector('i').style.width = (P.action.t / P.action.dur * 100) + '%'; } else ab.classList.remove('on');
+    // depuração
     const dbg = root.querySelector('#dbg');
     if (g.settings.debug) {
       dbg.style.display = 'block';
       const gl = g.r.gl, s = gl.stats;
-      const mem = performance.memory ? (performance.memory.usedJSHeapSize / 1048576).toFixed(0) + ' MB' : 'n/d';
-      dbg.textContent = `FPS ${this.fps.toFixed(0)}  (${this.ms.toFixed(1)} ms)  ${g.r.width}x${g.r.height}\nDraws ${s.draws}  Tris ${(s.tris / 1000).toFixed(0)}k  Prog ${s.programs}\nÁrvores ${g.veg.stats.trees}  Cobertura ${g.veg.stats.cover}  Chunks ${g.terrain.drawnChunks}\nCorpos ${g.phys.bodies.filter((b) => !b.dead && !b.asleep).length}/${g.phys.bodies.length}  Proj ${g.phys.projectiles.length}  Part ${g.particles.n}\nPos ${P.pos.map((v) => v.toFixed(0)).join(', ')}  v=${(P.lastSpeed || 0).toFixed(1)} m/s  alt ${(P.pos[1] - g.world.heightAt(P.pos[0], P.pos[2])).toFixed(1)}\nJS heap ${mem}\n${gl.caps.renderer || ''}`;
+      dbg.textContent = `FPS ${this.fps.toFixed(0)} (${this.ms.toFixed(1)} ms)  ${g.r.width}x${g.r.height}\nDraws ${s.draws}  Tris ${(s.tris / 1000).toFixed(0)}k\nÁrvores ${g.veg.stats.trees}  Cobertura ${g.veg.stats.cover}  Chunks ${g.terrain.drawnChunks}\nCorpos ${g.phys.bodies.filter((b) => !b.dead && !b.asleep).length}/${g.phys.bodies.length}  Part ${g.particles.n}\nPos ${P.pos.map((v) => v.toFixed(0)).join(', ')}  v=${(P.lastSpeed || 0).toFixed(1)} m/s\nÁudio: ${g.audio.ctx ? g.audio.ctx.state : 'sem'}  amostras ${Object.keys(g.audio.buffers).length}\n${gl.caps.renderer || ''}`;
     } else dbg.style.display = 'none';
-    // menu stats
     if (this.menuOpen && this.statsEl) this.refreshStats();
   }
-  refreshStats() { const g = this.g, s = g.r.gl.stats; this.statsEl.textContent = `FPS: ${this.fps.toFixed(0)} (${this.ms.toFixed(1)} ms)\nResolução: ${g.r.width} x ${g.r.height} (escala ${g.settings.renderScale})\nDraw calls: ${s.draws}\nTriângulos: ${(s.tris / 1000).toFixed(0)}k\nÁrvores visíveis: ${g.veg.stats.trees} / ${g.veg.treeCount}\nChunks de terreno: ${g.terrain.drawnChunks}\nCorpos rígidos: ${g.phys.bodies.length}\nProjéteis: ${g.phys.projectiles.length}\nPartículas: ${g.particles.n}\nGPU: ${g.r.gl.caps.renderer}\nWebGL2 aniso máx: ${g.r.gl.caps.aniso}x`; }
+  refreshStats() { const g = this.g, s = g.r.gl.stats; this.statsEl.textContent = `FPS: ${this.fps.toFixed(0)} (${this.ms.toFixed(1)} ms)\nResolução: ${g.r.width} x ${g.r.height} (escala ${g.settings.renderScale})\nDraw calls: ${s.draws}\nTriângulos: ${(s.tris / 1000).toFixed(0)}k\nÁrvores visíveis: ${g.veg.stats.trees} / ${g.veg.treeCount}\nChunks de terreno: ${g.terrain.drawnChunks}\nCorpos rígidos: ${g.phys.bodies.length}\nPartículas: ${g.particles.n}\nÁudio: ${g.audio.ctx ? g.audio.ctx.state : 'sem'}\nGPU: ${g.r.gl.caps.renderer}`; }
 
   relayout() { if (this.invOpen) this.renderInv(); }
 
@@ -209,8 +231,7 @@ export class UI {
       if (d.kind === 'drink') add('Beber', () => { g.player.useItem(it); this.closeInv(); });
       if (d.kind === 'med') add('Usar', () => { g.player.useItem(it); this.closeInv(); });
       if (d.kind === 'cloth') add(it.slot ? 'Tirar' : 'Vestir', () => { if (it.slot) { const s = it.slot; g.inv.unequip(s); if (!g.inv.add(it)) g.player.drop(it); } else if (!g.inv.slots[d.slot]) g.inv.equip(it, d.slot); this.renderInv(); });
-      if (['weapon', 'tool', 'throw'].includes(d.kind)) add(g.player.hands === it ? 'Guardar' : 'Segurar', () => { g.player.hands === it ? g.player.holster() : g.player.wield(it); this.renderInv(); });
-      if (d.weapon && WDEF(d.weapon) && it.mag !== undefined) add('Descarregar', () => { const n = it.mag; if (n > 0) { it.mag = 0; const am = makeItem('ammo_' + (d.weapon === 'mosin' ? '762' : '45'), n); if (!g.inv.add(am)) g.level.spawnItemBody(am, [g.player.pos[0], g.player.pos[1] + 1, g.player.pos[2]], [0, 1, 0]); } this.renderInv(); });
+      if (d.kind === 'tool') add(g.player.hands === it ? 'Guardar' : 'Segurar', () => { g.player.hands === it ? g.player.holster() : g.player.wield(it); this.renderInv(); });
       if (d.stack > 1 && it.qty > 1) add('Dividir', () => { const h = Math.floor(it.qty / 2); const c = makeItem(it.id, h); it.qty -= h; if (!g.inv.add(c)) it.qty += h; this.renderInv(); });
       add('Atalho ' + ((g.inv.quick.indexOf(it) >= 0) ? g.inv.quick.indexOf(it) + 1 : '—'), () => { const i = g.inv.quick.indexOf(it); g.inv.quick = g.inv.quick.map((q) => (q === it ? null : q)); const n = (i + 1) % 9; if (n < 8) g.inv.quick[n] = it; this.renderQuick(); this.renderInv(); });
       add('Largar', () => { g.player.drop(it); this.sel = null; this.renderInv(); });
@@ -283,26 +304,18 @@ export class UI {
     const g = this.g, R = this.root, inp = g.input;
     R.parentNode.append($('<div id="joy"><i></i></div>'));
     const joy = document.getElementById('joy'), jk = joy.querySelector('i');
-    inp.onJoy = (j, on) => { joy.style.display = on ? 'block' : 'none'; if (on) { joy.style.left = j.ox + 'px'; joy.style.top = j.oy + 'px'; jk.style.transform = `translate(${j.px || 0}px,${j.py || 0}px)`; } };
-    const mk = (name, label, cls, style, hold = true, fn) => {
-      const b = $(`<div class="tbtn ${cls || ''}" style="${style}">${label}</div>`);
-      const down = (e) => { e.preventDefault(); g.audio.resume(); if (fn) fn(true); else inp.setButton(name, true); b.classList.add('on'); };
-      const up = (e) => { e.preventDefault(); if (fn) fn(false); else if (hold) inp.setButton(name, false); b.classList.remove('on'); };
+    inp.onJoy = (j, on) => { joy.style.display = on ? 'block' : 'none'; if (on) { joy.style.left = j.ox + 'px'; joy.style.top = j.oy + 'px'; jk.style.transform = `translate(${j.px || 0}px,${j.py || 0}px)`; joy.classList.toggle('fast', Math.hypot(j.x, j.y) > 0.93); } };
+    const mk = (cls, icon, style, onDown, onUp) => {
+      const b = $(`<div class="tbtn ${cls}" style="${style}">${icon}</div>`);
+      const down = (e) => { e.preventDefault(); g.audio.unlock(); b.classList.add('on'); onDown && onDown(); };
+      const up = (e) => { e.preventDefault(); b.classList.remove('on'); onUp && onUp(); };
       b.addEventListener('pointerdown', down); b.addEventListener('pointerup', up); b.addEventListener('pointercancel', up); b.addEventListener('pointerleave', up);
       R.append(b); return b;
     };
-    const rb = `calc(var(--safe-r) + `, bb = `calc(var(--safe-b) + `;
-    mk('fire', '🔥', '', `right:${rb}30px);bottom:${bb}34px);width:92px;height:92px;font-size:34px`, true);
-    mk('aim', '🎯', '', `right:${rb}134px);bottom:${bb}44px);width:68px;height:68px`, true);
-    mk('jump', '⤒', '', `right:${rb}34px);bottom:${bb}140px);width:62px;height:62px`, false, (d) => d && inp.press('jump'));
-    mk('reload', '⟳', '', `right:${rb}110px);bottom:${bb}122px);width:54px;height:54px;font-size:22px`, false, (d) => d && inp.press('reload'));
-    this.touchInteract = mk('interact', 'F', '', `right:${rb}170px);bottom:${bb}60px);width:60px;height:60px;display:none;font-weight:700`, false, (d) => d && inp.press('interact'));
-    mk('crouch', '⤓', '', `left:calc(var(--safe-l) + 18px);bottom:${bb}175px);width:54px;height:54px`, false, (d) => d && inp.press('crouch'));
-    mk('prone', '▭', '', `left:calc(var(--safe-l) + 80px);bottom:${bb}175px);width:44px;height:44px;font-size:18px`, false, (d) => d && inp.press('prone'));
-    mk('sprint', '»', '', `left:calc(var(--safe-l) + 18px);bottom:${bb}235px);width:54px;height:54px;font-size:28px`, false, (d) => { if (d) { g.player.sprintLatch = !g.player.sprintLatch; } });
-    const top = (label, st, name) => mk(name, label, '', `right:calc(var(--safe-r) + ${st}px);top:calc(var(--safe-t) + 8px);width:44px;height:44px;font-size:20px`, false, (d) => d && inp.press(name));
-    top('☰', 8, 'menu'); top('🎒', 58, 'inventory'); top('👁', 108, 'camera'); top('🔦', 158, 'flashlight');
-    top('✋', 208, 'holster');
+    const rb = 'calc(var(--safe-r) + ', bb = 'calc(var(--safe-b) + ';
+    this.actBtn = mk('act', ICON.hand, `right:${rb}26px);bottom:${bb}28px)`, () => inp.press('action'));
+    mk('sm', ICON.up, `right:${rb}140px);bottom:${bb}34px)`, () => { inp.press('jump'); inp.setButton('jump', true); }, () => inp.setButton('jump', false));
+    mk('sm', ICON.down, `right:${rb}36px);bottom:${bb}132px)`, () => inp.press('crouch'));
   }
 
   // ---------------------------------------------------------------- menu
@@ -386,9 +399,9 @@ export class UI {
     this.buttons(b, Object.keys(WEATHER).map((k) => [{ clear: '☀️ Limpo', cloudy: '⛅ Nublado', overcast: '☁️ Encoberto', rain: '🌧️ Chuva', storm: '⛈️ Tempestade', fog: '🌫️ Neblina' }[k], () => a.setWeather(k)]));
     b.append($('<h4>Teleportar</h4>'));
     const tp = (n, x, z) => [n, () => { g.teleport(x, z); this.closeMenu(); }];
-    this.buttons(b, [tp('Spawn / Polígono', g.world.spawn.x, g.world.spawn.z), ...g.world.towns.map((t) => tp(t.name, t.x, t.z + 30)), tp('Base Militar', 1280, 1790), tp('Lago', 640, 1560), tp('Montanha', 1750, 300), tp('Polígono 300 m', g.world.spawn.x + 340, g.world.spawn.z)]);
+    this.buttons(b, [tp('Início / área de testes', g.world.spawn.x, g.world.spawn.z), ...g.world.towns.map((t) => tp(t.name, t.x, t.z + 30)), tp('Depósito', 1280, 1790), tp('Lago', 640, 1560), tp('Montanha', 1750, 300), tp('Floresta densa', 1476, 388)]);
     b.append($('<h4>Física</h4>'));
-    this.buttons(b, [['Derrubar pilha de caixas', () => { for (const dp of g.level.dynProps) if (!dp.body.dead) g.phys.applyImpulse(dp.body, [Math.random() * 40 - 20, 30, Math.random() * 40 - 20], dp.body.pos); }], ['Explosão à frente', () => { const d = g.player.aimDir(); const p = [g.player.eye[0] + d[0] * 12, g.world.heightAt(g.player.eye[0] + d[0] * 12, g.player.eye[2] + d[2] * 12) + 0.3, g.player.eye[2] + d[2] * 12]; g.weapons.explodeAt(p); }]]);
+    this.buttons(b, [['Derrubar pilha de caixas', () => { for (const dp of g.level.dynProps) if (!dp.body.dead) g.phys.applyImpulse(dp.body, [Math.random() * 40 - 20, 30, Math.random() * 40 - 20], dp.body.pos); }]]);
   }
   tabPlayer(b) {
     const g = this.g, P = g.player;
@@ -417,10 +430,9 @@ export class UI {
   }
   tabStats(b) { const p = $('<div class="help" style="white-space:pre;font:12px/1.5 ui-monospace,Menlo,monospace"></div>'); b.append(p); this.statsEl = p; this.refreshStats(); b.append($('<div class="help" style="margin-top:8px">Meta de desempenho: 60 FPS no POCO X7 Pro com a predefinição Alta (resolução 75%). Ajuste resolução, sombras e grama para encontrar o equilíbrio.</div>')); }
   tabHelp(b) {
-    b.append($(`<div class="help"><b>PC:</b> <kbd>W A S D</kbd> mover · mouse olhar · <kbd>Shift</kbd> correr · <kbd>C</kbd> agachar · <kbd>Z</kbd> deitar · <kbd>Espaço</kbd> pular · <kbd>Q</kbd>/<kbd>E</kbd> inclinar · botão esq. atirar · botão dir. mirar (<kbd>Shift</kbd> segura a respiração) · <kbd>R</kbd> recarregar · <kbd>F</kbd> interagir/pegar · <kbd>Tab</kbd>/<kbd>I</kbd> inventário · <kbd>1</kbd>–<kbd>8</kbd> atalhos · <kbd>V</kbd> 1ª/3ª pessoa · <kbd>L</kbd> lanterna · <kbd>G</kbd> largar · <kbd>H</kbd> guardar · <kbd>N</kbd> voar · <kbd>F3</kbd> depuração · <kbd>Esc</kbd> menu.<br><br>
-<b>Celular:</b> arraste à esquerda para mover (empurre até o fim para correr), arraste à direita para olhar, 🔥 atira, 🎯 mira, ⤒ pula, ⟳ recarrega, » alterna corrida, ⤓ agacha, ▭ deita, 🎒 inventário, 👁 câmera, 🔦 lanterna.<br><br>
-<b>Mecânicas para testar:</b> física de caixas e barris no polígono, balística com queda e vento (alvos a 25–300 m), penetração em madeira, granadas, carros com suspensão real, fome/sede/temperatura/sangramento, ciclo dia/noite, clima, loot nas casas, inventário em grade, quedas e dano.<br><br>
-<b>Créditos:</b> modelos e texturas CC0 do Poly Haven; personagem Soldier (three.js/Mixamo). Veja CREDITS.md.</div>`));
+    b.append($(`<div class="help"><b>PC:</b> <kbd>W A S D</kbd> mover · mouse olhar · <kbd>Shift</kbd> correr · <kbd>C</kbd> agachar · <kbd>Espaço</kbd> pular · botão esquerdo: cortar/quebrar/pegar · <kbd>F</kbd> interagir · <kbd>Tab</kbd> inventário · <kbd>1</kbd>–<kbd>8</kbd> atalhos · <kbd>V</kbd> 1ª/3ª pessoa · <kbd>L</kbd> lanterna · <kbd>G</kbd> largar · <kbd>H</kbd> guardar · <kbd>N</kbd> voar · <kbd>F3</kbd> depuração · <kbd>Esc</kbd> menu.<br><br>
+<b>Celular:</b> arraste à esquerda para mover (empurre até a borda para correr), arraste à direita para olhar. <b>Toque direto</b> num item para pegar, num carro para entrar, numa árvore ou rocha para golpear (equipa a ferramenta certa sozinho). O botão grande faz a ação do momento; ⤒ pula; ⤓ agacha.<br><br>
+<b>Recursos:</b> o <b>machado</b> derruba árvores (madeira); a <b>picareta</b> quebra rochas (pedra). Ambos estão no seu inventário.<br><br>
+<b>Créditos:</b> personagem e animações Quaternius (CC0); machado, picareta e props do Poly Haven (CC0); carros e sons da Kenney (CC0); sons do OpenGameArt (CC0). Veja CREDITS.md.</div>`));
   }
 }
-function WDEF(k) { return true; }

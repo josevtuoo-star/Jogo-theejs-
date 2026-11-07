@@ -9,7 +9,7 @@ main.js ─ Game
  ├─ Physics (engine/physics.js)        grade espacial de colisores, heightfield, cápsula, corpos rígidos, raycast, balística
  ├─ Skeleton (engine/anim.js)          FK, blend, IK de 2 ossos, ganchos em espaço de mundo
  ├─ Particles / AudioEngine / Input
- └─ Jogo: worldgen → Terrain, Vegetation, Level(world.js/buildings.js), Player, WeaponSystem, Character, Vehicle, UI
+ └─ Jogo: worldgen → Terrain, Vegetation, Level(world.js/buildings.js), Player, ToolSystem (machado/picareta), Character, Vehicle, UI
 ```
 
 ## Mundo (2 × 2 km)
@@ -28,3 +28,11 @@ main.js ─ Game
 
 ## Android
 `MainActivity` é um `WebView` imersivo que serve `assets/` do APK em `https://appassets.local/` (origem segura → módulos ES, `fetch`, WebAudio), pede o maior modo de atualização da tela (até 120 Hz), ativa o modo de desempenho sustentado e mapeia o botão Voltar para o menu do jogo.
+
+## Mudanças da v1.1
+- **Personagem**: Quaternius (CC0), esqueleto UE-Mannequin; `character.js` mistura clipes por velocidade/postura, IK de pernas e braços; `Skeleton.base` corrige a orientação do modelo.
+- **Ferramentas**: `tools.js` posiciona machado/picareta na mão (FK + gancho em espaço de mundo) e anima o golpe; `Player.findResource` (cone horizontal) e `tapInteract` (raio da tela vs. cilindros) acham árvores/pedras; `Vegetation.hitTree/hitRock` derrubam/quebram e geram madeira/pedra.
+- **Toque**: `Input.takeTaps()` entrega toques curtos; `Player.tapInteract` converte em interação com o objeto tocado.
+- **Áudio**: `audio.js` baseado em amostras CC0 (grupos `nome_N`, variação de tom, 3D simples, laços de ambiente/motor), com desbloqueio no primeiro `pointerup/touchend/click`.
+- **Carros**: modelos Kenney (corpo + 4 rodas) sobre o veículo raycast; câmera de perseguição obrigatória, motorista oculto.
+- **Terreno**: texturas normal/rugosidade em JPEG opaco (RG + B), `textureGrad`, proteção contra NaN.

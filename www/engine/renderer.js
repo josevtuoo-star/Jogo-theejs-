@@ -68,7 +68,7 @@ export class Renderer {
     this.boneRows = 24;
     this.boneTex = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, this.boneTex);
-    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA32F, 256, this.boneRows);
+    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA32F, 512, this.boneRows);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
     this.matAlb = null; this.matNor = null;
@@ -155,6 +155,10 @@ export class Renderer {
     gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_COMPARE_MODE, gl.COMPARE_REF_TO_TEXTURE);
     gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_COMPARE_FUNC, gl.LEQUAL);
     this.shadowFB = gl.createFramebuffer();
+    // FBO só de profundidade: sem buffer de cor (senão o draw é inválido e as sombras somem em GPUs/ANGLE rigorosos)
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.shadowFB);
+    gl.drawBuffers([gl.NONE]); gl.readBuffer(gl.NONE);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   }
   setShadowQuality(cascades, size) {
     this.settings.shadows = cascades; this.settings.shadowSize = size;

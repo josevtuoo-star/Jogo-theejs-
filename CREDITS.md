@@ -11,15 +11,19 @@ Não é exigida atribuição, mas ela é feita aqui com agradecimento aos artist
 
 **Texturas:** `leafy_grass`, `forest_ground_04`, `brown_mud_dry`, `rocky_terrain`, `coast_sand_01`, `gravel_road`, `asphalt_04`, `white_plaster_02`, `yellow_plaster`, `weathered_brown_planks`, `red_brick_03`, `concrete_wall_007`, `clay_roof_tiles_02`, `rusty_corrugated_iron`, `pine_bark`, `old_wooden_floor_01`, `dark_planks`, `metal_plate_02`, `grey_roof_tiles`.
 
-**Modelos:** `bolt_action_rifle_7_62`, `service_pistol`, `hatchet`, `machete`, `crowbar_01`, `stick_grenade`, `signal_flashlight`, `russian_food_cans_01`, `long_life_food`, `medical_box`, `metal_jerrycan`, `plastic_bottle_gallon`, `ammo_box`, `old_gas_mask`, `medical_tape`, `can_rusted`, `rubber_boots`, `fishermans_hat`, `binoculars`, `wooden_crate_01`, `old_military_crate`, `barrel_03`, `metal_trash_can`, `cardboard_box_01`, `old_tyre`, `fire_hydrant`, `utility_box_01`, `street_lamp_01`, `tree_stump_01`, `dead_tree_trunk`, `rock_07`, `rock_09`, `stone_01`, `boulder_01`, `shrub_02`, `shrub_04`, `fern_02`, `grass_medium_02`, `nettle_plant`, `wooden_picnic_table`, `painted_wooden_bench`, `propane_tank`.
+**Modelos:** `wooden_axe` (machado), `picke_dirty_01` (picareta), `dry_branches_medium_01`, `stone_01`, `life_jacket`, `cement_bag`, `compost_bag_02`, `trashbag`, `signal_flashlight`, `russian_food_cans_01`, `long_life_food`, `medical_box`, `metal_jerrycan`, `plastic_bottle_gallon`, `old_gas_mask`, `medical_tape`, `can_rusted`, `rubber_boots`, `fishermans_hat`, `binoculars`, `wooden_crate_01`, `old_military_crate`, `barrel_03`, `metal_trash_can`, `cardboard_box_01`, `old_tyre`, `fire_hydrant`, `utility_box_01`, `street_lamp_01`, `tree_stump_01`, `dead_tree_trunk`, `rock_07`, `rock_09`, `shrub_02`, `fern_02`, `wooden_picnic_table`, `painted_wooden_bench`, `propane_tank`.
 
-### Personagem provisório — `Soldier.glb` (Mixamo "Vanguard")
-Vem de `three.js/examples/models/gltf` (código do three.js sob MIT). O **modelo e as animações são do Mixamo/Adobe**, cujos termos permitem uso em projetos pessoais e comerciais, mas **não** a redistribuição do arquivo isoladamente. Por isso:
-- ele está incluído apenas como **placeholder de desenvolvimento**;
-- **antes de publicar o repositório/APK publicamente, troque por um personagem CC0** (por exemplo, da Quaternius) ou baixe o seu próprio no Mixamo.
+### Quaternius — CC0
+<https://quaternius.com> — **Universal Base Characters** (malha e esqueleto do personagem) e **Universal Animation Library 1 e 2** (27 animações usadas: parado, andar, trotar, correr, agachar, pular, nadar, dirigir, consumir, interagir, pegar, morte…). Montados por `tools/build_character.py`.
+
+### Kenney — CC0
+<https://kenney.nl> — **Starter Kit Racing** (os 4 caminhões usados como carros e os sons de motor, derrapagem e impacto) e **Starter Kit FPS** (sons de pulo e aterrissagem).
+
+### OpenGameArt — CC0 (sons)
+<https://opengameart.org> — passos: **[kdd] Different Steps**; **rubberduck — 100 CC0 SFX #2** e **75 CC0 breaking/falling/hit SFX** (madeira, pedra, trovão, itens, água); **kheetor — Tree chop and fall**; **Ylmir — Rain loopable**; **Birds and Wind (ambient)**; **Forest Ambience**.
 
 ### Gerado proceduralmente (sem licença de terceiros)
-Árvores, grama, céu, nuvens, água, edifícios, estradas, carros, mochilas, capacete, partículas, decalques e **todos os sons** (síntese WebAudio).
+Árvores e grama (instanciadas a partir de geradores), céu, nuvens, água, edifícios e estradas do mundo. Nenhum personagem, carro, ferramenta ou som é criado do zero: todos vêm dos pacotes CC0 acima.
 
 ## Ferramentas
 Pillow (processamento de imagens, licença HPND), Gradle/Android Gradle Plugin (Apache-2.0), Playwright (testes visuais, Apache-2.0).

@@ -1,32 +1,22 @@
 // Veículo com suspensão por raycast, atrito de pneu e motor, sobre o corpo rígido da engine.
-import { MeshBuilder } from '../engine/gl.js';
-import { Material } from '../engine/renderer.js';
 import { m4, q4, v3, clamp, lerp } from '../engine/math.js';
-import { MAT } from './assets.js';
 import { SURF } from '../engine/physics.js';
 
-export function makeCarMeshes(gl) {
-  const cm = new MeshBuilder();
-  const box = (x0, y0, z0, x1, y1, z1, layer = MAT.metal, o = {}) => cm.box(x0, y0, z0, x1, y1, z1, layer, { uvScale: 0.4, ...o });
-  box(-0.84, 0.35, -2.1, 0.84, 0.92, 2.1);
-  box(-0.8, 0.92, -0.95, 0.8, 1.42, 1.15);
-  box(-0.82, 0.82, 1.15, 0.82, 0.96, 2.05);
-  box(-0.82, 0.82, -2.05, 0.82, 0.96, -0.95);
-  box(-0.86, 0.3, 2.05, 0.86, 0.62, 2.22); box(-0.86, 0.3, -2.22, 0.86, 0.62, -2.05);
-  // vidros (escuros)
-  const gl2 = new MeshBuilder();
-  gl2.box(-0.81, 0.97, -0.9, 0.81, 1.38, 1.1, MAT.darkwood, { uvScale: 0.4 });
-  gl2.box(-0.7, 0.55, 2.2, -0.45, 0.75, 2.24, MAT.metal, { uvScale: 1 });
-  gl2.box(0.45, 0.55, 2.2, 0.7, 0.75, 2.24, MAT.metal, { uvScale: 1 });
-  const wb = new MeshBuilder();
-  wb.cylinder(0, 0, 0, 0.33, 0.33, 0.22, 14, MAT.darkwood, { uvScale: 0.6, cap: true });
-  wb.cylinder(0, 0.215, 0, 0.2, 0.2, 0.012, 10, MAT.metal, { uvScale: 1, cap: true });
-  return { body: cm.build(gl), glass: gl2.build(gl), wheel: wb.build(gl) };
+// geometria dos veículos: modelos CC0 da Kenney (Starter Kit Racing) — carroceria + 4 rodas como nós separados
+export const VEH_SCALE = 1.35;
+export const VEH_COLORS = ['green', 'red', 'yellow', 'purple'];
+export function loadVehicleModels(gl, assets) {
+  const out = [], S = m4.scaling(m4.create(), VEH_SCALE, VEH_SCALE, VEH_SCALE);
+  for (const c of VEH_COLORS) {
+    const g = assets.models['vehicle_' + c]; if (!g) continue;
+    out.push({ color: c, body: g.bake(gl, ['body'], S, false), wheel: g.bake(gl, 'wheel-front-left', S, true) });
+  }
+  return out;
 }
 
 const WHEELS = [
-  { lx: 0.86, lz: 1.32, front: true, drive: true }, { lx: -0.86, lz: 1.32, front: true, drive: true },
-  { lx: 0.86, lz: -1.3, front: false, drive: false }, { lx: -0.86, lz: -1.3, front: false, drive: false },
+  { lx: 0.74, lz: 1.157, front: true, drive: true }, { lx: -0.74, lz: 1.157, front: true, drive: true },
+  { lx: 0.74, lz: -0.887, front: false, drive: true }, { lx: -0.74, lz: -0.887, front: false, drive: true },
 ];
 
 export class Vehicle {
@@ -35,7 +25,7 @@ export class Vehicle {
     const phys = game.phys;
     const y = game.world.heightAt(x, z) + 1.0;
     this.mass = 1150;
-    this.body = phys.addBody({ shape: 'box', half: [0.86, 0.5, 2.15], mass: this.mass, pos: [x, y, z], q: q4.fromEuler(new Float32Array(4), yaw, 0, 0), rest: 0.1, fric: 0.5, surf: SURF.METAL, drag: 0.002, adrag: 0.6 });
+    this.body = phys.addBody({ shape: 'box', half: [0.98, 0.55, 1.9], mass: this.mass, pos: [x, y, z], q: q4.fromEuler(new Float32Array(4), yaw, 0, 0), rest: 0.1, fric: 0.5, surf: SURF.METAL, drag: 0.002, adrag: 0.6 });
     this.body.userdata = { vehicle: this };
     // inércia maior (estabilidade): reduz invI
     this.body.invI = this.body.invI.map((v) => v * 0.45);
@@ -47,7 +37,7 @@ export class Vehicle {
     this.speed = 0;
     this.hook = (dt) => this.step(dt);
     phys.hooks.push(this.hook);
-    this.restLen = 0.42; this.radius = 0.33; this.k = 30000; this.c = 3100;
+    this.restLen = 0.4; this.radius = 0.405; this.k = 32000; this.c = 3400; this.mountY = -0.25; this.rideH = 0.955;
   }
   step(dt) {
     const b = this.body, g = this.g, phys = g.phys, inp = this.input;
@@ -67,7 +57,7 @@ export class Vehicle {
     if (brake > 0.05 && vlong < 0.8 && throttle < 0.05 && hasFuel) { reverse = true; throttle = brake; brake = 0; }
     let grounded = 0;
     for (const w of this.wheels) {
-      const mx = w.lx, my = -0.2, mz = w.lz;
+      const mx = w.lx, my = this.mountY, mz = w.lz;
       const mp = q4.rotate([0, 0, 0], q, [mx, my, mz]); mp[0] += b.pos[0]; mp[1] += b.pos[1]; mp[2] += b.pos[2];
       const gy = phys.groundAt(mp[0], mp[2], mp[1] - 0.8, 0.9);
       const n = g.world.normalAt(mp[0], mp[2]);
@@ -101,7 +91,7 @@ export class Vehicle {
       const mEff = this.mass / 4;
       let Jlat = clamp(-vs * mEff * 0.85, -maxF, maxF);
       let Jlong = 0;
-      if (w.drive && throttle > 0.01) { const sp = Math.abs(vl); const F = throttle * 8200 * Math.max(0, 1 - sp / (reverse ? 9 : 38)); Jlong += (reverse ? -1 : 1) * F * dt * 0.5; }
+      if (w.drive && throttle > 0.01) { const sp = Math.abs(vl); const F = throttle * 5600 * Math.max(0, 1 - sp / (reverse ? 9 : 34)); Jlong += (reverse ? -1 : 1) * F * dt * 0.5; }
       if (brake > 0.01) Jlong += clamp(-vl * mEff, -brake * 9000 * dt * 0.5, brake * 9000 * dt * 0.5);
       if (inp.handbrake && !w.front) Jlong += clamp(-vl * mEff, -9000 * dt * 0.5, 9000 * dt * 0.5);
       Jlong += -vl * 0.006 * mEff * (throttle > 0.01 ? 0.1 : 1); // resistência de rolamento
@@ -128,33 +118,30 @@ export class Vehicle {
   }
   matrix(out) {
     const b = this.body;
-    // origem do mesh: chão sob o centro do chassi
     m4.fromTRS(out, b.pos, b.q, null);
-    const off = q4.rotate([0, 0, 0], b.q, [0, -0.85, 0]);
+    const off = q4.rotate([0, 0, 0], b.q, [0, -this.rideH, 0]);
     out[12] += off[0]; out[13] += off[1]; out[14] += off[2];
     return out;
   }
   wheelMatrix(i, out) {
     const w = this.wheels[i], b = this.body;
     const M = m4.fromTRS(m4.create(), b.pos, b.q, null);
-    const cy = -0.2 - (this.restLen - w.comp) ;
-    const local = m4.translation(m4.create(), w.lx, cy, w.lz);
-    const st = w.front ? this.steer : 0;
-    const R1 = m4.rotationY(m4.create(), st);
-    const R2 = m4.rotationX(m4.create(), -w.spin);
-    const Rz = m4.fromTRS(m4.create(), [0, 0, 0], q4.axisAngle(new Float32Array(4), 0, 0, 1, Math.PI / 2 * (w.lx > 0 ? -1 : 1)), null);
-    const off = m4.translation(m4.create(), 0, w.lx > 0 ? -0.0 : 0.0, 0);
-    m4.multiply(out, M, local); m4.multiply(out, out, R1); m4.multiply(out, out, R2); m4.multiply(out, out, Rz);
-    // cilindro ao longo de +y: centraliza em y
-    m4.multiply(out, out, m4.translation(m4.create(), 0, -0.11, 0));
+    m4.multiply(out, M, m4.translation(m4.create(), w.lx, this.mountY - (this.restLen - w.comp), w.lz));
+    m4.multiply(out, out, m4.rotationY(m4.create(), w.front ? this.steer : 0));
+    m4.multiply(out, out, m4.rotationX(m4.create(), -w.spin));
     return out;
   }
-  draw(r, meshes, mats) {
+  // assento do motorista (mundo) e guinada
+  seat(out = [0, 0, 0]) {
+    const b = this.body, p = q4.rotate([0, 0, 0], b.q, [-0.38, -this.rideH + 0.62, -0.1]);
+    out[0] = b.pos[0] + p[0]; out[1] = b.pos[1] + p[1]; out[2] = b.pos[2] + p[2]; return out;
+  }
+  draw(r, models) {
+    const mdl = models[this.matIdx % models.length]; if (!mdl) return;
     const M = this.matrix(m4.create());
-    r.draw(meshes.body, mats.paint[this.matIdx % mats.paint.length], { model: M });
-    r.draw(meshes.glass, mats.glass, { model: M });
+    for (const p of mdl.body) r.draw(p.mesh, p.material, { model: M });
     const wm = m4.create();
-    for (let i = 0; i < 4; i++) { this.wheelMatrix(i, wm); r.draw(meshes.wheel, mats.wheel, { model: wm }); }
+    for (let i = 0; i < 4; i++) { this.wheelMatrix(i, wm); for (const p of mdl.wheel) r.draw(p.mesh, p.material, { model: wm }); }
   }
   remove() { const i = this.g.phys.hooks.indexOf(this.hook); if (i >= 0) this.g.phys.hooks.splice(i, 1); this.g.phys.removeBody(this.body); }
 }

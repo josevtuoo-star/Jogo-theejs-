@@ -65,30 +65,27 @@ def fetch_texture(ph, out, size):
     nsize = min(size, 512)
     nor = nor.resize((nsize, nsize), Image.LANCZOS)
     rough = pick('Rough')
-    if rough:
-        r = Image.open(io.BytesIO(rough)).convert('L').resize((nsize, nsize), Image.LANCZOS)
-    else:
-        r = Image.new('L', (nsize, nsize), 200)
-    nor.putalpha(r)  # normal.rgb + rugosidade no alfa
-    nor.save(f'{ROOT}/tex/{out}_n.webp', quality=90, method=6)
+    r = Image.open(io.BytesIO(rough)).convert('L').resize((nsize, nsize), Image.LANCZOS) if rough else Image.new('L', (nsize, nsize), 200)
+    # formato opaco (robusto em qualquer GPU/navegador): R=nx, G=ny, B=rugosidade (nz é reconstruído no shader)
+    packed = Image.merge('RGB', (nor.getchannel('R'), nor.getchannel('G'), r))
+    packed.save(f'{ROOT}/tex/{out}_n.jpg', quality=92, optimize=True)
     return out
 
 
 # ----------------------------------------------------------------- modelos
 # nome PH -> tamanho máx. das texturas
-MODELS = {
-    'bolt_action_rifle_7_62': 1024, 'service_pistol': 1024, 'hatchet': 512, 'machete': 512,
-    'crowbar_01': 512, 'stick_grenade': 512, 'signal_flashlight': 512,
+MODELS = { 'signal_flashlight': 512,
     'russian_food_cans_01': 512, 'long_life_food': 512, 'medical_box': 512,
-    'metal_jerrycan': 512, 'plastic_bottle_gallon': 512, 'ammo_box': 512,
+    'metal_jerrycan': 512, 'plastic_bottle_gallon': 512,
     'old_gas_mask': 512, 'medical_tape': 512, 'can_rusted': 512, 'rubber_boots': 512,
     'fishermans_hat': 512, 'binoculars': 512,
+    'wooden_axe': 512, 'life_jacket': 512, 'cement_bag': 512, 'compost_bag_02': 512, 'trashbag': 512, 'picke_dirty_01': 512, 'dry_branches_medium_01': 512,
     'wooden_crate_01': 512, 'old_military_crate': 512, 'barrel_03': 512,
     'metal_trash_can': 512, 'cardboard_box_01': 512, 'old_tyre': 512,
     'fire_hydrant': 512, 'utility_box_01': 512, 'street_lamp_01': 512,
     'tree_stump_01': 512, 'dead_tree_trunk': 512, 'rock_07': 512, 'rock_09': 512,
-    'stone_01': 512, 'boulder_01': 512, 'shrub_02': 512, 'shrub_04': 512,
-    'fern_02': 512, 'grass_medium_02': 512, 'nettle_plant': 512,
+    'stone_01': 512, 'shrub_02': 512,
+    'fern_02': 512,
     'wooden_picnic_table': 512, 'painted_wooden_bench': 512, 'propane_tank': 512,
 }
 
@@ -163,6 +160,7 @@ def main():
                 print('ok ', j.result())
             except Exception as e:
                 print('ERR', e)
+    return
     sol = ROOT + '/models/soldier.glb'
     if FORCE or not os.path.exists(sol):
         url = 'https://raw.githubusercontent.com/mrdoob/three.js/r170/examples/models/gltf/Soldier.glb'

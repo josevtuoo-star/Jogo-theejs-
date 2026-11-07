@@ -7,7 +7,7 @@ import { WORLD } from './worldgen.js';
 import { MAT } from './assets.js';
 import * as B from './buildings.js';
 import { ITEMS, makeItem, LOOT, rollLoot } from './items.js';
-import { makeCarMeshes } from './vehicle.js';
+import { loadVehicleModels, VEH_SCALE } from './vehicle.js';
 
 const FOOT = { house: [11, 9], apartment: [19, 11], barn: [15, 10], shed: [5, 4.5], church: [11, 22], tower: [6, 6], kiosk: [7.5, 6.5], warehouse: [17, 11] };
 // modelos do Poly Haven trazem várias variantes lado a lado: escolhe a montagem certa
@@ -393,59 +393,52 @@ export class Level {
     const q = q4.fromEuler(new Float32Array(4), yaw, 0, 0);
     const body = this.phys.addBody({ shape: 'box', half: [hx, hy, hz], mass, pos: [x, y, z], q, rest: 0.3, fric: 0.55, surf: name.includes('barrel') || name.includes('trash') ? SURF.METAL : SURF.WOOD });
     body.asleep = true; body.sleep = 1;
+    const metal = /barrel|trash|propane|tyre/.test(name);
+    body.onImpact = (b, imp) => this.g.audio.drop(imp, b.pos, metal);
     const dp = { body, model: m, scale: sc, name, mat: m4.create() };
     this.dynProps.push(dp);
     return dp;
   }
 
-  // ---------- carros abandonados
+  // ---------- carros abandonados (modelos CC0 da Kenney)
   buildWrecks() {
     const W = this.W, rnd = mulberry32(31);
-    const meshes = makeCarMeshes(this.gl);
-    this.carBody = meshes.body; this.carGlass = meshes.glass; this.carWheel = meshes.wheel;
-    this.carMats = [[0.45, 0.07, 0.05], [0.1, 0.2, 0.26], [0.6, 0.55, 0.42], [0.06, 0.06, 0.07], [0.22, 0.3, 0.12], [0.4, 0.4, 0.42]].map((c) => new Material({ rough: 0.5, metal: 0.35, color: [c[0], c[1], c[2], 1], vcolorAO: false, name: 'car' }));
-    this.matGlass = new Material({ layered: true, rough: 0.12, metal: 0.0, color: [0.08, 0.1, 0.12, 1], vcolorAO: false });
-    this.matWheel = new Material({ layered: true, rough: 0.95, vcolorAO: false, color: [0.14, 0.14, 0.14, 1] });
-    this.carMatSet = { paint: this.carMats, glass: this.matGlass, wheel: this.matWheel };
-    this.carMeshes = meshes;
+    this.vehModels = loadVehicleModels(this.gl, this.g.assets);
     const spots = [];
     for (const rd of W.roads) for (let i = 30; i < rd.pts.length - 30; i += 38) {
       const p = rd.pts[i]; if (p[3] || rnd() > 0.35) continue;
       const a = rd.pts[i - 1], c = rd.pts[i + 1]; const l = Math.hypot(c[0] - a[0], c[1] - a[1]) || 1;
       const dx = (c[0] - a[0]) / l, dz = (c[1] - a[1]) / l, side = rnd() < 0.5 ? 1 : -1;
       const off = rd.width / 2 - 1.1 + rnd() * 1.4;
-      const x = p[0] - dz * side * off, z = p[1] + dx * side * off;
-      spots.push({ x, z, yaw: Math.atan2(dx, dz) + (rnd() < 0.5 ? 0 : Math.PI) + (rnd() - 0.5) * 0.25, mat: (rnd() * this.carMats.length) | 0 });
+      spots.push({ x: p[0] - dz * side * off, z: p[1] + dx * side * off, yaw: Math.atan2(dx, dz) + (rnd() < 0.5 ? 0 : Math.PI) + (rnd() - 0.5) * 0.25, mat: (rnd() * 4) | 0 });
     }
-    for (const t of W.towns) for (let k = 0; k < 3; k++) { const a = rnd() * 6.28, d = 20 + rnd() * t.r * 0.7, x = t.x + Math.cos(a) * d, z = t.z + Math.sin(a) * d; if (!this.exclude(x, z, 3)) spots.push({ x, z, yaw: rnd() * 6.28, mat: (rnd() * 6) | 0 }); }
-    const groups = this.carMats.map(() => []), wheels = [];
+    for (const t of W.towns) for (let k = 0; k < 3; k++) { const a = rnd() * 6.28, d = 20 + rnd() * t.r * 0.7, x = t.x + Math.cos(a) * d, z = t.z + Math.sin(a) * d; if (!this.exclude(x, z, 3)) spots.push({ x, z, yaw: rnd() * 6.28, mat: (rnd() * 4) | 0 }); }
+    // instâncias: carroceria e rodas por modelo (mat4 por instância)
+    const bodies = this.vehModels.map(() => []), wheels = this.vehModels.map(() => []);
     for (const s of spots) {
-      if (this.exclude(s.x, s.z, 2.2)) continue;
-      const c = Math.cos(s.yaw), sn = Math.sin(s.yaw);
-      const y = Math.max(W.heightAt(s.x + 1.3, s.z), W.heightAt(s.x - 1.3, s.z), W.heightAt(s.x, s.z + 2), W.heightAt(s.x, s.z - 2));
+      if (this.exclude(s.x, s.z, 2.4)) continue;
+      const y = Math.max(W.heightAt(s.x + 1.2, s.z), W.heightAt(s.x - 1.2, s.z), W.heightAt(s.x, s.z + 2), W.heightAt(s.x, s.z - 2));
       if (y < WORLD.waterY + 0.5) continue;
-      const m = m4.create(); m4.rotationY(m, s.yaw); m[12] = s.x; m[13] = y - 0.05; m[14] = s.z;
-      const arr = new Float32Array(20); arr.set(m); groups[s.mat].push(...arr);
-      this.phys.addBox(s.x, y + 0.85, s.z, 0.88, 0.62, 2.15, s.yaw, SURF.METAL);
-      this.footprints.push({ x: s.x, z: s.z, r: 2.5 });
+      const c = Math.cos(s.yaw), sn = Math.sin(s.yaw), mi = s.mat % this.vehModels.length;
+      const m = m4.create(); m4.rotationY(m, s.yaw); m[12] = s.x; m[13] = y - 0.03; m[14] = s.z;
+      const arr = new Float32Array(20); arr.set(m); bodies[mi].push(...arr);
+      this.phys.addBox(s.x, y + 1.15, s.z, 1.0, 0.7, 1.95, s.yaw, SURF.METAL);
+      this.footprints.push({ x: s.x, z: s.z, r: 2.6 });
       this.cars.push({ x: s.x, z: s.z, yaw: s.yaw, y });
-      for (const [lx, lz] of [[0.86, 1.32], [-0.86, 1.32], [0.86, -1.3], [-0.86, -1.3]]) {
+      for (const [lx, lz] of [[0.74, 1.157], [-0.74, 1.157], [0.74, -0.887], [-0.74, -0.887]]) {
         const wm = m4.create(); m4.rotationY(wm, s.yaw);
-        wm[12] = s.x + lx * c + lz * sn; wm[13] = y + 0.28; wm[14] = s.z - lx * sn + lz * c;
-        const Rz = m4.fromTRS(m4.create(), [0, 0, 0], q4.axisAngle(new Float32Array(4), 0, 0, 1, Math.PI / 2 * (lx > 0 ? -1 : 1)), null);
-        m4.multiply(wm, wm, Rz); m4.multiply(wm, wm, m4.translation(m4.create(), 0, -0.11, 0));
-        const a2 = new Float32Array(20); a2.set(wm); wheels.push(...a2);
+        wm[12] = s.x + lx * c + lz * sn; wm[13] = y + 0.405 - 0.03; wm[14] = s.z - lx * sn + lz * c;
+        const a2 = new Float32Array(20); a2.set(wm); wheels[mi].push(...a2);
       }
     }
-    this.carInst = groups.map((g) => (g.length ? new InstanceBuffer(this.gl, new Float32Array(g), 1) : null));
-    this.wheelInst = wheels.length ? new InstanceBuffer(this.gl, new Float32Array(wheels), 1) : null;
-    this.glassInst = this.carInst;
+    this.wreckBodies = bodies.map((g, i) => (g.length ? { ib: new InstanceBuffer(this.gl, new Float32Array(g), 1), parts: this.vehModels[i].body } : null));
+    this.wreckWheels = wheels.map((g, i) => (g.length ? { ib: new InstanceBuffer(this.gl, new Float32Array(g), 1), parts: this.vehModels[i].wheel } : null));
   }
 
   // ---------- base militar (loot melhor) e polígono de testes
   buildMilitary() {
     const W = this.W, b = new B.Build(), rnd = mulberry32(909);
-    // base militar no canto sudeste: 3 galpões + torre de guarda
+    // depósito no canto sudeste: 3 galpões + 1 casinha
     const cx = 1280, cz = 1790;
     // aplaina a área (altura lida do terreno; apenas coloca construções onde há espaço)
     const y0 = W.heightAt(cx, cz);
@@ -463,53 +456,25 @@ export class Level {
     this.statics.push({ mesh: b.mb.build(this.gl), mat: this.matBuilding, cx, cz, r: 90, y: y0 });
     for (const c of b.cols) this.phys.addBox(c.cx, c.cy, c.cz, c.hx, c.hy, c.hz, c.yaw, c.surf, { walk: c.walk });
     for (let i = 0; i < 10; i++) this.addDyn(i % 2 ? 'old_military_crate' : 'barrel_03', cx + (rnd() - 0.5) * 60, cz + (rnd() - 0.5) * 50, rnd() * 6.28);
-    // estrada de terra até a base já definida por trilhas; marca
-    W.landmarks.push({ name: 'Base Militar', x: cx, z: cz });
+    W.landmarks.push({ name: 'Depósito', x: cx, z: cz });
   }
 
   buildRange() {
-    const W = this.W, g = this.g, rnd = mulberry32(5);
+    const W = this.W, rnd = mulberry32(5);
     const sx = W.spawn.x, sz = W.spawn.z;
-    // faixa de tiro orientada para +x a partir do spawn
-    const dirs = [1, 0];
     this.range = { x: sx, z: sz };
-    this.targetMat = new Material({ color: [0.75, 0.72, 0.1, 1], rough: 0.5, metal: 0.6, vcolorAO: false, doubleSided: true });
-    this.targetMat2 = new Material({ color: [0.9, 0.9, 0.9, 1], rough: 0.6, metal: 0.2, vcolorAO: false, doubleSided: true });
-    const pm = new MeshBuilder();
-    pm.box(-0.35, 0, -0.02, 0.35, 0.9, 0.02, 0, { uvScale: 1 });
-    this.targetMesh = pm.build(this.gl);
-    const post = new MeshBuilder(); post.box(-0.04, 0, -0.04, 0.04, 1.4, 0.04, MAT.darkwood, { uvScale: 1 });
-    this.targetPost = post.build(this.gl);
-    // marcações de distância
-    const dists = [25, 50, 100, 150, 200, 300];
-    const baseY = (x, z) => W.heightAt(x, z);
-    dists.forEach((d, i) => {
-      const x = sx + 40 + d, z = sz + (i % 2 ? 3 : -3) * 1.5, y = baseY(x, z);
-      this.targets.push({ x, z, y, d, hit: 0, angle: 0, down: false, t: 0, big: d >= 150 });
-      this.phys.addBox(x, y + 0.9, z, 0.35 * (d >= 150 ? 1.6 : 1), 0.45 * (d >= 150 ? 1.6 : 1), 0.04, Math.PI / 2, SURF.METAL, { target: this.targets[this.targets.length - 1] });
-    });
-    // pirâmide de caixas + barris (física)
+    // pilha de caixas + barris + pneus + papelão (corpos rígidos)
     const px = sx + 14, pz = sz - 16;
-    for (let r = 0; r < 4; r++) for (let c = 0; c < 4 - r; c++) {
-      const d = this.addDyn('wooden_crate_01', px + (c - (3 - r) / 2) * 0.62, pz, 0, { y: this.W.heightAt(px, pz) + r * 0.6 + 0.01 });
-    }
+    for (let r = 0; r < 4; r++) for (let c = 0; c < 4 - r; c++) this.addDyn('wooden_crate_01', px + (c - (3 - r) / 2) * 0.62, pz, 0, { y: this.W.heightAt(px, pz) + r * 0.6 + 0.01 });
     for (let i = 0; i < 6; i++) this.addDyn('barrel_03', px + 4 + (i % 3) * 0.75, pz - 3 + Math.floor(i / 3) * 0.75, rnd() * 6);
     for (let i = 0; i < 4; i++) this.addDyn('old_tyre', px - 4 + i * 0.5, pz + 3, rnd() * 6, { y: this.W.heightAt(px, pz) + i * 0.3 });
     for (let i = 0; i < 4; i++) this.addDyn('cardboard_box_01', px - 2, pz - 5 + i * 0.5, rnd() * 6, { y: this.W.heightAt(px, pz) + i * 0.4 });
-    // degraus para testar subida (boxes walk)
-    for (let i = 0; i < 6; i++) this.phys.addBox(sx - 12, W.heightAt(sx - 12, sz + 8) + 0.1 * (i + 1) * 2 + 0.0, sz + 8 + i * 0.5 - 1, 1.2, 0.1 * (i + 1) + 0.05, 0.25, 0, SURF.STONE, { walk: true });
-    this.stairMesh = null;
-    // paredes de teste (madeira / concreto / metal) para balística e atravessamento
-    const wallsB = new B.Build(); wallsB.at(sx + 8, W.heightAt(sx + 8, sz + 12), sz + 12, 0);
-    wallsB.box(-1.5, 0, -0.1, -0.1, 2.2, 0.1, MAT.planks, { surf: SURF.WOOD });
-    wallsB.box(0.1, 0, -0.15, 1.5, 2.2, 0.15, MAT.concrete, { surf: SURF.STONE });
-    wallsB.box(1.7, 0, -0.04, 3.1, 2.2, 0.04, MAT.metal, { surf: SURF.METAL });
-    this.statics.push({ mesh: wallsB.mb.build(this.gl), mat: this.matBuilding, cx: sx + 9, cz: sz + 12, r: 8, y: 0 });
-    for (const c of wallsB.cols) this.phys.addBox(c.cx, c.cy, c.cz, c.hx, c.hy, c.hz, c.yaw, c.surf);
-    this.footprints.push({ x: sx + 30, z: sz, r: 60 });
-    // carros jogáveis perto do spawn
-    this.vehicleSpots = [{ x: sx - 8, z: sz - 6, yaw: 1.2 }, { x: sx - 8, z: sz - 11, yaw: 1.4 }];
-    this.footprints.push({ x: sx - 8, z: sz - 8, r: 8 });
+    // degraus (colisores caminháveis) para testar subida
+    for (let i = 0; i < 6; i++) this.phys.addBox(sx - 12, W.heightAt(sx - 12, sz + 8) + 0.1 * (i + 1) * 2, sz + 8 + i * 0.5 - 1, 1.2, 0.1 * (i + 1) + 0.05, 0.25, 0, SURF.STONE, { walk: true });
+    this.footprints.push({ x: sx + 14, z: sz - 16, r: 12 });
+    // carros jogáveis perto do ponto de início
+    this.vehicleSpots = [{ x: sx - 9, z: sz - 6, yaw: 1.2 }, { x: sx - 9, z: sz - 12, yaw: 1.4 }];
+    this.footprints.push({ x: sx - 9, z: sz - 9, r: 8 });
   }
 
   // ---------- loot
@@ -534,7 +499,7 @@ export class Level {
     }
     // kit de testes ao lado do spawn
     const sx = this.W.spawn.x, sz = this.W.spawn.z;
-    const kit = ['mosin', 'ammo_762', 'm1911', 'ammo_45', 'grenade', 'hatchet', 'machete', 'crowbar', 'medkit', 'bandage', 'water', 'fish_can', 'milk_can', 'ration', 'flashlight', 'binoculars', 'backpack_big', 'vest', 'jacket', 'jeans', 'helmet', 'hat', 'gasmask', 'boots', 'jerrycan'];
+    const kit = ['axe', 'pickaxe', 'medkit', 'bandage', 'water', 'fish_can', 'milk_can', 'ration', 'flashlight', 'binoculars', 'backpack_big', 'vest', 'jacket', 'jeans', 'helmet', 'hat', 'gasmask', 'boots', 'jerrycan', 'wood', 'stone'];
     kit.forEach((id, i) => {
       const a = (i / kit.length) * 6.28, d = 3.2 + (i % 3) * 0.4;
       const x = sx + Math.cos(a) * d, z = sz + 2 + Math.sin(a) * d;
@@ -547,7 +512,9 @@ export class Level {
       const m = this.model(d.model, d.node || null);
       if (m) return m;
     }
-    return null;
+    // roupas sem modelo próprio aparecem como trouxa (modelo CC0 'trashbag') tingida com a cor da peça
+    const b = this.model('trashbag');
+    return b ? { ...b, bundle: d.tint || [0.5, 0.5, 0.5] } : null;
   }
   dropLootAt(id, qty, x, z, y, extra = {}) {
     const item = extra.item || makeItem(id, qty);
@@ -563,6 +530,7 @@ export class Level {
     const sz = vis ? vis.size : [0.15, 0.15, 0.15];
     const half = [Math.max(0.03, sz[0] / 2), Math.max(0.03, sz[1] / 2), Math.max(0.03, sz[2] / 2)];
     const body = this.phys.addBody({ shape: 'box', half, mass: Math.max(0.1, item.def.weight * (item.def.stack > 1 ? item.qty : 1)), pos: pos.slice(), vel, w: [(Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6], rest: 0.25, fric: 0.6, q: q4.fromEuler(new Float32Array(4), Math.random() * 6, Math.random() * 0.5, Math.random() * 0.5) });
+    body.onImpact = (b, imp) => this.g.audio.drop(imp, b.pos, false);
     const e = { item, x: pos[0], y: pos[1], z: pos[2], yaw: 0, body, visual: vis };
     this.loot.push(e);
     return e;
@@ -586,8 +554,8 @@ export class Level {
       for (const part of p.model.parts) r.draw(part.mesh, part.material, { inst: p.inst, instFar: shadowPass ? 80 : 230 });
     }
     // carros
-    this.carInst && this.carInst.forEach((ib, i) => { if (ib) { r.draw(this.carBody, this.carMats[i], { inst: ib, instFar: shadowPass ? 70 : 380 }); r.draw(this.carGlass, this.matGlass, { inst: ib, instFar: shadowPass ? 70 : 380 }); } });
-    if (this.wheelInst) r.draw(this.carWheel, this.matWheel, { inst: this.wheelInst, instFar: shadowPass ? 60 : 300 });
+    for (const w of this.wreckBodies || []) if (w) for (const p of w.parts) r.draw(p.mesh, p.material, { inst: w.ib, instFar: shadowPass ? 70 : 380 });
+    for (const w of this.wreckWheels || []) if (w) for (const p of w.parts) r.draw(p.mesh, p.material, { inst: w.ib, instFar: shadowPass ? 60 : 300 });
     // corpos rígidos
     for (const dp of this.dynProps) {
       const b = dp.body; if (b.dead) continue;
@@ -610,12 +578,10 @@ export class Level {
       else this.lootMatrix(e, lm);
       for (const p of e.visual.parts) {
         let mat = p.material;
-        const t = e.item.def.tint; if (t && e.item.def.model === 'ammo_box') mat = this._tinted(mat, t);
+        if (e.visual.bundle) mat = this._tinted(mat, e.visual.bundle.map((c) => c * 1.5));
         r.draw(p.mesh, mat, { model: lm });
       }
     }
-    // alvos
-    for (const t of this.targets) this.drawTarget(r, t, shadowPass);
   }
   _tinted(mat, t) {
     if (!mat._tints) mat._tints = {}; const k = t.join();
@@ -635,22 +601,7 @@ export class Level {
     out[12] = e.x; out[13] = e.y - v.min[1] * 1 + 0.005; out[14] = e.z;
     return out;
   }
-  drawTarget(r, t, shadowPass) {
-    const m = m4.create(), q = q4.axisAngle(new Float32Array(4), 1, 0, 0, t.angle);
-    // chapa gira em torno da base (eixo x no pé)
-    const sc = t.big ? 1.6 : 1;
-    m4.fromTRS(m, [t.x, t.y + 0.5, t.z], q4.mul(new Float32Array(4), q4.axisAngle(new Float32Array(4), 0, 1, 0, Math.PI / 2), q4.axisAngle(new Float32Array(4), 1, 0, 0, t.angle)), [sc, sc, 1]);
-    r.draw(this.targetMesh, t.big ? this.targetMat2 : this.targetMat, { model: m });
-    const m2 = m4.create(); m4.fromTRS(m2, [t.x, t.y, t.z], q4.axisAngle(new Float32Array(4), 0, 1, 0, 0), null);
-    r.draw(this.targetPost, this.matBuilding, { model: m2 });
-  }
-  update(dt) {
-    for (const t of this.targets) {
-      if (t.hit > 0) { t.t += dt; t.angle = Math.min(1.45, t.angle + dt * 10 * (t.t < 0.2 ? 1 : 0)); if (t.t > 3) { t.hit = 0; t.t = 0; } }
-      else t.angle += (0 - t.angle) * Math.min(1, dt * 6);
-    }
-  }
-  hitTarget(col) { const t = col.target; if (t) { t.hit = 1; t.t = 0; t.angle = 0.02; } }
+  update(dt) {}
 
   drawWires(r) {
     if (!this.wires) return;

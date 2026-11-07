@@ -7,12 +7,13 @@ const MAT_FILES = ['m_plaster', 'm_plaster_y', 'm_planks', 'm_brick', 'm_concret
 const TERR_FILES = ['t_grass', 't_forest', 't_dirt', 't_rock', 't_sand', 't_gravel', 't_asphalt'];
 
 export const MODEL_NAMES = [
-  'bolt_action_rifle_7_62', 'service_pistol', 'hatchet', 'machete', 'crowbar_01', 'stick_grenade', 'signal_flashlight',
-  'russian_food_cans_01', 'long_life_food', 'medical_box', 'metal_jerrycan', 'plastic_bottle_gallon', 'ammo_box', 'old_gas_mask',
-  'medical_tape', 'can_rusted', 'rubber_boots', 'fishermans_hat', 'binoculars',
+  'wooden_axe', 'picke_dirty_01', 'life_jacket', 'cement_bag', 'compost_bag_02', 'trashbag', 'dry_branches_medium_01', 'stone_01', 'signal_flashlight',
+  'russian_food_cans_01', 'long_life_food', 'medical_box', 'metal_jerrycan', 'plastic_bottle_gallon',
+  'old_gas_mask', 'medical_tape', 'can_rusted', 'rubber_boots', 'fishermans_hat', 'binoculars',
   'wooden_crate_01', 'old_military_crate', 'barrel_03', 'metal_trash_can', 'cardboard_box_01', 'old_tyre', 'fire_hydrant', 'utility_box_01',
-  'street_lamp_01', 'tree_stump_01', 'dead_tree_trunk', 'rock_07', 'rock_09', 'stone_01', 'boulder_01', 'shrub_02', 'shrub_04', 'fern_02',
-  'grass_medium_02', 'nettle_plant', 'wooden_picnic_table', 'painted_wooden_bench', 'propane_tank',
+  'street_lamp_01', 'tree_stump_01', 'dead_tree_trunk', 'rock_07', 'rock_09', 'shrub_02', 'fern_02',
+  'wooden_picnic_table', 'painted_wooden_bench', 'propane_tank',
+  'vehicle_green', 'vehicle_red', 'vehicle_yellow', 'vehicle_purple',
 ];
 
 export class Assets {
@@ -24,7 +25,7 @@ export class Assets {
       const alb = texArray(gl, size, size, files.length, { srgb: true }), nor = texArray(gl, nsize, nsize, files.length, { srgb: false });
       const avgs = [];
       const jobs = files.map(async (f, i) => {
-        const [d, n] = await Promise.all([loadImage(`${this.base}tex/${f}_d.jpg`), loadImage(`${this.base}tex/${f}_n.webp`)]);
+        const [d, n] = await Promise.all([loadImage(`${this.base}tex/${f}_d.jpg`), loadImage(`${this.base}tex/${f}_n.jpg`)]);
         setLayer(gl, alb, i, d); setLayer(gl, nor, i, n);
         // cor média (linear)
         const c = document.createElement('canvas'); c.width = c.height = 8;
@@ -60,8 +61,8 @@ export class Assets {
     };
     await Promise.all(Array.from({ length: concurrency }, worker));
   }
-  async loadSoldier(onPrimitive) {
-    this.models.soldier = await loadGLB(`${this.base}models/soldier.glb`, this.gl, { onPrimitive });
-    return this.models.soldier;
+  async loadCharacter(onPrimitive) {
+    this.models.survivor = await loadGLB(`${this.base}char/survivor.glb`, this.gl, { onPrimitive });
+    return this.models.survivor;
   }
 }

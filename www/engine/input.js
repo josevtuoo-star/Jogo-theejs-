@@ -16,12 +16,13 @@ export class Input {
     this.joy = { id: -1, ox: 0, oy: 0, x: 0, y: 0, active: false };
     this.lookTouch = { id: -1, lx: 0, ly: 0 };
     this.map = {
-      KeyW: 'fwd', KeyS: 'back', KeyA: 'left', KeyD: 'right', Space: 'jump', ShiftLeft: 'sprint', ShiftRight: 'sprint',
-      KeyC: 'crouch', KeyZ: 'prone', KeyR: 'reload', KeyF: 'interact', KeyE: 'leanR', Tab: 'inventory', KeyI: 'inventory', KeyV: 'camera',
-      KeyL: 'flashlight', KeyG: 'drop', KeyQ: 'leanL', KeyB: 'firemode', Escape: 'menu', KeyP: 'menu', F3: 'debug', KeyN: 'noclip',
-      KeyT: 'time', KeyX: 'holster', KeyH: 'holster', KeyM: 'map', KeyU: 'use', KeyK: 'vehicle', KeyJ: 'vehicle',
+      KeyW: 'fwd', KeyS: 'back', KeyA: 'left', KeyD: 'right', ArrowUp: 'fwd', ArrowDown: 'back', ArrowLeft: 'left', ArrowRight: 'right',
+      Space: 'jump', ShiftLeft: 'sprint', ShiftRight: 'sprint', KeyC: 'crouch', ControlLeft: 'crouch',
+      KeyF: 'interact', KeyE: 'interact', Tab: 'inventory', KeyI: 'inventory', KeyV: 'camera', KeyL: 'flashlight', KeyG: 'drop',
+      Escape: 'menu', KeyP: 'menu', F3: 'debug', KeyN: 'noclip', KeyT: 'time', KeyH: 'holster', KeyK: 'vehicle',
       Digit1: 'slot1', Digit2: 'slot2', Digit3: 'slot3', Digit4: 'slot4', Digit5: 'slot5', Digit6: 'slot6', Digit7: 'slot7', Digit8: 'slot8',
     };
+    this.taps = [];
     const down = (e) => {
       if (!this.enabled) return;
       if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT')) return;
@@ -65,7 +66,7 @@ export class Input {
       this.joy = { id: e.pointerId, ox: e.clientX, oy: e.clientY, x: 0, y: 0, active: true };
       this.onJoy && this.onJoy(this.joy, true);
     } else if (this.lookTouch.id < 0) {
-      this.lookTouch = { id: e.pointerId, lx: e.clientX, ly: e.clientY, t: performance.now(), moved: 0 };
+      this.lookTouch = { id: e.pointerId, lx: e.clientX, ly: e.clientY, t: performance.now(), moved: 0, sx: e.clientX, sy: e.clientY };
     }
     try { this.canvas.setPointerCapture(e.pointerId); } catch {}
   }
@@ -80,13 +81,18 @@ export class Input {
     } else if (e.pointerId === this.lookTouch.id) {
       const dx = e.clientX - this.lookTouch.lx, dy = e.clientY - this.lookTouch.ly;
       this.lookTouch.lx = e.clientX; this.lookTouch.ly = e.clientY; this.lookTouch.moved += Math.abs(dx) + Math.abs(dy);
-      const s = 0.0042 * this.sens * (this.held.aim ? 0.6 : 1);
+      const s = 0.0042 * this.sens;
       this.look[0] -= dx * s; this.look[1] -= dy * s;
     }
   }
   _tup(e) {
     if (e.pointerId === this.joy.id) { this.joy = { id: -1, ox: 0, oy: 0, x: 0, y: 0, active: false }; this.onJoy && this.onJoy(this.joy, false); }
-    if (e.pointerId === this.lookTouch.id) { this.lookTouch = { id: -1, lx: 0, ly: 0 }; }
+    if (e.pointerId === this.lookTouch.id) {
+      const lt = this.lookTouch;
+      // toque curto e parado = "toque num objeto" (pegar item, entrar no carro, cortar árvore...)
+      if (e.type === 'pointerup' && lt.t && performance.now() - lt.t < 380 && Math.hypot(e.clientX - lt.sx, e.clientY - lt.sy) < 14) this.taps.push({ x: e.clientX, y: e.clientY });
+      this.lookTouch = { id: -1, lx: 0, ly: 0 };
+    }
   }
   // botões de interface virtual
   setButton(name, down) { if (down && !this.held[name]) this.pressedQ.add(name); this.held[name] = down; }
@@ -112,13 +118,14 @@ export class Input {
       const edge = (name, i) => { const k = name + gp.index; const p = b(i); if (p && !this['_g' + k]) this.pressedQ.add(name); this['_g' + k] = p; };
       this.held.fire = this.held.fire || b(7) || false; if (!b(7) && gp._f) this.held.fire = false; gp._f = b(7);
       this.held.aim = this.held.aim || b(6) || false; if (!b(6) && gp._a) this.held.aim = false; gp._a = b(6);
-      edge('jump', 0); edge('crouch', 1); edge('reload', 2); edge('interact', 3); edge('prevWeapon', 4); edge('nextWeapon', 5); edge('inventory', 8); edge('menu', 9); edge('camera', 11); edge('flashlight', 12);
+      edge('jump', 0); edge('crouch', 1); edge('action', 2); edge('interact', 3); edge('prevWeapon', 4); edge('nextWeapon', 5); edge('inventory', 8); edge('menu', 9); edge('camera', 11); edge('flashlight', 12);
       this.held.sprint = this.held.sprint || b(10);
     }
     const l = Math.hypot(mx, my);
     if (l > 1) { mx /= l; my /= l; }
     this.moveX = mx; this.moveY = my;
   }
+  takeTaps() { const t = this.taps; this.taps = []; return t; }
   consumeLook() { const l = [this.look[0], this.look[1]]; this.look[0] = 0; this.look[1] = 0; return l; }
   endFrame() { this.pressedQ.clear(); }
 }
