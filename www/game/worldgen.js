@@ -105,6 +105,56 @@ export class WorldData {
   }
 }
 
+export function computeNormals(H, hn, g) {
+  const normals = new Uint8Array(hn * hn * 4);
+  for (let j = 0; j < hn; j++) {
+    for (let i = 0; i < hn; i++) {
+      const hl = H[j * hn + Math.max(i - 1, 0)], hr = H[j * hn + Math.min(i + 1, hn - 1)];
+      const hd = H[Math.max(j - 1, 0) * hn + i], hu = H[Math.min(j + 1, hn - 1) * hn + i];
+      const nx = (hl - hr), nz = (hd - hu), ny = 2 * g;
+      const l = Math.hypot(nx, ny, nz);
+      const o = (j * hn + i) * 4;
+      normals[o] = (nx / l * 0.5 + 0.5) * 255; normals[o + 1] = (nz / l * 0.5 + 0.5) * 255; normals[o + 2] = (ny / l) * 255; normals[o + 3] = 255;
+    }
+  }
+  return normals;
+}
+
+// ---------- mundo "assado": os dados pesados são gerados no build e embarcados no APK
+export function bakeWorld(W) {
+  const hq = new Int16Array(W.heights.length);
+  for (let i = 0; i < hq.length; i++) hq[i] = Math.round(W.heights[i] * 100);
+  const roadIdx = new Map(W.roads.map((r, i) => [r, i]));
+  const meta = {
+    version: 1, seed: W.seed, lake: W.lake, towns: W.towns, fields: W.fields, spawn: W.spawn, landmarks: W.landmarks,
+    roads: W.roads.map((r) => ({ name: r.name, width: r.width, type: r.type, hasBridge: r.hasBridge, pts: r.pts.map((p) => [+p[0].toFixed(2), +p[1].toFixed(2), +(p[2] ?? 0).toFixed(3), p[3] ? 1 : 0]) })),
+    river: { width: W.river.width, half: W.river.half, pts: W.river.pts.map((p) => [+p[0].toFixed(2), +p[1].toFixed(2), +p[2].toFixed(3)]) },
+    bridges: W.bridges.map((b) => ({ road: roadIdx.get(b.road), a: b.a, b: b.b })),
+  };
+  return { meta, height: hq, splat0: W.splat0, splat1: W.splat1 };
+}
+
+export async function loadWorld(base, onProgress = () => {}) {
+  const get = async (f, type) => { const r = await fetch(base + f); if (!r.ok) throw new Error('mundo assado ausente: ' + f); return type === 'json' ? r.json() : r.arrayBuffer(); };
+  const meta = await get('meta.json', 'json');
+  onProgress('Lendo mapa', 0.2);
+  const [hb, s0, s1] = await Promise.all([get('height.i16'), get('splat0.bin'), get('splat1.bin')]);
+  const W = new WorldData(meta.seed);
+  const hq = new Int16Array(hb);
+  for (let i = 0; i < hq.length; i++) W.heights[i] = hq[i] / 100;
+  W.splat0 = new Uint8Array(s0); W.splat1 = new Uint8Array(s1);
+  W.lake = meta.lake; W.towns = meta.towns; W.fields = meta.fields; W.spawn = meta.spawn; W.landmarks = meta.landmarks || [];
+  W.roads = meta.roads.map((r) => ({ ...r, ctrl: null }));
+  W.river = { ...meta.river };
+  W.bridges = meta.bridges.map((b) => ({ road: W.roads[b.road], a: b.a, b: b.b }));
+  W.roadIdx = new PolyIndex(W.roads, 24);
+  W.riverIdx = new PolyIndex([{ pts: W.river.pts, kind: 'river' }], 24);
+  onProgress('Normais', 0.6);
+  W.normalMap = computeNormals(W.heights, WORLD.hn, WORLD.spacing);
+  onProgress('Pronto', 1);
+  return W;
+}
+
 export async function generateWorld(seed = 1337, onProgress = () => {}) {
   const W = new WorldData(seed);
   const N = W.noise, N2 = W.noise2, hn = W.hn, S = WORLD.size, g = WORLD.spacing;
@@ -261,17 +311,7 @@ export async function generateWorld(seed = 1337, onProgress = () => {}) {
 
   // ---------- normais + splat
   onProgress('Materiais', 0.72); await tick();
-  const normals = new Uint8Array(hn * hn * 4);
-  for (let j = 0; j < hn; j++) {
-    for (let i = 0; i < hn; i++) {
-      const hl = H[j * hn + Math.max(i - 1, 0)], hr = H[j * hn + Math.min(i + 1, hn - 1)];
-      const hd = H[Math.max(j - 1, 0) * hn + i], hu = H[Math.min(j + 1, hn - 1) * hn + i];
-      const nx = (hl - hr), nz = (hd - hu), ny = 2 * g;
-      const l = Math.hypot(nx, ny, nz);
-      const o = (j * hn + i) * 4;
-      normals[o] = (nx / l * 0.5 + 0.5) * 255; normals[o + 1] = (nz / l * 0.5 + 0.5) * 255; normals[o + 2] = (ny / l) * 255; normals[o + 3] = 255;
-    }
-  }
+  const normals = computeNormals(H, hn, g);
   W.normalMap = normals;
   const SN = WORLD.splatN;
   const sp0 = new Uint8Array(SN * SN * 4), sp1 = new Uint8Array(SN * SN * 4);

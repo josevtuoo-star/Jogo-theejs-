@@ -10,6 +10,13 @@ import { ITEMS, makeItem, LOOT, rollLoot } from './items.js';
 import { makeCarMeshes } from './vehicle.js';
 
 const FOOT = { house: [11, 9], apartment: [19, 11], barn: [15, 10], shed: [5, 4.5], church: [11, 22], tower: [6, 6], kiosk: [7.5, 6.5], warehouse: [17, 11] };
+// modelos do Poly Haven trazem várias variantes lado a lado: escolhe a montagem certa
+const VARIANTS = {
+  old_military_crate: { nodes: ['old_military_crate_a', 'old_military_crate_lid_a', 'old_military_crate_loop_a', 'old_military_crate_latch_a'], origin: 'old_military_crate_a' },
+  fire_hydrant: { nodes: ['fire_hydrant_aged', 'fire_hydrant_cap_01_aged', 'fire_hydrant_cap_02_aged', 'fire_hydrant_cap_03_aged'], origin: 'fire_hydrant_aged' },
+  metal_trash_can: { nodes: ['metal_trash_can', 'metal_trash_can_handle_left', 'metal_trash_can_handle_right'], origin: 'metal_trash_can' },
+  rubber_boots: { nodes: ['rubber_boots_l', 'rubber_boots_r'], shift: [0.3, 0, 0] },
+};
 const FN = { house: B.house, apartment: B.apartment, barn: B.barn, shed: B.shed, church: B.church, tower: B.waterTower, kiosk: B.kiosk, warehouse: B.warehouse };
 
 export class Level {
@@ -43,11 +50,17 @@ export class Level {
   }
 
   model(name, node = null, withBend = false) {
-    const key = name + '|' + node;
+    const key = name + '|' + node + '|' + withBend;
     if (this.modelCache[key]) return this.modelCache[key];
     const m = this.g.assets.models[name];
     if (!m) return null;
-    const parts = m.bake(this.gl, node, null, true, withBend);
+    let parts;
+    const V = VARIANTS[name];
+    if (V && !node) {
+      const o = m.node(V.origin);
+      const xf = V.shift ? m4.translation(m4.create(), ...V.shift) : o ? m4.translation(m4.create(), -o.t[0], -o.t[1], -o.t[2]) : null;
+      parts = m.bake(this.gl, V.nodes, xf, false, withBend);
+    } else parts = m.bake(this.gl, node, null, true, withBend);
     let mn = [1e9, 1e9, 1e9], mx = [-1e9, -1e9, -1e9];
     for (const p of parts) { for (let i = 0; i < 3; i++) { mn[i] = Math.min(mn[i], p.mesh.min[i]); mx[i] = Math.max(mx[i], p.mesh.max[i]); } }
     return (this.modelCache[key] = { parts, min: mn, max: mx, size: [mx[0] - mn[0], mx[1] - mn[1], mx[2] - mn[2]], center: [(mn[0] + mx[0]) / 2, (mn[1] + mx[1]) / 2, (mn[2] + mx[2]) / 2] });
@@ -78,7 +91,8 @@ export class Level {
   // ---------- vilas
   buildTown(t) {
     const W = this.W, rnd = mulberry32(Math.floor(t.x * 31 + t.z));
-    const b = new B.Build();
+    const builds = new Map();
+    const getB = (x, z) => { const k = Math.floor(x / 90) + ',' + Math.floor(z / 90); let e = builds.get(k); if (!e) builds.set(k, (e = { b: new B.Build(), x0: 1e9, z0: 1e9, x1: -1e9, z1: -1e9 })); e.x0 = Math.min(e.x0, x); e.x1 = Math.max(e.x1, x); e.z0 = Math.min(e.z0, z); e.z1 = Math.max(e.z1, z); return e.b; };
     const placed = [];
     const roadPts = [];
     for (const rd of W.roads) {
@@ -118,6 +132,7 @@ export class Level {
         const f = [-nx, -nz];
         const yaw = Math.atan2(f[0], f[1]);
         const y0 = Math.max(...hs);
+        const b = getB(cx, cz);
         b.at(cx, y0, cz, yaw);
         b.uvo = [rnd() * 5, rnd() * 5];
         const res = FN[type](b, rnd, {});
@@ -140,11 +155,14 @@ export class Level {
       }
     }
     // coloca no mundo: mesh + colisores
-    const mesh = b.mb.build(this.gl);
-    this.statics.push({ mesh, mat: this.matBuilding, cx: t.x, cz: t.z, r: t.r * 1.5, y: t.h });
-    for (const c of b.cols) {
-      if (c.kind === 1) this.phys.addCyl(c.cx, c.cz, c.r, c.y0, c.y1, c.surf);
-      else this.phys.addBox(c.cx, c.cy, c.cz, c.hx, c.hy, c.hz, c.yaw, c.surf, { walk: c.walk, noBullet: c.noBullet, ghost: c.ghost });
+    for (const e of builds.values()) {
+      if (!e.b.mb.vcount) continue;
+      const mesh = e.b.mb.build(this.gl);
+      this.statics.push({ mesh, mat: this.matBuilding, cx: (e.x0 + e.x1) / 2, cz: (e.z0 + e.z1) / 2, r: Math.hypot(e.x1 - e.x0, e.z1 - e.z0) / 2 + 40, y: t.h });
+      for (const c of e.b.cols) {
+        if (c.kind === 1) this.phys.addCyl(c.cx, c.cz, c.r, c.y0, c.y1, c.surf);
+        else this.phys.addBox(c.cx, c.cy, c.cz, c.hx, c.hy, c.hz, c.yaw, c.surf, { walk: c.walk, noBullet: c.noBullet, ghost: c.ghost });
+      }
     }
     // props urbanos ao longo das ruas
     for (let i = 0; i < roadPts.length; i += 3) {
@@ -206,21 +224,51 @@ export class Level {
   }
 
   buildBridges() {
-    const W = this.W, b = new B.Build();
+    const W = this.W, mb = new MeshBuilder(), cols = [];
+    // varre uma seção retangular ao longo da polilinha (malha contínua, acompanha a inclinação)
+    const sweep = (rows, off, hw, yT, yB, layer) => {
+      const f = mb.vcount;
+      const P = (r, sx, y) => [r.x + r.nx * (off + sx * hw), r.y + y, r.z + r.nz * (off + sx * hw)];
+      for (let i = 0; i < rows.length; i++) {
+        const r = rows[i], d = r.d * 0.5;
+        // 8 vértices por seção: topo(L,R), esq(topo,base), dir(topo,base), base(L,R)
+        const tl = P(r, -1, yT), tr = P(r, 1, yT), bl = P(r, -1, yB), br = P(r, 1, yB);
+        mb.vert(...tl, 0, 1, 0, 0, d, 255, layer, 128, 0); mb.vert(...tr, 0, 1, 0, 1, d, 255, layer, 128, 0);
+        mb.vert(...tl, -r.nx, 0, -r.nz, 0, d, 255, layer, 128, 0); mb.vert(...bl, -r.nx, 0, -r.nz, 1, d, 255, layer, 128, 0);
+        mb.vert(...tr, r.nx, 0, r.nz, 0, d, 255, layer, 128, 0); mb.vert(...br, r.nx, 0, r.nz, 1, d, 255, layer, 128, 0);
+        mb.vert(...bl, 0, -1, 0, 0, d, 255, layer, 128, 0); mb.vert(...br, 0, -1, 0, 1, d, 255, layer, 128, 0);
+      }
+      for (let i = 0; i < rows.length - 1; i++) {
+        const k = f + i * 8, n = k + 8;
+        mb.quad(k, k + 1, n + 1, n);                 // topo
+        mb.quad(k + 2, n + 2, n + 3, k + 3);         // esquerda
+        mb.quad(k + 4, k + 5, n + 5, n + 4);         // direita
+        mb.quad(k + 6, n + 6, n + 7, k + 7);         // base
+      }
+    };
     for (const br of W.bridges) {
       const pts = br.road.pts, hw = br.road.width / 2;
-      for (let i = br.a; i < br.b; i++) {
-        const p = pts[i], q = pts[i + 1];
-        const dx = q[0] - p[0], dz = q[1] - p[1], L = Math.hypot(dx, dz) || 1;
-        const yaw = Math.atan2(-dz, dx);
-        const cx = (p[0] + q[0]) / 2, cz = (p[1] + q[1]) / 2, y = (p[2] + q[2]) / 2;
-        // tabuleiro + guarda-corpos
-        b.obox(cx, y - 0.3, cz, L / 2 + 0.05, 0.28, hw + 0.6, yaw, MAT.concrete, { uvScale: 0.5 });
-        b.cols.push({ cx, cy: y - 0.3, cz, hx: L / 2 + 0.05, hy: 0.28, hz: hw + 0.6, yaw, surf: SURF.STONE, walk: true });
-        for (const s of [-1, 1]) {
-          const ox = -Math.sin(yaw) * 0, rx = Math.sin(yaw) * s * (hw + 0.45), rz = Math.cos(yaw) * s * (hw + 0.45);
-          b.obox(cx + rx, y + 0.45, cz + rz, L / 2 + 0.05, 0.5, 0.15, yaw, MAT.concrete, { uvScale: 0.5 });
-          b.cols.push({ cx: cx + rx, cy: y + 0.45, cz: cz + rz, hx: L / 2 + 0.05, hy: 0.5, hz: 0.15, yaw, surf: SURF.STONE });
+      const rows = [];
+      let acc = 0;
+      for (let i = br.a; i <= br.b; i++) {
+        const p = pts[i], a = pts[Math.max(i - 1, 0)], c = pts[Math.min(i + 1, pts.length - 1)];
+        let dx = c[0] - a[0], dz = c[1] - a[1]; const l = Math.hypot(dx, dz) || 1; dx /= l; dz /= l;
+        if (i > br.a) acc += Math.hypot(p[0] - pts[i - 1][0], p[1] - pts[i - 1][1]);
+        rows.push({ x: p[0], z: p[1], y: p[2], nx: -dz, nz: dx, d: acc });
+      }
+      sweep(rows, 0, hw + 0.6, 0.0, -0.6, MAT.concrete);
+      sweep(rows, hw + 0.45, 0.15, 1.0, -0.05, MAT.concrete);
+      sweep(rows, -(hw + 0.45), 0.15, 1.0, -0.05, MAT.concrete);
+      // colisores finos (segmentos de ~1,4 m seguem a inclinação com degraus < 7 cm)
+      for (let i = 0; i < rows.length - 1; i++) {
+        const A = rows[i], Bq = rows[i + 1];
+        const dx = Bq.x - A.x, dz = Bq.z - A.z, L = Math.hypot(dx, dz) || 1, yaw = Math.atan2(-dz, dx);
+        const SUB = 3;
+        for (let s2 = 0; s2 < SUB; s2++) {
+          const t0 = s2 / SUB, t1 = (s2 + 1) / SUB, tm = (t0 + t1) / 2;
+          const cx = A.x + dx * tm, cz = A.z + dz * tm, y = A.y + (Bq.y - A.y) * tm;
+          cols.push({ cx, cy: y - 0.3, cz, hx: L / SUB / 2 + 0.02, hy: 0.3, hz: hw + 0.6, yaw, surf: SURF.STONE, walk: true });
+          for (const sd of [-1, 1]) cols.push({ cx: cx + Math.sin(yaw) * sd * (hw + 0.45), cy: y + 0.5, cz: cz + Math.cos(yaw) * sd * (hw + 0.45), hx: L / SUB / 2 + 0.02, hy: 0.5, hz: 0.15, yaw, surf: SURF.STONE, walk: false });
         }
       }
       // encontros nas cabeceiras
@@ -229,12 +277,13 @@ export class Level {
         const n = pts[Math.min(idx + 1, pts.length - 1)], m = pts[Math.max(idx - 1, 0)];
         const yaw = Math.atan2(-(n[1] - m[1]), n[0] - m[0]);
         const hgt = Math.max(0.6, p[2] - gy + 1.2);
-        b.obox(p[0], p[2] - 0.55 - hgt / 2 + 0.3, p[1], 1.2, hgt / 2, hw + 0.6, yaw, MAT.concrete, { uvScale: 0.5 });
+        const bb = new B.Build();
+        bb.mb = mb; bb.obox(p[0], p[2] - 0.6 - hgt / 2 + 0.3, p[1], 1.2, hgt / 2, hw + 0.6, yaw, MAT.concrete, { uvScale: 0.5 });
       }
     }
-    if (b.mb.vcount) {
-      this.statics.push({ mesh: b.mb.build(this.gl), mat: this.matBuilding, cx: 1000, cz: 1000, r: 2000, y: 0 });
-      for (const c of b.cols) this.phys.addBox(c.cx, c.cy, c.cz, c.hx, c.hy, c.hz, c.yaw, c.surf, { walk: c.walk });
+    if (mb.vcount) {
+      this.statics.push({ mesh: mb.build(this.gl), mat: this.matBuilding, cx: 1000, cz: 1000, r: 2000, y: 0 });
+      for (const c of cols) this.phys.addBox(c.cx, c.cy, c.cz, c.hx, c.hy, c.hz, c.yaw, c.surf, { walk: c.walk });
     }
   }
 
@@ -526,19 +575,19 @@ export class Level {
     for (const s of this.statics) {
       if (shadowPass && s.noShadow) continue;
       if (!s.road && !f.sphere(s.cx, s.y + 6, s.cz, s.r)) continue;
-      if (shadowPass && Math.hypot(cam[0] - s.cx, cam[2] - s.cz) > s.r + 330) continue;
+      if (shadowPass && Math.hypot(cam[0] - s.cx, cam[2] - s.cz) > s.r + [60, 170, 300][r.cascadeIndex || 0]) continue;
       r.draw(s.mesh, s.mat, { model: I });
     }
     // postes
-    if (this.poleInst && !shadowPass) r.draw(this.poleMesh, this.matPole, { inst: this.poleInst });
+    if (this.poleInst && !shadowPass) r.draw(this.poleMesh, this.matPole, { inst: this.poleInst, instFar: 420 });
     // props instanciados
     for (const p of this.props) {
       if (!p.inst) continue;
-      for (const part of p.model.parts) r.draw(part.mesh, part.material, { inst: p.inst });
+      for (const part of p.model.parts) r.draw(part.mesh, part.material, { inst: p.inst, instFar: shadowPass ? 80 : 230 });
     }
     // carros
-    this.carInst && this.carInst.forEach((ib, i) => { if (ib) { r.draw(this.carBody, this.carMats[i], { inst: ib }); r.draw(this.carGlass, this.matGlass, { inst: ib }); } });
-    if (this.wheelInst) r.draw(this.carWheel, this.matWheel, { inst: this.wheelInst });
+    this.carInst && this.carInst.forEach((ib, i) => { if (ib) { r.draw(this.carBody, this.carMats[i], { inst: ib, instFar: shadowPass ? 70 : 380 }); r.draw(this.carGlass, this.matGlass, { inst: ib, instFar: shadowPass ? 70 : 380 }); } });
+    if (this.wheelInst) r.draw(this.carWheel, this.matWheel, { inst: this.wheelInst, instFar: shadowPass ? 60 : 300 });
     // corpos rígidos
     for (const dp of this.dynProps) {
       const b = dp.body; if (b.dead) continue;

@@ -99,3 +99,14 @@ canvas#c{position:fixed;inset:0;width:100%;height:100%;display:block;touch-actio
 #menu select{background:#1a1d15;color:var(--fg);border:1px solid rgba(255,255,255,.2);padding:4px 6px;border-radius:4px}
 #menu .help{font-size:12px;color:#bdbdb0;line-height:1.5}#menu kbd{background:#222;border:1px solid #444;border-radius:3px;padding:0 5px;font-size:11px}
 @media (max-height:480px){.qs{width:42px;height:42px}.qs img{max-width:36px}.st{width:38px;height:38px}#inv .slot{height:46px}}
+
+/* layout para toque: libera os cantos inferiores para os botões */
+body.touch #status{left:calc(12px + var(--safe-l));right:auto;top:calc(46px + var(--safe-t));bottom:auto;gap:14px}
+body.touch .st{width:36px;height:36px}body.touch .st span{font-size:15px}body.touch .st small{font-size:9px;bottom:-12px}
+body.touch #ammo{right:calc(12px + var(--safe-r));top:calc(62px + var(--safe-t));bottom:auto}
+body.touch #ammo .a{font-size:24px}
+body.touch #quick{bottom:calc(6px + var(--safe-b))}
+body.touch #stam{bottom:calc(8px + var(--safe-b));left:calc(14px + var(--safe-l));width:120px}
+body.touch #toasts{top:calc(8px + var(--safe-t));left:42%}
+body.touch #info{top:calc(8px + var(--safe-t))}
+body.touch #compass{left:50%;top:calc(8px + var(--safe-t))}

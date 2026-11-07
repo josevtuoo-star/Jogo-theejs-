@@ -178,6 +178,7 @@ uniform mat4 uModel;
 #endif
 uniform float uWindAmp;
 uniform float uInstNear;
+uniform float uInstFar;
 out vec3 vWP; out vec3 vN; out vec2 vUV; out vec4 vCol; out float vVZ; out vec4 vInst;
 void main() {
   vec3 lp = aPos; vec3 ln = aNrm;
@@ -189,13 +190,15 @@ void main() {
   vInst = vec4(0.0);
 #if INST == 1
   wp = (aModel * vec4(lp, 1.0)).xyz; wn = mat3(aModel) * ln; vInst = aInst;
+  { float idist = distance(aModel[3].xz, uCamPos.xz); if ((uInstNear > 0.0 && idist < uInstNear) || (uInstFar > 0.0 && idist > uInstFar)) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); vWP = vec3(0.0); vN = vec3(0, 1, 0); vUV = aUV; vCol = aCol; vVZ = 0.0; return; } }
 #elif INST == 2
   float c = cos(aI1.x), s = sin(aI1.x);
   vec3 sp = lp * aI0.w;
   vec3 rp = vec3(c * sp.x + s * sp.z, sp.y, -s * sp.x + c * sp.z);
   wp = aI0.xyz + rp; wn = vec3(c * ln.x + s * ln.z, ln.y, -s * ln.x + c * ln.z);
   vInst = vec4(aI1.y, aI0.w, aI1.z, aI1.w);
-  if (uInstNear > 0.0 && distance(wp.xz, uCamPos.xz) < uInstNear) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); vWP = wp; vN = vec3(0, 1, 0); vUV = aUV; vCol = aCol; vVZ = 0.0; return; }
+  float idist = distance(wp.xz, uCamPos.xz);
+  if ((uInstNear > 0.0 && idist < uInstNear) || (uInstFar > 0.0 && idist > uInstFar)) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); vWP = wp; vN = vec3(0, 1, 0); vUV = aUV; vCol = aCol; vVZ = 0.0; return; }
 #else
   wp = (uModel * vec4(lp, 1.0)).xyz; wn = mat3(uModel) * ln;
 #endif
@@ -327,6 +330,8 @@ uniform mat4 uModel;
 #endif
 uniform mat4 uLightVP;
 uniform float uWindAmp;
+uniform float uInstNear;
+uniform float uInstFar;
 out vec2 vUV;
 void main() {
   vec3 lp = aPos;
@@ -337,10 +342,12 @@ void main() {
   vec3 wp;
 #if INST == 1
   wp = (aModel * vec4(lp, 1.0)).xyz;
+  { float idist = distance(aModel[3].xz, uCamPos.xz); if ((uInstNear > 0.0 && idist < uInstNear) || (uInstFar > 0.0 && idist > uInstFar)) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); vUV = aUV; return; } }
 #elif INST == 2
   float c = cos(aI1.x), s = sin(aI1.x);
   vec3 sp = lp * aI0.w;
   wp = aI0.xyz + vec3(c * sp.x + s * sp.z, sp.y, -s * sp.x + c * sp.z);
+  { float idist = distance(wp.xz, uCamPos.xz); if ((uInstNear > 0.0 && idist < uInstNear) || (uInstFar > 0.0 && idist > uInstFar)) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); vUV = aUV; return; } }
 #else
   wp = (uModel * vec4(lp, 1.0)).xyz;
 #endif

@@ -17,7 +17,7 @@ export const ITEMS = {
   // ---- comida e bebida
   fish_can: { name: 'Sardinha em lata', kind: 'food', w: 1, h: 1, weight: 0.3, model: 'russian_food_cans_01', node: 'russian_food_cans_01_can_fish', food: { kcal: 380, water: -10, health: 0 }, desc: 'Calorias seguras.' },
   milk_can: { name: 'Leite condensado', kind: 'food', w: 1, h: 1, weight: 0.4, model: 'russian_food_cans_01', node: 'russian_food_cans_01_can_cond', food: { kcal: 420, water: 40 }, desc: 'Doce e energético.' },
-  ration: { name: 'Ração de longa duração', kind: 'food', w: 2, h: 1, weight: 0.5, model: 'long_life_food', food: { kcal: 600, water: 0 }, desc: 'Pacote de ração.' },
+  ration: { name: 'Ração de longa duração', kind: 'food', w: 1, h: 1, weight: 0.5, model: 'long_life_food', node: 'long_life_food_beans', food: { kcal: 600, water: 0 }, desc: 'Pacote de ração.' },
   water: { name: 'Garrafa de água (1 L)', kind: 'drink', w: 1, h: 2, weight: 1.0, model: 'plastic_bottle_gallon', drink: { water: 500 }, qtyMax: 4, desc: 'Cada gole mata a sede.' },
   can_empty: { name: 'Lata enferrujada', kind: 'misc', w: 1, h: 1, weight: 0.1, model: 'can_rusted', desc: 'Vazia.' },
   // ---- médicos

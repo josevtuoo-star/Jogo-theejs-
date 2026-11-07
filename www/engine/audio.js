@@ -107,7 +107,7 @@ export class AudioEngine {
     this._tone(o.node, t, 0.1, 90, 55, 'sine', 0.35 * g);
   }
   jump(pos) { this.step(1, 1.2, pos); }
-  land(speed, surf = 1) { this.step(surf, Math.min(2.5, 0.8 + speed * 0.15)); this._tone(this._out(null, 0.7, 0, 0.1).node, this.ctx.currentTime, 0.2, 90, 35, 'sine', 0.8); }
+  land(speed, surf = 1) { if (!this.ctx) return; this.step(surf, Math.min(2.5, 0.8 + speed * 0.15)); this._tone(this._out(null, 0.7, 0, 0.1).node, this.ctx.currentTime, 0.2, 90, 35, 'sine', 0.8); }
   impact(surf, pos) {
     if (!this.ctx) return; const o = this._out(pos, 0.7, 0, 0.2), t = o.t0;
     if (surf === 3) { this._noise(o.node, t, 0.25, this.white, 'bandpass', 3500, 2400, 6, 0.8, 0.001); this._tone(o.node, t, 0.2, 1700, 900, 'triangle', 0.25); }

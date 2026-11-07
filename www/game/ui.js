@@ -13,6 +13,7 @@ export class UI {
   constructor(game) {
     this.g = game;
     this.root = document.getElementById('ui');
+    if (game.input.touchMode) document.body.classList.add('touch');
     this.menuOpen = false; this.invOpen = false; this.sel = null; this.icons = {};
     this.toasts = [];
     this.fpsAcc = 0; this.fpsN = 0; this.fps = 0; this.ms = 0;

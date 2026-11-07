@@ -6,7 +6,7 @@ import { TERRAIN_FS, terrainVS, WATER_VS, WATER_FS } from '../engine/shaders.js'
 import { WORLD } from './worldgen.js';
 
 const CHUNK = 128, CELLS = 64, NCH = WORLD.size / CHUNK; // 16x16 chunks
-const LOD_DIST = [140, 330, 650, 1150];
+const LOD_DIST = [130, 300, 560, 1150];
 
 export class Terrain {
   constructor(renderer, world, assets) {
@@ -125,19 +125,33 @@ export class Terrain {
     const cx = cam[0], cz = cam[2];
     let drawn = 0;
     gl.bindVertexArray(null);
-    for (let z = 0; z < NCH; z++) for (let x = 0; x < NCH; x++) {
-      const x0 = x * CHUNK, z0 = z * CHUNK;
-      const k = (z * NCH + x) * 2;
-      if (!f.aabb(x0, this.bounds[k], z0, x0 + CHUNK, this.bounds[k + 1], z0 + CHUNK)) continue;
-      const dx = Math.max(x0 - cx, 0, cx - (x0 + CHUNK)), dz = Math.max(z0 - cz, 0, cz - (z0 + CHUNK));
-      const d = Math.hypot(dx, dz);
-      let lod = d < LOD_DIST[0] ? 0 : d < LOD_DIST[1] ? 1 : d < LOD_DIST[2] ? 2 : d < LOD_DIST[3] ? 3 : 4;
-      if (d > 1500) continue;
-      p.f4('uChunk', x0, z0, CHUNK, 1.0 + lod * 2.2);
-      const m = this.lods[lod];
-      gl.bindVertexArray(m.vao);
-      gl.drawElements(gl.TRIANGLES, m.indexCount, m.indexType, 0);
-      gl.stats.draws++; gl.stats.tris += m.tris; drawn++;
+    const dist = (x0, z0, size) => { const dx = Math.max(x0 - cx, 0, cx - (x0 + size)), dz = Math.max(z0 - cz, 0, cz - (z0 + size)); return Math.hypot(dx, dz); };
+    const GROUP_D = 720;
+    for (let z = 0; z < NCH; z += 2) for (let x = 0; x < NCH; x += 2) {
+      // blocos de 2x2 chunks distantes viram um único desenho (256 m, grade de 8x8)
+      const bx = x * CHUNK, bz = z * CHUNK;
+      let mn = 1e9, mx = -1e9;
+      for (let j = 0; j < 2; j++) for (let i = 0; i < 2; i++) { const k = ((z + j) * NCH + (x + i)) * 2; mn = Math.min(mn, this.bounds[k]); mx = Math.max(mx, this.bounds[k + 1]); }
+      const D = dist(bx, bz, CHUNK * 2);
+      if (D > 1600) continue;
+      if (!f.aabb(bx, mn, bz, bx + CHUNK * 2, mx, bz + CHUNK * 2)) continue;
+      if (D > GROUP_D) {
+        p.f4('uChunk', bx, bz, CHUNK * 2, 8.0);
+        const m = this.lods[3];
+        gl.bindVertexArray(m.vao); gl.drawElements(gl.TRIANGLES, m.indexCount, m.indexType, 0);
+        gl.stats.draws++; gl.stats.tris += m.tris; drawn++;
+        continue;
+      }
+      for (let j = 0; j < 2; j++) for (let i = 0; i < 2; i++) {
+        const x0 = (x + i) * CHUNK, z0 = (z + j) * CHUNK, k = ((z + j) * NCH + (x + i)) * 2;
+        if (!f.aabb(x0, this.bounds[k], z0, x0 + CHUNK, this.bounds[k + 1], z0 + CHUNK)) continue;
+        const d = dist(x0, z0, CHUNK);
+        const lod = d < LOD_DIST[0] ? 0 : d < LOD_DIST[1] ? 1 : d < LOD_DIST[2] ? 2 : 3;
+        p.f4('uChunk', x0, z0, CHUNK, 1.0 + lod * 2.2);
+        const m = this.lods[lod];
+        gl.bindVertexArray(m.vao); gl.drawElements(gl.TRIANGLES, m.indexCount, m.indexType, 0);
+        gl.stats.draws++; gl.stats.tris += m.tris; drawn++;
+      }
     }
     this.drawnChunks = drawn;
   }

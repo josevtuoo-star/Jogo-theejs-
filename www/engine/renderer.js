@@ -287,7 +287,7 @@ export class Renderer {
       if (dc !== this._state.decal) { this._state.decal = dc; if (dc) { gl.enable(gl.POLYGON_OFFSET_FILL); gl.polygonOffset(-2, -6); } else gl.disable(gl.POLYGON_OFFSET_FILL); }
     } else this._cull(!mat.doubleSided);
     if (!inst) p.m4('uModel', o.model || this._identity || (this._identity = m4.create()));
-    else if (im === 2) p.f1('uInstNear', o.instNear || 0);
+    if (inst) { p.f1('uInstNear', o.instNear || 0); p.f1('uInstFar', o.instFar || 0); }
     if (inst) {
       gl.bindVertexArray(inst.vaoFor(mesh));
       const n = o.count ?? inst.count;

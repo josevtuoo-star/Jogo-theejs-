@@ -16,7 +16,7 @@ node tools/serve.mjs 8080          # serve a pasta www/
 Clique na tela para capturar o mouse. **Esc** abre o menu de testes (clima, hora, teleporte, spawn de itens, gráficos, desempenho).
 
 ### No celular (APK)
-- Baixe o APK de `dist/Sobrevivencia2x2-v1.0.apk` (ou o artefato do GitHub Actions) e instale (permita "fontes desconhecidas").
+- Baixe o APK de [`dist/Sobrevivencia2x2-v1.0.apk`](dist/Sobrevivencia2x2-v1.0.apk) (ou o artefato do GitHub Actions) e instale (permita "fontes desconhecidas").
 - Ou compile: veja *Compilar o APK* abaixo.
 
 ### Controles
@@ -64,11 +64,23 @@ cd android && ./gradlew assembleRelease
 O APK é assinado com uma chave **de teste** (`android/app/test-release.jks`, senha `android`) apenas para sideload. Use a sua própria para publicar.
 O GitHub Actions (`.github/workflows/android.yml`) compila o APK a cada push.
 
-## Regenerar os assets
+## Regenerar assets e mundo
+```bash
+python3 tools/fetch_assets.py          # baixa do Poly Haven e otimiza texturas/modelos
+cd tools && npm install && cd ..       # (uma vez) meshoptimizer + gltf-transform
+node tools/optimize_models.mjs         # simplifica a geometria pesada (rochas, hidrante, poste...)
+node tools/bake_world.mjs              # gera o mapa 2x2 km e grava www/assets/world/ (embarcado no APK)
+```
+Sem os arquivos de `www/assets/world/` o jogo gera o mapa na hora (mais lento; use `?gen` para forçar).
+
+## Regenerar os assets (somente baixar)
 ```bash
 pip install pillow
 python3 tools/fetch_assets.py          # baixa do Poly Haven e otimiza (≈35 MB)
 ```
+
+## Requisitos no Android
+Android 7.0+ (API 24) com **Android System WebView / Chrome atualizado** (recomendado ≥ 90; o jogo usa módulos ES, WebGL2 e `?.`/`??`). O WebView é atualizado pela Play Store, inclusive no Android 7.
 
 ## Desempenho (alvo: POCO X7 Pro, 60 fps)
 Predefinição **Alta**: 72% de resolução, 2 cascatas de sombra 2048, grama média. A **resolução dinâmica** reduz a escala se o quadro passar de ~18,5 ms e a recupera depois. Ajustes em Menu → Gráficos (resolução, sombras, grama, distância da vegetação, alcance, limite de 60 FPS) e números em Menu → Desempenho (draw calls, triângulos, árvores, GPU).

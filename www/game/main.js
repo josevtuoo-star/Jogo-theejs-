@@ -6,7 +6,7 @@ import { AudioEngine } from '../engine/audio.js';
 import { Physics, SURF } from '../engine/physics.js';
 import { Particles, FRAME } from '../engine/particles.js';
 import { m4, q4, v3, clamp, lerp, smoothstep, damp } from '../engine/math.js';
-import { generateWorld, WORLD } from './worldgen.js';
+import { generateWorld, loadWorld, WORLD } from './worldgen.js';
 import { Assets, MODEL_NAMES } from './assets.js';
 import { Terrain } from './terrain.js';
 import { Vegetation } from './vegetation.js';
@@ -52,6 +52,8 @@ class Game {
 
   async boot() {
     const S = this.settings;
+    const T0 = performance.now(); this.bootTimes = {};
+    const mark = (k) => { this.bootTimes[k] = Math.round(performance.now() - T0); };
     const canvas = document.getElementById('c');
     this.r = new Renderer(canvas, { renderScale: S.renderScale, shadows: S.shadows, shadowSize: S.shadowSize, antialias: S.msaa, preserve: Q.has('test') });
     const ui0 = { loading: (t, p) => { const f = document.getElementById('lfill'), x = document.getElementById('ltext'); if (f) f.style.width = Math.round(p * 100) + '%'; if (x) x.textContent = t; } };
@@ -65,29 +67,31 @@ class Game {
     this.particles = new Particles(this.r);
     this.assets = new Assets(this.r.gl);
     await step('Texturas do terreno e materiais', 0.04, () => this.assets.loadTextures());
-    this.r.matAlb = this.assets.matAlb; this.r.matNor = this.assets.matNor;
-    this.world = await generateWorld(1337, (n, p) => ui0.loading('Gerando mundo 2×2 km · ' + n, 0.1 + p * 0.3));
-    this.phys = new Physics(this.world); this.phys.waterY = WORLD.waterY;
+    this.r.matAlb = this.assets.matAlb; this.r.matNor = this.assets.matNor; mark('texturas');
+    const wprog = (n, p) => ui0.loading('Mundo 2×2 km · ' + n, 0.1 + p * 0.3);
+    try { if (Q.has('gen')) throw new Error('gen'); this.world = await loadWorld('assets/world/', wprog); this.worldBaked = true; }
+    catch (e) { this.world = await generateWorld(1337, (n, p) => wprog('gerando ' + n, p)); }
+    mark('mundo'); this.phys = new Physics(this.world); this.phys.waterY = WORLD.waterY;
     this.particles.groundFn = (x, z) => this.world.heightAt(x, z);
     let n = 0;
     await step('Modelos 3D (armas, itens, props)', 0.42, () => this.assets.loadModels(MODEL_NAMES, () => { n++; ui0.loading(`Modelos 3D ${n}/${MODEL_NAMES.length}`, 0.42 + (n / MODEL_NAMES.length) * 0.2); }));
-    this.char = new Character(this, 0);
+    mark('modelos'); this.char = new Character(this, 0);
     await step('Personagem', 0.64, () => this.char.init());
     this.char.setup();
     this.level = new Level(this);
     await step('Construindo vilas, estradas e props', 0.68, async () => this.level.build((t, p) => ui0.loading(t, 0.68 + p * 0.1)));
     this.terrain = new Terrain(this.r, this.world, this.assets);
-    await step('Plantando vegetação', 0.8, async () => { this.veg = new Vegetation(this.r, this.world, this.assets, { grass: S.grass, exclude: (x, z, m) => this.level.exclude(x, z, m) }); this.veg.terrain = this.terrain; this.veg.distScale = S.vegDist; });
+    await step('Plantando vegetação', 0.8, async () => { this.veg = new Vegetation(this.r, this.world, this.assets, { grass: S.grass, level: this.level, exclude: (x, z, m) => this.level.exclude(x, z, m) }); this.veg.terrain = this.terrain; this.veg.distScale = S.vegDist; });
     // colliders das árvores (troncos)
     for (const t of this.veg.trunks) this.phys.addCyl(t.x, t.z, t.r, t.y0, t.y1, SURF.WOOD, { tree: true });
-    this.weapons = new WeaponSystem(this);
+    mark('vegetacao'); this.weapons = new WeaponSystem(this);
     this.weapons.prepare();
     this.phys.onProjectileHit = (p, hit, speed) => this.weapons.onHit(p, hit, speed);
     this.player = new Player(this);
     this.ui = new UI(this);
     this.player.ui = this.ui;
     await step('Ícones de inventário', 0.9, async () => { this.ui.icons = bakeIcons(this); });
-    this.player.reset();
+    mark('icones'); this.player.reset();
     this.ui.renderQuick();
     // veículos de teste
     for (const s of this.level.vehicleSpots) this.vehicles.push(new Vehicle(this, s.x, s.z, s.yaw, this.vehicles.length * 3 + 1));
@@ -105,6 +109,7 @@ class Game {
     if (Q.get('yaw')) this.player.yaw = +Q.get('yaw');
     if (Q.get('pitch')) this.player.pitch = +Q.get('pitch');
     if (Q.get('hold')) { const it = this.inv.all().find((i) => i.id === Q.get('hold')); if (it) this.player.wield(it); }
+    mark('total'); console.log('boot ms', JSON.stringify(this.bootTimes));
     this.ui.loading('Pronto', 1);
     this.started = true;
     this.ui.loadDone();

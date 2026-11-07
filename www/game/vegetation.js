@@ -16,9 +16,12 @@ function canvasTex(gl, w, h, draw, srgb = true) {
   return texFromImage(gl, c, { srgb, mips: true, aniso: 4, wrap: gl.CLAMP_TO_EDGE });
 }
 function needleBranchTex(gl) {
-  return canvasTex(gl, 256, 128, (g, W, H) => {
+  return canvasTex(gl, 256, 160, (g, W, H0) => {
     const rnd = mulberry32(7);
-    g.clearRect(0, 0, W, H);
+    const H = 128;
+    g.clearRect(0, 0, W, H0);
+    // faixa de casca (abaixo dos galhos): usada pelos troncos dos LODs médios (mesmo material = 1 desenho)
+    for (let y = H + 2; y < H0; y++) { const t = (y - H) / (H0 - H); g.fillStyle = `rgb(${(78 + 18 * Math.sin(y * 1.7)) | 0},${(58 + 12 * Math.sin(y * 2.3)) | 0},${(42 + 8 * t) | 0})`; g.fillRect(0, y, W, 1); }
     const cy = H / 2;
     g.lineCap = 'round';
     // base densa (silhueta)
@@ -47,9 +50,10 @@ function needleBranchTex(gl) {
   });
 }
 function leafClusterTex(gl) {
-  return canvasTex(gl, 256, 256, (g, W, H) => {
+  return canvasTex(gl, 256, 288, (g, W, H0) => {
     const rnd = mulberry32(21);
-    g.clearRect(0, 0, W, H);
+    const H = 256;
+    g.clearRect(0, 0, W, H0);
     // massa base
     const rg = g.createRadialGradient(W / 2, H / 2, 4, W / 2, H / 2, W * 0.46);
     rg.addColorStop(0, 'rgba(60,92,30,1)'); rg.addColorStop(0.75, 'rgba(60,92,30,0.95)'); rg.addColorStop(1, 'rgba(60,92,30,0)');
@@ -66,6 +70,7 @@ function leafClusterTex(gl) {
     g.globalCompositeOperation = 'destination-out';
     for (let i = 0; i < 70; i++) { const a = rnd() * Math.PI * 2, r = W * (0.4 + rnd() * 0.14); g.beginPath(); g.arc(W / 2 + Math.cos(a) * r, H / 2 + Math.sin(a) * r, 5 + rnd() * 12, 0, 7); g.fill(); }
     g.globalCompositeOperation = 'source-over';
+    for (let y = H + 2; y < H0; y++) { g.fillStyle = `rgb(${(74 + 16 * Math.sin(y * 1.9)) | 0},${(56 + 10 * Math.sin(y * 2.1)) | 0},${(40) | 0})`; g.fillRect(0, y, W, 1); }
   });
 }
 
@@ -88,7 +93,7 @@ function addFrond(b, base, dir, len, width, droop, roll, ao, bendY, segs, normal
     const a = clamp(ao * (0.6 + 0.4 * u), 0, 1) * 255;
     const n = [normalUp[0] * 0.5, 0.7, normalUp[2] * 0.5];
     b.vert(cx - lat[0] * w, cy - lat[1] * w, cz - lat[2] * w, n[0], n[1], n[2], u, 0, a, layer, 0, bend * 255);
-    b.vert(cx + lat[0] * w, cy + lat[1] * w, cz + lat[2] * w, n[0], n[1], n[2], u, 1, a, layer, 0, bend * 255);
+    b.vert(cx + lat[0] * w, cy + lat[1] * w, cz + lat[2] * w, n[0], n[1], n[2], u, 0.8, a, layer, 0, bend * 255);
   }
   for (let i = 0; i < segs; i++) { const k = first + i * 2; b.quad(k, k + 1, k + 3, k + 2); }
 }
@@ -124,6 +129,7 @@ function buildConifer(gl, o, lod) {
       addFrond(fol, [dir[0] * 0.06, y + (rnd() - 0.5) * 0.4, dir[2] * 0.06], dir, len, width, lerp(0.35, 0.18, t) * (0.8 + 0.4 * rnd()), (rnd() - 0.5) * 0.9, ao, y / H, segs, [dir[0], 0, dir[2]]);
     }
   }
+  if (lod >= 1) { const v0 = fol.vcount; fol.append(trunk, m4.create()); for (let i = v0; i < fol.vcount; i++) { fol.uv[i * 2] = 0.5; fol.uv[i * 2 + 1] = 0.92; } return { fol: fol.build(gl) }; }
   return { trunk: trunk.build(gl), fol: fol.build(gl) };
 }
 
@@ -201,10 +207,11 @@ function buildBroad(gl, o, lod) {
       const vl = Math.hypot(vx, vy, vz);
       const f = fol.vcount;
       const corner = (su, sv, u, v) => fol.vert(cx + (ux * su * S + vx / vl * sv * S) * 0.5, cy + (vy / vl * sv * S) * 0.5, cz + (uz * su * S + vz / vl * sv * S) * 0.5, nrm[0] / nl, nrm[1] / nl, nrm[2] / nl, u, v, ao * 255, 0, 0, bend * 255);
-      corner(-1, -1, 0, 1); corner(1, -1, 1, 1); corner(1, 1, 1, 0); corner(-1, 1, 0, 0);
+      corner(-1, -1, 0, 0.889); corner(1, -1, 1, 0.889); corner(1, 1, 1, 0); corner(-1, 1, 0, 0);
       fol.quad(f, f + 1, f + 2, f + 3);
     }
   }
+  if (lod >= 1) { const v0 = fol.vcount; fol.append(trunk, m4.create()); for (let i = v0; i < fol.vcount; i++) { fol.uv[i * 2] = 0.5; fol.uv[i * 2 + 1] = 0.94; } return { fol: fol.build(gl) }; }
   return { trunk: trunk.build(gl), fol: fol.build(gl) };
 }
 
@@ -320,7 +327,7 @@ export class Vegetation {
         const slope = 1 - n[1];
         const rot = R() * Math.PI * 2, r = R();
         if (slope > 0.2 && R() < 0.5) { // rochas em encostas
-          const k = r < 0.4 ? 'rock07' : r < 0.7 ? 'rock09' : r < 0.9 ? 'stone01' : 'boulder';
+          const k = r < 0.45 ? 'rock07' : r < 0.75 ? 'rock09' : 'stone01';
           add(k, [x, h - 0.1, z, 0.8 + R() * 1.3, rot, R(), 0, 0]); continue;
         }
         if (slope > 0.34) continue;
@@ -333,8 +340,8 @@ export class Vegetation {
           else add('stone01', [x, h - 0.05, z, 0.35 + R() * 0.5, rot, R(), 0, 0]);
         } else if (F > 0.05) {
           if (r < 0.2) add('fern', [x, h, z, 0.7 + R() * 0.5, rot, R(), 0, 0]);
-          else if (r < 0.34) add('shrub', [x, h, z, 0.7 + R() * 0.7, rot, R(), 0, 0]);
-          else if (r < 0.4) add('nettle', [x, h, z, 0.8 + R() * 0.5, rot, R(), 0, 0]);
+          else if (r < 0.3) add('shrub', [x, h, z, 0.7 + R() * 0.7, rot, R(), 0, 0]);
+          else if (r < 0.4) add('fern', [x, h, z, 0.8 + R() * 0.5, rot, R(), 0, 0]);
           else if (r < 0.45) add('rock09', [x, h - 0.05, z, 0.3 + R() * 0.7, rot, R(), 0, 0]);
         }
       }
@@ -342,20 +349,17 @@ export class Vegetation {
   }
 
   _prepCover() {
-    const A = this.assets, gl = this.gl;
-    const defs = {
-      fern: ['fern_02', 'fern_02_a', 1.0, 55, 0.3], shrub: ['shrub_02', 'shrub_02_a', 1.0, 60, 0.4], nettle: ['nettle_plant', null, 1.0, 45, 0.3],
-      stump: ['tree_stump_01', null, 1.0, 130, 0.0], deadTrunk: ['dead_tree_trunk', null, 1.0, 150, 0.0],
-      rock07: ['rock_07', null, 1.0, 260, 0.0], rock09: ['rock_09', null, 1.0, 260, 0.0], stone01: ['stone_01', null, 1.0, 180, 0.0], boulder: ['boulder_01', null, 1.2, 420, 0.0],
+    const lvl = this.opts.level, defs = {
+      fern: ['fern_02', 'fern_02_a', 50, 0.3], shrub: ['shrub_02', 'shrub_02_a', 70, 0.4],
+      stump: ['tree_stump_01', null, 110, 0.0], deadTrunk: ['dead_tree_trunk', null, 130, 0.0],
+      rock07: ['rock_07', null, 300, 0.0], rock09: ['rock_09', null, 260, 0.0], stone01: ['stone_01', null, 140, 0.0],
     };
     this.cover = {};
-    for (const [k, [model, root, sc, maxD, wind]] of Object.entries(defs)) {
-      const m = A.models[model];
+    for (const [k, [model, root, maxD, wind]] of Object.entries(defs)) {
+      const m = lvl.model(model, root, wind > 0);
       if (!m) continue;
-      const parts = m.bake(gl, root || null, null, true, wind > 0);
-      for (const p of parts) { if (wind > 0 && p.material.wind !== wind) { p.material.wind = wind * 0.5; p.material.refreshKey(); } }
-      // normalização: modelos PH estão em metros reais
-      this.cover[k] = { parts, maxD, scale: sc };
+      for (const p of m.parts) { if (wind > 0 && p.material.wind !== wind * 0.5) { p.material.wind = wind * 0.5; p.material.refreshKey(); } }
+      this.cover[k] = { parts: m.parts, maxD };
     }
   }
 
@@ -389,53 +393,56 @@ export class Vegetation {
   draw(r, cam, shadowPass) {
     const f = r.frustum, cx0 = cam[0], cz0 = cam[2];
     let ntree = 0, ncover = 0;
-    const shadowMax = shadowPass ? (r.cascadeIndex === 0 ? 70 : r.cascadeIndex === 1 ? 190 : 330) : 1e9;
-    const gl = this.gl;
-    // árvores: células finas (LOD 0-2) + super células (LOD 3)
     const ds = this.distScale || 1;
-    const L0 = 62 * ds, L1 = 230 * ds, L2 = 520 * ds, L3 = 1250 * ds;
-    const wantSuper = !shadowPass;
+    const L0 = 52 * ds, L1 = 190 * ds, L2 = 470 * ds, L3 = 1250 * ds;
+    const ci = r.cascadeIndex || 0;
+    const shadowMax = shadowPass ? [58, 160, 300][ci] : 1e9;
+    const ranges = [[0, L0, 0], [L0, L1, 1], [L1, L2, 2]];
+    const maxD = shadowPass ? Math.min(shadowMax, L1) : L2;
     for (let cz = 0; cz < G; cz++) for (let cx = 0; cx < G; cx++) {
       const x0 = cx * CELL, z0 = cz * CELL;
       const dx = Math.max(x0 - cx0, 0, cx0 - (x0 + CELL)), dz = Math.max(z0 - cz0, 0, cz0 - (z0 + CELL));
       const d = Math.hypot(dx, dz);
-      if (d > L2 || d > shadowMax) continue;
+      if (d > maxD) continue;
+      const fx = Math.max(Math.abs(x0 - cx0), Math.abs(x0 + CELL - cx0)), fz = Math.max(Math.abs(z0 - cz0), Math.abs(z0 + CELL - cz0));
+      const dmax = Math.hypot(fx, fz);
       const c = this.cells[cz * G + cx];
       const hy = this.world.heightAt(x0 + 32, z0 + 32);
       if (!f.aabb(x0 - 4, hy - 60, z0 - 4, x0 + CELL + 4, hy + 60, z0 + CELL + 4)) continue;
-      const lod = d < L0 ? 0 : d < L1 ? 1 : 2;
       for (let t = 0; t < 3; t++) {
         const arr = c.t[t]; if (!arr.length) continue;
         const buf = this._treeBuf(arr);
-        const tl = this.types[t].lods[lod];
-        if (tl.solid) r.draw(tl.solid, t === TREE.BROAD ? this.solidBroad : this.solidConifer, { inst: buf });
-        else {
-          r.draw(tl.trunk, this.barkMatWind, { inst: buf });
-          r.draw(tl.fol, t === TREE.BROAD ? this.broadMat : this.coniferMat, { inst: buf });
+        for (const [a, b, lod] of ranges) {
+          if (d >= b || dmax < a) continue;
+          if (shadowPass && lod > 1) continue;
+          const tl = this.types[t].lods[lod];
+          const o = { inst: buf, instNear: d >= a ? 0 : a, instFar: dmax <= b ? 0 : b };
+          if (tl.solid) r.draw(tl.solid, t === TREE.BROAD ? this.solidBroad : this.solidConifer, o);
+          else { if (tl.trunk) r.draw(tl.trunk, this.barkMatWind, o); r.draw(tl.fol, t === TREE.BROAD ? this.broadMat : this.coniferMat, o); }
         }
         ntree += arr.length / 8;
       }
-      // cobertura de solo
+      if (shadowPass) continue;
+      // cobertura de solo (não projeta sombra)
       for (const k in c.cover) {
-        const cv = this.cover[k]; if (!cv || d > cv.maxD * ds || d > shadowMax) continue;
+        const cv = this.cover[k]; if (!cv || d > cv.maxD * ds) continue;
         const arr = c.cover[k], buf = this._treeBuf(arr);
-        for (const p of cv.parts) r.draw(p.mesh, p.material, { inst: buf });
+        for (const p of cv.parts) r.draw(p.mesh, p.material, { inst: buf, instFar: dmax > cv.maxD * ds ? cv.maxD * ds : 0 });
         ncover += arr.length / 8;
       }
     }
-    // cobertura em células mais longe (apenas rochas grandes) e super células de árvores
-    if (wantSuper) {
+    // árvores distantes (silhuetas) em super-células
+    if (!shadowPass) {
       for (let sz = 0; sz < GS; sz++) for (let sx = 0; sx < GS; sx++) {
         const x0 = sx * SUPER, z0 = sz * SUPER;
         const dx = Math.max(x0 - cx0, 0, cx0 - (x0 + SUPER)), dz = Math.max(z0 - cz0, 0, cz0 - (z0 + SUPER));
         const d = Math.hypot(dx, dz);
-        if (d > L3 || d + SUPER * 0.7 < L2) continue;
+        if (d > L3) continue;
+        const fx = Math.max(Math.abs(x0 - cx0), Math.abs(x0 + SUPER - cx0)), fz = Math.max(Math.abs(z0 - cz0), Math.abs(z0 + SUPER - cz0));
+        if (Math.hypot(fx, fz) < L2) continue;
         const arr = this.superCells[sz * GS + sx]; if (!arr.length) continue;
         if (!f.aabb(x0, -20, z0, x0 + SUPER, 220, z0 + SUPER)) continue;
-        // desenha por tipo (par conífera / folhosa) -> mesma malha: instTint pelo atributo
-        const buf = this._treeBuf(arr);
-        // super células cobrem toda a área; as células finas já desenham < L2, então só desenha onde d >= L2-SUPER*0.7 e recorta por clip no shader (uClip) — simplificado: desenha tudo e confia no depth.
-        r.draw(this.types[0].lods[3].solid, this.solidFar, { inst: buf, instNear: L2 - 20 });
+        r.draw(this.types[0].lods[3].solid, this.solidFar, { inst: this._treeBuf(arr), instNear: L2, instFar: L3 });
       }
     }
     this.stats.trees = ntree; this.stats.cover = ncover;

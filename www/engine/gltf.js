@@ -164,7 +164,7 @@ export class GLTF {
 // Retorna [{mesh, material}]. `xf` (mat4 opcional) é aplicada por último (escala/orientação/origem).
 GLTF.prototype.bake = function (gl, rootName = null, xf = null, ignoreRoot = true, withBend = false) {
   const groups = new Map();
-  const parts = this.partsPrim(rootName, ignoreRoot);
+  const parts = Array.isArray(rootName) ? rootName.flatMap((n) => this.partsPrim(n, false)) : this.partsPrim(rootName, ignoreRoot);
   for (const pt of parts) {
     let g = groups.get(pt.material);
     if (!g) groups.set(pt.material, (g = { p: [], n: [], uv: [], i: [], base: 0 }));

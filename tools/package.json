@@ -1,0 +1,1 @@
+{ "name": "s2x2-tools", "private": true, "type": "module", "dependencies": { "@gltf-transform/core": "^4.1.0", "@gltf-transform/functions": "^4.1.0", "meshoptimizer": "^0.22.0" } }
