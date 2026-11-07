@@ -1,0 +1,58 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.survival2x2.lab'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId 'com.survival2x2.lab'
+        minSdk 24          // Android 7.0
+        targetSdk 36       // Android 16
+        versionCode 1
+        versionName '1.0'
+    }
+
+    signingConfigs {
+        // chave de TESTE (pública no repositório) só para instalar por sideload. Troque para publicar.
+        release {
+            storeFile file('test-release.jks')
+            storePassword 'android'
+            keyAlias 'test'
+            keyPassword 'android'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            shrinkResources false
+            signingConfig signingConfigs.release
+        }
+        debug {
+            signingConfig signingConfigs.release
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    sourceSets {
+        main {
+            // o jogo web inteiro (index.html, engine/, game/, assets/) é empacotado como asset do APK
+            assets.srcDirs = ['../../www']
+        }
+    }
+
+    androidResources {
+        // mídia já comprimida: não recomprimir (leitura mais rápida)
+        noCompress += ['glb', 'jpg', 'webp', 'png']
+    }
+
+    packaging {
+        resources.excludes += ['**/*.md']
+    }
+}
